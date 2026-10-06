@@ -20,6 +20,15 @@ which restarts the VM and discards everything written since the snapshot
 host the fix broke, not for one it failed to mend. The operator is told,
 and the session has a button for the rest.
 
+**A cancelled session is not judged.** Someone stopped it, most likely to
+take the host over, and what a check would then see is their work, not
+the model's: a rollback would undo their repair without asking.
+
+**A host LabDog cannot reach only counts if LabDog can reach Proxmox.**
+When the SSH probe fails, Proxmox is asked as well. If it does not answer
+either, the fault may be on LabDog's side — a lost route, DNS — and the
+check is ``unchecked`` rather than a reason to roll back.
+
 **A check that cannot run in time is reported rather than caught up on.**
 One that fell due while LabDog was down runs when it is back, up to
 :data:`GRACE` late. Past that it is marked ``unchecked``: judging a host —
@@ -29,24 +38,36 @@ that time's writes on evidence that has gone stale.
 Rolling back is shared with the button on the session page: both go
 through :func:`plan_rollback`, :func:`prepare_rollback` and
 :func:`perform_rollback`, so what a person can do and what LabDog does on
-its own are the same operation with the same refusals.
+its own are the same operation with the same refusals, and the button is
+enabled by the same rules (:func:`check_rollback`). A rollback takes part
+in the per-host queue (:mod:`app.tasks.host_lock`): it claims the host
+under its lock, holds it while Proxmox restores the machine, and hands it
+to the next queued sync or action run when it ends.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.ai.alert_autonomy import REACHED_HOST
-from app.ai.models import AIRollback, AISession, AIToolCall, AlertEvent
+from app.ai.models import (
+    TERMINAL_SESSION_STATUSES,
+    AIRollback,
+    AISession,
+    AIToolCall,
+    AlertEvent,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +86,9 @@ WORSE_SUSPENDS_FULL_AUTO = timedelta(hours=24)
 PROBE_ATTEMPTS = 3
 PROBE_PAUSE_SECONDS = 20.0
 PROBE_TIMEOUT_SECONDS = 10
+#: How long Proxmox gets to answer when it is asked as the comparison for
+#: a failed SSH probe.
+CONTROL_TIMEOUT_SECONDS = 15
 #: How long an automatic rollback waits for a sync or action run on the
 #: host to finish before giving up, and how often it looks.
 BUSY_WAIT_SECONDS = 600
@@ -73,8 +97,16 @@ BUSY_POLL_SECONDS = 30.0
 #: the fix made things worse.
 WORSE_SEVERITY = "critical"
 
-_TERMINAL = ("succeeded", "failed", "cancelled")
+#: The sessions whose fix is judged. Not ``cancelled``: see the module
+#: docstring.
+_JUDGED = ("succeeded", "failed")
 _ACTIVE_ROLLBACK = ("running", "succeeded")
+
+#: Storage types that can only restore a disk's newest snapshot: ZFS,
+#: local or over iSCSI. Proxmox refuses to roll back past a newer one.
+NEWEST_ONLY_STORAGE = frozenset({"zfspool", "zfs"})
+_QEMU_DISK = re.compile(r"^(ide|sata|scsi|virtio|efidisk|tpmstate)\d+$")
+_LXC_DISK = re.compile(r"^(rootfs|mp\d+)$")
 
 
 @dataclass(frozen=True)
@@ -87,6 +119,10 @@ class RollbackRefused(Exception):
     """A rollback that will not be attempted. The message says why."""
 
 
+class HostBusy(RollbackRefused):
+    """LabDog's own work holds the host. The message says which."""
+
+
 @dataclass
 class RollbackPlan:
     """Everything a rollback needs, resolved before anything is touched."""
@@ -94,8 +130,10 @@ class RollbackPlan:
     host: Any
     #: The call whose snapshot is restored: the session's first change.
     first: AIToolCall
-    #: Snapshots this session took on the host after the first, which some
-    #: storage (ZFS) refuses to roll back past. Deleted newest first.
+    #: Snapshots this session took on the host after the first. Some
+    #: storage (ZFS) refuses to roll back past them; there they are
+    #: deleted first, newest first, once the restore is known to be
+    #: possible.
     later: list[AIToolCall]
     target: Any
     key: Any
@@ -143,7 +181,7 @@ async def find_due(db: AsyncSession, now: datetime) -> tuple[list[int], list[int
                 AlertEvent.host_id.is_not(None),
                 AISession.mode == "alert_investigation",
                 AISession.autonomy_level == "full_auto",
-                AISession.status.in_(_TERMINAL),
+                AISession.status.in_(_JUDGED),
                 AISession.finished_at.is_not(None),
                 AISession.finished_at <= now - settle,
                 AISession.finished_at > now - LOOKBACK,
@@ -198,12 +236,13 @@ async def mark_unchecked(
     )
 
 
-async def release_abandoned(db: AsyncSession, now: datetime) -> tuple[list[int], int]:
+async def release_abandoned(db: AsyncSession, now: datetime) -> tuple[list[int], list[int]]:
     """Close what a killed worker left running.
 
     Returns the alert ids whose check was abandoned — now ``unchecked`` —
-    and how many rollbacks were marked failed. Neither is retried: by the
-    time this runs the moment for both has passed.
+    and the hosts of the rollbacks marked failed, whose queues the caller
+    releases once this is committed. Neither is retried: by the time this
+    runs the moment for both has passed.
     """
     stale = now - ABANDONED_AFTER
     events = (
@@ -243,14 +282,14 @@ async def release_abandoned(db: AsyncSession, now: datetime) -> tuple[list[int],
                     ),
                     finished_at=now,
                 )
-                .returning(AIRollback.id)
+                .returning(AIRollback.host_id)
                 .execution_options(synchronize_session=False)
             )
         )
         .scalars()
         .all()
     )
-    return list(events), len(rollbacks)
+    return list(events), [host_id for host_id in rollbacks if host_id is not None]
 
 
 # ---------------------------------------------------------------------------
@@ -273,6 +312,15 @@ async def first_change(db: AsyncSession, session_id: int, host_id: int) -> AIToo
             .limit(1)
         )
     ).scalar_one_or_none()
+
+
+def _say(exc: BaseException) -> str:
+    """An exception as an operator should read it.
+
+    A timeout has no message of its own, and its class name is not one an
+    operator should have to decode.
+    """
+    return str(exc) or ("timed out" if isinstance(exc, TimeoutError) else type(exc).__name__)
 
 
 async def probe_reachable(db: AsyncSession, host: Any) -> str | None:
@@ -303,13 +351,42 @@ async def probe_reachable(db: AsyncSession, host: Any) -> str | None:
             # someone trusts the new one — the host is out of its reach.
             return "its SSH host key has changed, so LabDog refuses to connect"
         except Exception as exc:
-            # A timeout has no message of its own; its class name is not one
-            # an operator should have to decode.
-            last = str(exc) or (
-                "timed out" if isinstance(exc, TimeoutError) else type(exc).__name__
-            )
+            last = _say(exc)
     pause = int(PROBE_PAUSE_SECONDS)
     return f"{PROBE_ATTEMPTS} attempts {pause}s apart all failed, the last with: {last}"
+
+
+async def proxmox_answers(db: AsyncSession, host: Any) -> str | None:
+    """Why LabDog cannot reach Proxmox; ``None`` if it can, or has none to ask.
+
+    The comparison for a failed SSH probe. The host's own node is asked
+    about its VM; a host without one is compared against any Proxmox node
+    LabDog knows. An error *response* counts as an answer — a refused
+    token still means the network between LabDog and Proxmox works.
+    """
+    from app.ai.snapshots import client_for, resolve_target
+    from app.proxmox.client import ProxmoxError
+    from app.proxmox.models import ProxmoxNode
+
+    try:
+        target = await resolve_target(db, host.id)
+        if target is not None:
+            asking = target.client.get_vm_status(
+                target.pve_node, target.vmid, vm_type=target.vm_type
+            )
+        else:
+            node = (
+                await db.execute(select(ProxmoxNode).order_by(ProxmoxNode.id).limit(1))
+            ).scalar_one_or_none()
+            if node is None:
+                return None
+            asking = client_for(node).test_connection()
+        await asyncio.wait_for(asking, CONTROL_TIMEOUT_SECONDS)
+    except ProxmoxError as exc:
+        return None if exc.status_code is not None else _say(exc)
+    except Exception as exc:
+        return _say(exc)
+    return None
 
 
 async def new_critical_alerts(
@@ -370,15 +447,29 @@ async def assess(db: AsyncSession, event: AlertEvent, session: AISession) -> Ass
     minutes = int((await _settle(db)).total_seconds() // 60)
 
     worse: list[str] = []
+    cut_off = None
     unreachable = await probe_reachable(db, host)
     if unreachable:
-        worse.append(f"LabDog can no longer reach {host.hostname} over SSH: {unreachable}")
+        proxmox_down = await proxmox_answers(db, host)
+        if proxmox_down:
+            cut_off = (
+                f"LabDog could not reach {host.hostname} over SSH ({unreachable}), and could "
+                f"not reach Proxmox either ({proxmox_down}), so the fault may be on LabDog's side"
+            )
+        else:
+            worse.append(f"LabDog can no longer reach {host.hostname} over SSH: {unreachable}")
     fired = await new_critical_alerts(db, event, since=since)
     if fired:
         names = ", ".join(sorted({row.alertname for row in fired}))
         worse.append(f"a new critical alert fired on {host.hostname} after the fix: {names}")
     if worse:
-        return Assessment("made_worse", "; ".join(worse) + ".")
+        return Assessment("made_worse", "; ".join([*worse, *filter(None, [cut_off])]) + ".")
+    if cut_off:
+        return Assessment(
+            "unchecked",
+            f"{cut_off}. The fix was not judged and the host was not rolled back. Look at the "
+            f"host and the session yourself.",
+        )
 
     if await still_firing(db, event):
         return Assessment(
@@ -396,12 +487,28 @@ async def assess(db: AsyncSession, event: AlertEvent, session: AISession) -> Ass
 
 async def record_outcome(
     db: AsyncSession, event: AlertEvent, assessment: Assessment, now: datetime
-) -> None:
+) -> bool:
+    """Write the verdict, unless the check was closed while it ran.
+
+    A check that waited long enough — in the queue, on the probe, on a
+    busy host — is marked ``unchecked`` by :func:`release_abandoned`, and
+    the operator is told so. A verdict written over that would contradict
+    the email already sent, and a rollback after it would restore a host
+    the operator was just told to look at themselves. ``False`` when that
+    happened: the caller then stops.
+    """
     from app.audit.logger import log_action
 
-    event.remediation_outcome = assessment.outcome
-    event.remediation_detail = assessment.detail[:4000]
-    event.remediation_checked_at = now
+    if not await _set_outcome_from(
+        db,
+        event.id,
+        now,
+        expect="checking",
+        remediation_outcome=assessment.outcome,
+        remediation_detail=assessment.detail[:4000],
+    ):
+        return False
+    await db.refresh(event)
     await log_action(
         db,
         action="ai_remediation_checked",
@@ -416,6 +523,37 @@ async def record_outcome(
             "alertname": event.alertname,
         },
     )
+    return True
+
+
+async def auto_rollback_on(db: AsyncSession) -> bool:
+    from app.settings_service import get_setting_typed
+
+    return bool(int(await get_setting_typed("ai.alert_auto_rollback", db)))
+
+
+async def judge(
+    db: AsyncSession, event: AlertEvent, session: AISession
+) -> tuple[Assessment, str | None]:
+    """:func:`assess`, made sure of before anything acts on it.
+
+    A ``made_worse`` that will be rolled back first waits up to
+    :data:`BUSY_WAIT_SECONDS` for LabDog's own work on the host to finish,
+    the same rule the fix itself followed. If it had to wait, it looks
+    again: a probe that failed while a sync reloaded the firewall or
+    restarted networking says nothing about the fix, and a rollback on
+    that evidence would throw away the sync's work with everything else.
+
+    Returns the verdict, and what still held the host if the wait ran out.
+    Commits while it waits.
+    """
+    assessment = await assess(db, event, session)
+    if assessment.outcome != "made_worse" or not await auto_rollback_on(db):
+        return assessment, None
+    waited, busy = await wait_until_free(db, event.host_id)
+    if waited:
+        assessment = await assess(db, event, session)
+    return assessment, busy
 
 
 async def awaiting_check(db: AsyncSession, host_id: int, now: datetime) -> bool:
@@ -436,7 +574,7 @@ async def awaiting_check(db: AsyncSession, host_id: int, now: datetime) -> bool:
             ),
             AISession.mode == "alert_investigation",
             AISession.autonomy_level == "full_auto",
-            AISession.status.in_(_TERMINAL),
+            AISession.status.in_(_JUDGED),
             AISession.finished_at > now - LOOKBACK,
             _changed_its_host(),
         )
@@ -467,9 +605,16 @@ async def recently_made_worse(db: AsyncSession, host_id: int, now: datetime) -> 
 
 
 async def host_busy(db: AsyncSession, host_id: int) -> str | None:
-    """What LabDog itself is doing to the host right now, if anything."""
-    from app.tasks.host_lock import check_host_busy
+    """What LabDog itself is doing to the host right now, if anything.
 
+    Takes the host's advisory lock first, as ``check_host_busy`` requires,
+    and holds it until the caller's transaction ends: a caller that goes on
+    to claim the host does so atomically with this answer, and one that
+    only wanted the answer commits straight away.
+    """
+    from app.tasks.host_lock import acquire_host_lock, check_host_busy
+
+    await acquire_host_lock(db, host_id)
     blocker = await check_host_busy(db, host_id)
     if blocker is None:
         return None
@@ -477,33 +622,111 @@ async def host_busy(db: AsyncSession, host_id: int) -> str | None:
         "sync": "sync",
         "action_host": "action run",
         "action_group": "group action run",
+        "ai_rollback": "rollback",
     }.get(blocker.kind, blocker.kind)
     return f"LabDog's {what} {blocker.id} is working on this host"
 
 
-async def plan_rollback(db: AsyncSession, *, session: AISession, host_id: int) -> RollbackPlan:
-    """Resolve what a rollback of ``session`` on ``host_id`` would restore.
+async def wait_until_free(db: AsyncSession, host_id: int) -> tuple[bool, str | None]:
+    """Wait up to :data:`BUSY_WAIT_SECONDS` for LabDog's own work on the host.
 
-    Raises :class:`RollbackRefused` with a reason a person can act on.
-    Changes nothing.
+    Returns whether it had to wait at all, and what still held the host
+    when it gave up (``None`` once the host is free). Commits after every
+    look, releasing the lock :func:`host_busy` took, so the sync it waits
+    for can finish and hand the host on.
+    """
+    deadline = time.monotonic() + BUSY_WAIT_SECONDS
+    waited = False
+    while True:
+        busy = await host_busy(db, host_id)
+        await db.commit()
+        if busy is None or time.monotonic() >= deadline:
+            return waited, busy
+        waited = True
+        await asyncio.sleep(BUSY_POLL_SECONDS)
+
+
+async def _passed_over(
+    db: AsyncSession, host_id: int, session_id: int, first: AIToolCall
+) -> AIRollback | None:
+    """Another session's rollback of the host that went back past ``first``.
+
+    On LVM-thin or qcow2 a snapshot outlives a rollback past it. Session
+    S1 snapshots X, S2 later snapshots Y, and S1's rollback restores X: Y
+    now holds S1's change, the one that rollback undid, and restoring Y
+    would bring it back.
+    """
+    restored = aliased(AIToolCall)
+    rows = (
+        await db.execute(
+            select(AIRollback, restored.started_at)
+            .outerjoin(
+                restored,
+                and_(
+                    restored.snapshot_name == AIRollback.snapshot_name,
+                    restored.target_host_id == AIRollback.host_id,
+                ),
+            )
+            .where(
+                AIRollback.host_id == host_id,
+                or_(AIRollback.session_id.is_(None), AIRollback.session_id != session_id),
+                AIRollback.status.in_(_ACTIVE_ROLLBACK),
+                AIRollback.started_at > first.started_at,
+            )
+            .order_by(AIRollback.started_at)
+        )
+    ).all()
+    for rollback, taken_at in rows:
+        # A snapshot LabDog has no record of is assumed to be older.
+        if taken_at is None or taken_at < first.started_at:
+            return rollback
+    return None
+
+
+async def check_rollback(
+    db: AsyncSession,
+    *,
+    session: AISession,
+    host: Any,
+    ask: bool = True,
+    exclude_rollback_id: int | None = None,
+) -> AIToolCall:
+    """Every rule that refuses rolling ``session`` back on ``host``.
+
+    Returns the call whose snapshot a rollback would restore, or raises
+    :class:`RollbackRefused`. One place for the endpoint, the worker and
+    the button on the session page, so the button cannot be on for a
+    rollback the endpoint refuses, or off for one it would allow.
+
+    ``ask=False`` skips the live half of the LabDog-host test, for a page
+    load; pressing the button asks. ``exclude_rollback_id`` is the
+    worker's own ``running`` row. Reads the database only (and, with
+    ``ask``, the host): Proxmox is asked when the rollback is carried out.
     """
     from app.ai.labdog_host import labdog_runs_on
-    from app.ai.snapshots import SnapshotFailed, resolve_target
-    from app.models.host import Host
-    from app.ssh_utils import load_host_key
 
-    host = await db.get(Host, host_id)
-    if host is None:
-        raise RollbackRefused("The host is no longer in LabDog.")
-
-    if await labdog_runs_on(db, host):
+    if session.status not in TERMINAL_SESSION_STATUSES:
         raise RollbackRefused(
-            f"LabDog runs on {host.hostname}. Rolling it back would stop LabDog half-way, "
-            f"with nothing left to start the machine again, and put LabDog's own database "
-            f"back to the snapshot. Roll it back in Proxmox if you need to."
+            "The session is still running. Cancel it first: a rollback underneath it would "
+            "leave it working on a host that has gone back in time."
+        )
+    existing_query = select(AIRollback).where(
+        AIRollback.session_id == session.id,
+        AIRollback.host_id == host.id,
+        AIRollback.status.in_(_ACTIVE_ROLLBACK),
+    )
+    if exclude_rollback_id is not None:
+        existing_query = existing_query.where(AIRollback.id != exclude_rollback_id)
+    existing = (await db.execute(existing_query.limit(1))).scalar_one_or_none()
+    if existing is not None:
+        raise RollbackRefused(
+            "This host is already being rolled back."
+            if existing.status == "running"
+            else f"This session's changes on this host were already rolled back, to "
+            f"{existing.snapshot_name}, on {existing.started_at:%Y-%m-%d %H:%M} UTC."
         )
 
-    first = await first_change(db, session.id, host_id)
+    first = await first_change(db, session.id, host.id)
     if first is None:
         raise RollbackRefused(f"This session did not change {host.hostname}.")
     if not first.snapshot_name:
@@ -516,6 +739,48 @@ async def plan_rollback(db: AsyncSession, *, session: AISession, host_id: int) -
             f"The snapshot taken before the first change, {first.snapshot_name}, was removed "
             f"by retention on {first.snapshot_pruned_at:%Y-%m-%d}."
         )
+
+    passed = await _passed_over(db, host.id, session.id, first)
+    if passed is not None:
+        raise RollbackRefused(
+            f"{host.hostname} was rolled back to {passed.snapshot_name} on "
+            f"{passed.started_at:%Y-%m-%d %H:%M} UTC, after this session took "
+            f"{first.snapshot_name}. Restoring {first.snapshot_name} now would bring back "
+            f"what that rollback undid."
+        )
+
+    if await labdog_runs_on(db, host, ask=ask):
+        raise RollbackRefused(
+            f"LabDog runs on {host.hostname}. Rolling it back would stop LabDog half-way, "
+            f"with nothing left to start the machine again, and put LabDog's own database "
+            f"back to the snapshot. Roll it back in Proxmox if you need to."
+        )
+    return first
+
+
+async def plan_rollback(
+    db: AsyncSession,
+    *,
+    session: AISession,
+    host_id: int,
+    exclude_rollback_id: int | None = None,
+) -> RollbackPlan:
+    """Resolve what a rollback of ``session`` on ``host_id`` would restore.
+
+    Raises :class:`RollbackRefused` with a reason a person can act on.
+    Changes nothing.
+    """
+    from app.ai.snapshots import SnapshotFailed, resolve_target
+    from app.models.host import Host
+    from app.ssh_utils import load_host_key
+
+    host = await db.get(Host, host_id)
+    if host is None:
+        raise RollbackRefused("The host is no longer in LabDog.")
+
+    first = await check_rollback(
+        db, session=session, host=host, exclude_rollback_id=exclude_rollback_id
+    )
 
     later = list(
         (
@@ -561,35 +826,22 @@ async def prepare_rollback(
 ) -> tuple[AIRollback, RollbackPlan]:
     """Claim the rollback: a ``running`` row, or :class:`RollbackRefused`.
 
-    The partial unique index on ``ai_rollbacks`` is what stops two at once
-    — a person and the check, say. The lookup first is only for a better
-    message than the constraint's.
-    """
-    if session.status in ("queued", "running", "waiting_approval"):
-        raise RollbackRefused(
-            "The session is still running. Cancel it first: a rollback underneath it would "
-            "leave it working on a host that has gone back in time."
-        )
-    existing = (
-        await db.execute(
-            select(AIRollback)
-            .where(
-                AIRollback.session_id == session.id,
-                AIRollback.host_id == host_id,
-                AIRollback.status.in_(_ACTIVE_ROLLBACK),
-            )
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-    if existing is not None:
-        raise RollbackRefused(
-            "This host is already being rolled back."
-            if existing.status == "running"
-            else f"This session's changes on this host were already rolled back, to "
-            f"{existing.snapshot_name}, on {existing.started_at:%Y-%m-%d %H:%M} UTC."
-        )
+    The row is also the host's claim in the per-host queue. It is made
+    under the host's advisory lock, after ``check_host_busy`` found no
+    sync, action run or other rollback on the host, and from the caller's
+    commit on it holds the host against them. The caller releases the
+    queue (``release_host_queue``) once the rollback has ended.
 
+    The partial unique index on ``ai_rollbacks`` stops two rollbacks of
+    one session at once. The lookup in :func:`check_rollback` is only for
+    a better message than the constraint's.
+    """
     plan = await plan_rollback(db, session=session, host_id=host_id)
+
+    busy = await host_busy(db, host_id)
+    if busy:
+        raise HostBusy(busy)
+
     rollback = AIRollback(
         session_id=session.id,
         host_id=host_id,
@@ -640,55 +892,106 @@ async def record_refused(
     return rollback
 
 
+def _disk_storages(config: dict, vm_type: str) -> set[str]:
+    """The storage ids a VM's or container's disks are on."""
+    pattern = _LXC_DISK if vm_type == "lxc" else _QEMU_DISK
+    storages: set[str] = set()
+    for key, value in config.items():
+        if not pattern.match(key) or not isinstance(value, str) or "media=cdrom" in value:
+            continue
+        volume = value.split(",", 1)[0]
+        if ":" in volume:
+            storages.add(volume.split(":", 1)[0])
+    return storages
+
+
+async def _newest_only(target: Any) -> bool:
+    """Whether the machine's disks can only be restored to their newest snapshot.
+
+    True when it cannot tell — the token may not be allowed to see the
+    storage — because the cost of guessing wrong is lopsided: deleting the
+    session's own later snapshots loses restore points that the rollback
+    is about to make meaningless anyway, while a restore ZFS refuses fails
+    the rollback.
+    """
+    try:
+        config = await target.client.get_vm_config(
+            target.pve_node, target.vmid, vm_type=target.vm_type
+        )
+        types = {
+            entry.get("storage"): entry.get("type")
+            for entry in await target.client.list_node_storage(target.pve_node)
+        }
+    except Exception as exc:
+        logger.info("remediation: could not read the storage of %s: %s", target.vmid, exc)
+        return True
+    disks = _disk_storages(config or {}, target.vm_type)
+    return not disks or any(types.get(d) in (None, *NEWEST_ONLY_STORAGE) for d in disks)
+
+
+async def _clear_the_way(plan: RollbackPlan) -> list[AIToolCall]:
+    """The session's later snapshots to delete before the restore, newest first.
+
+    Raises :class:`RollbackRefused`, having deleted nothing, when the
+    restore cannot happen: the snapshot is gone from Proxmox, or the disks
+    are on storage that only restores the newest snapshot and a newer one
+    is not this session's — another session's, an action run's, someone's
+    own. On other storage nothing needs deleting.
+    """
+    target = plan.target
+    name = plan.first.snapshot_name
+    snapshots = [
+        snap
+        for snap in await target.client.list_snapshots(
+            target.pve_node, target.vmid, vm_type=target.vm_type
+        )
+        if snap.get("name") != "current"
+    ]
+    taken = next((snap.get("snaptime") for snap in snapshots if snap.get("name") == name), False)
+    if taken is False:
+        raise RollbackRefused(
+            f"{name} is no longer on {target.vm_type} {target.vmid} in Proxmox: it was removed "
+            f"outside LabDog."
+        )
+    # Without a time to compare, a snapshot is counted as newer.
+    newer = [
+        snap
+        for snap in snapshots
+        if snap.get("name") != name
+        and (taken is None or snap.get("snaptime") is None or snap["snaptime"] > taken)
+    ]
+    if not newer or not await _newest_only(target):
+        return []
+
+    ours = {call.snapshot_name: call for call in plan.later}
+    theirs = sorted(snap["name"] for snap in newer if snap["name"] not in ours)
+    if theirs:
+        names = ", ".join(theirs)
+        raise RollbackRefused(
+            f"{plan.host.hostname}'s disks are on storage that can only restore the newest "
+            f"snapshot, and {names} {'is' if len(theirs) == 1 else 'are'} newer than {name} "
+            f"and not this session's. Nothing was deleted. Remove "
+            f"{'it' if len(theirs) == 1 else 'them'} in Proxmox if no longer needed, then roll "
+            f"back again."
+        )
+    newer.sort(key=lambda snap: snap.get("snaptime") or 0, reverse=True)
+    return [ours[snap["name"]] for snap in newer]
+
+
 async def perform_rollback(db: AsyncSession, rollback: AIRollback, plan: RollbackPlan) -> None:
     """Restore the snapshot, start the machine, and wait for SSH.
 
+    Asks Proxmox first whether the restore can happen, and deletes the
+    session's later snapshots only when it can and they are in the way.
     Never raises: the outcome, good or bad, is written to ``rollback``.
     """
     from app.audit.logger import log_action
-    from app.workflows.steps import rollback as rollback_step
-    from app.workflows.steps.cleanup import delete_snapshot
 
-    target = plan.target
-    notes: list[str] = []
-    for call in reversed(plan.later):
-        try:
-            await delete_snapshot(
-                target.client,
-                target.pve_node,
-                target.vmid,
-                call.snapshot_name,
-                vm_type=target.vm_type,
-            )
-            call.snapshot_pruned_at = datetime.now(UTC)
-        except Exception as exc:
-            notes.append(f"could not delete the later snapshot {call.snapshot_name} first ({exc})")
-
-    try:
-        result = await rollback_step.rollback_to_snapshot(
-            target.client,
-            target.pve_node,
-            target.vmid,
-            plan.first.snapshot_name,
-            plan.host,
-            plan.key,
-            db,
-            vm_type=target.vm_type,
-        )
-    except Exception as exc:
-        logger.exception("remediation: rollback %s raised", rollback.id)
-        result = {"success": False, "error": str(exc)}
-
-    ok = bool(result.get("success"))
-    if ok:
-        summary = (
-            f"Restored {target.vm_type} {target.vmid} to {plan.first.snapshot_name} and "
-            f"started it; SSH answered again. The host is marked out of sync."
-        )
-    else:
-        summary = f"Rolling back to {plan.first.snapshot_name} failed: {result.get('error')}"
-    rollback.status = "succeeded" if ok else "failed"
-    rollback.detail = "; ".join([summary, *notes])[:4000]
+    status, summary = await _restore(db, plan)
+    if status == "failed":
+        logger.warning("remediation: rollback %s failed: %s", rollback.id, summary)
+    rollback.status = status
+    rollback.detail = summary[:4000]
     rollback.finished_at = datetime.now(UTC)
     await log_action(
         db,
@@ -703,21 +1006,81 @@ async def perform_rollback(db: AsyncSession, rollback: AIRollback, plan: Rollbac
             "trigger": rollback.trigger,
             "status": rollback.status,
             "detail": rollback.detail,
+            "vmid": plan.target.vmid,
         },
     )
 
 
+async def _restore(db: AsyncSession, plan: RollbackPlan) -> tuple[str, str]:
+    """Carry out the rollback: ``(status, what happened)``."""
+    from app.workflows.steps import rollback as rollback_step
+    from app.workflows.steps.cleanup import delete_snapshot
+
+    target = plan.target
+    name = plan.first.snapshot_name
+    try:
+        in_the_way = await _clear_the_way(plan)
+    except RollbackRefused as exc:
+        return "refused", str(exc)
+    except Exception as exc:
+        return "failed", (
+            f"Could not read the snapshots of {target.vm_type} {target.vmid} from Proxmox "
+            f"({_say(exc)}). Nothing was changed."
+        )
+
+    deleted: list[str] = []
+    for call in in_the_way:
+        try:
+            await delete_snapshot(
+                target.client,
+                target.pve_node,
+                target.vmid,
+                call.snapshot_name,
+                vm_type=target.vm_type,
+            )
+        except Exception as exc:
+            done = f" Deleted before that: {', '.join(deleted)}." if deleted else ""
+            return "failed", (
+                f"Could not delete the later snapshot {call.snapshot_name} ({_say(exc)}), "
+                f"which is in the way of {name}, so nothing was restored.{done}"
+            )
+        call.snapshot_pruned_at = datetime.now(UTC)
+        deleted.append(call.snapshot_name)
+
+    try:
+        result = await rollback_step.rollback_to_snapshot(
+            target.client,
+            target.pve_node,
+            target.vmid,
+            name,
+            plan.host,
+            plan.key,
+            db,
+            vm_type=target.vm_type,
+        )
+    except Exception as exc:
+        logger.exception("remediation: restoring %s raised", name)
+        result = {"success": False, "error": _say(exc)}
+
+    cleared = f" Deleted the later snapshots {', '.join(deleted)} first." if deleted else ""
+    if result.get("success"):
+        return "succeeded", (
+            f"Restored {target.vm_type} {target.vmid} to {name} and started it; SSH answered "
+            f"again. The host is marked out of sync.{cleared}"
+        )
+    return "failed", f"Rolling back to {name} failed: {result.get('error')}.{cleared}"
+
+
 async def roll_back_automatically(
-    db: AsyncSession, event: AlertEvent, session: AISession
+    db: AsyncSession, event: AlertEvent, session: AISession, *, busy: str | None = None
 ) -> AIRollback:
     """The check's rollback, after a fix made the host worse.
 
-    Waits up to :data:`BUSY_WAIT_SECONDS` for LabDog's own work on the host
-    to finish, the same rule the fix itself followed. Commits the
-    ``running`` row before Proxmox is touched, so the page shows it while
-    it happens; the caller commits the result.
+    ``busy`` is what :func:`judge` found still holding the host when its
+    wait ran out. Commits the ``running`` row before Proxmox is touched,
+    so the page shows it while it happens; the caller commits the result
+    and releases the host's queue.
     """
-    from app.settings_service import get_setting_typed
 
     def refused(reason: str):
         return record_refused(
@@ -729,16 +1092,11 @@ async def roll_back_automatically(
             alert_event_id=event.id,
         )
 
-    if not int(await get_setting_typed("ai.alert_auto_rollback", db)):
+    if not await auto_rollback_on(db):
         return await refused("Automatic rollback is off (ai.alert_auto_rollback).")
-
-    deadline = time.monotonic() + BUSY_WAIT_SECONDS
-    while busy := await host_busy(db, event.host_id):
-        if time.monotonic() >= deadline:
-            minutes = BUSY_WAIT_SECONDS // 60
-            return await refused(f"{busy}, and still was after {minutes} minutes.")
-        await db.commit()
-        await asyncio.sleep(BUSY_POLL_SECONDS)
+    if busy:
+        minutes = BUSY_WAIT_SECONDS // 60
+        return await refused(f"{busy}, and still was after {minutes} minutes.")
 
     try:
         rollback, plan = await prepare_rollback(

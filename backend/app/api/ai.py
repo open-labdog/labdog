@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import service
 from app.ai.models import (
+    TERMINAL_SESSION_STATUSES,
     AIApprovalRequest,
     AIMessage,
     AIProvider,
@@ -67,7 +68,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 SESSION_CHANNEL = "ai.session.{id}"
-TERMINAL_STATES = {"succeeded", "failed", "cancelled"}
+TERMINAL_STATES = frozenset(TERMINAL_SESSION_STATUSES)
 
 
 # ---------------------------------------------------------------------------
@@ -444,20 +445,21 @@ async def get_session(
         .all()
     )
     detail.rollbacks = [AIRollbackResponse.model_validate(r) for r in rollbacks]
-    detail.rollback_targets = await _rollback_targets(db, session, list(tool_calls), rollbacks)
+    detail.rollback_targets = await _rollback_targets(db, session, list(tool_calls))
     return detail
 
 
 async def _rollback_targets(
-    db: AsyncSession, session: AISession, tool_calls: list[AIToolCall], rollbacks
+    db: AsyncSession, session: AISession, tool_calls: list[AIToolCall]
 ) -> list[AIRollbackTarget]:
     """Each host the session changed, with what a rollback would restore.
 
-    Answered from the database alone — a page load opens no SSH
+    The same rules as the endpoint (``remediation.check_rollback``), but
+    answered from the database alone — a page load opens no SSH
     connections — so pressing the button checks everything again, live.
     """
+    from app.ai import remediation
     from app.ai.alert_autonomy import REACHED_HOST
-    from app.ai.labdog_host import labdog_runs_on
     from app.models.host import Host
 
     firsts: dict[int, AIToolCall] = {}
@@ -474,27 +476,16 @@ async def _rollback_targets(
     hosts = {
         h.id: h for h in (await db.execute(select(Host).where(Host.id.in_(list(firsts))))).scalars()
     }
-    active = {r.host_id: r for r in rollbacks if r.status in ("running", "succeeded")}
     out: list[AIRollbackTarget] = []
     for host_id, first in firsts.items():
         host = hosts.get(host_id)
         if host is None:
             continue
         reason = None
-        if session.status in ("queued", "running", "waiting_approval"):
-            reason = "The session is still running."
-        elif host_id in active:
-            reason = (
-                "Being rolled back now."
-                if active[host_id].status == "running"
-                else "Already rolled back."
-            )
-        elif not first.snapshot_name:
-            reason = "No snapshot was taken before the first change."
-        elif first.snapshot_pruned_at is not None:
-            reason = "Its snapshot was removed by retention."
-        elif await labdog_runs_on(db, host, ask=False):
-            reason = "LabDog runs on this host."
+        try:
+            await remediation.check_rollback(db, session=session, host=host, ask=False)
+        except remediation.RollbackRefused as exc:
+            reason = str(exc)
         out.append(
             AIRollbackTarget(
                 host_id=host_id,
@@ -559,10 +550,6 @@ async def roll_back_session(
             )
         host_id = changed[0]
 
-    busy = await remediation.host_busy(db, host_id)
-    if busy:
-        raise HTTPException(status_code=409, detail=f"{busy}. Try again when it has finished.")
-
     try:
         rollback, _plan = await remediation.prepare_rollback(
             db,
@@ -572,8 +559,14 @@ async def roll_back_session(
             user_id=user.id,
             alert_event_id=session.alert_event_id,
         )
+    except remediation.HostBusy as exc:
+        raise HTTPException(
+            status_code=409, detail=f"{exc}. Try again when it has finished."
+        ) from exc
     except remediation.RollbackRefused as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    # Also the host's claim: from here its running row keeps syncs and
+    # action runs off the host until the worker has finished.
     await db.commit()
     await db.refresh(rollback)
 

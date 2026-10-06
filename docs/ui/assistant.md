@@ -256,12 +256,21 @@ snapshot is lost**, not only the session's changes — the dialog says so
 before anything happens.
 
 It is refused, with the reason, while the session is still running, while
-LabDog's own sync or action run is working on the host, once that host
-has already been rolled back for this session, when the snapshot has
-expired or was never taken before the first change, and on the machine
-LabDog itself runs on, where the rollback would stop LabDog with nothing
-left to start the machine again. Every rollback, refused ones included,
-is listed under the button and in the audit log.
+LabDog's own sync, action run or another rollback is working on the host,
+once that host has already been rolled back for this session, when the
+snapshot has expired or was never taken before the first change, when a
+later rollback of the host went back past this snapshot — restoring it
+would bring back what that rollback undid — and on the machine LabDog
+itself runs on, where the rollback would stop LabDog with nothing left to
+start the machine again. The button is greyed out with the same reason.
+Every rollback, refused ones included, is listed under the button and in
+the audit log.
+
+While it runs, the rollback holds the host the way a sync does: syncs and
+action runs for the host wait, and run after it. On ZFS storage, which
+can only restore a VM's newest snapshot, LabDog first deletes the
+session's own later snapshots; when a newer snapshot is anyone else's, it
+refuses without deleting anything.
 
 Full-auto alert sessions are also rolled back without anyone asking when
 the fix made the host worse — see

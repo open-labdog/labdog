@@ -382,14 +382,6 @@ per-host daily cap, lower command and wall-clock caps, an alert section
 in the system prompt, and a refusal to change a host while a sync or
 action run is working on it. See `git log --grep "alert remediation"`.
 
-Phase 3 shipped too: `app/ai/remediation.py` checks every full-auto fix
-afterwards (host reachable, no new critical alert, alert resolved),
-records the outcome on the alert and on `/alerts`, and rolls back a host
-the fix made worse to the snapshot from before the session's first
-change. A session's **Roll back** button does the same by hand. Full auto
-is refused on the machine LabDog runs on, and for 24 hours on a host a fix
-made worse. See `git log --grep "remediation check"`.
-
 Left open:
 
 - **Take the host lock instead of refusing.** The busy guard checks
@@ -398,9 +390,8 @@ Left open:
   while the AI's command runs, because AI sessions are not participants
   in the per-host queue. Closing that means a claim for the session (or
   for each command) and a dispatch-next when it ends — the same
-  machinery `app/tasks/host_lock.py` gives syncs and runs. A rollback
-  has the same gap: it waits for `check_host_busy` to clear, then
-  restores the VM without holding the host.
+  machinery `app/tasks/host_lock.py` gives syncs and runs (a rollback
+  already takes part, see `prepare_rollback` in `app/ai/remediation.py`).
 
 - **Harden the webhook as a root trigger.** Full auto now needs a token
   of at least 32 characters. Still worth having: a source-IP allowlist,

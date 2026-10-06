@@ -28,6 +28,14 @@ Neither catches a container on a macvlan network, which has an address of
 its own on the LAN: such an install looks like any other machine. The
 live test also cannot run against a host LabDog cannot reach — but then
 the assistant cannot change that host either.
+
+**The live test's answer is kept for a while, per host and address.**
+Every full-auto decision asks it, and the alerts on the full-auto list are
+often fired by hosts that are down, so an uncached test would make each
+decision wait out a connect timeout. Where LabDog runs changes with a
+redeploy, not between two alerts; "could not ask" is kept for less, as
+the host may be back in minutes. The cache is per process, which is
+enough to spare a burst of alerts.
 """
 
 from __future__ import annotations
@@ -35,6 +43,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import logging
+import time
 from typing import Any
 
 from sqlalchemy import select
@@ -67,6 +76,14 @@ BRIDGE_PREFIXES = (
 PROBE_COMMAND = 'echo "$SSH_CLIENT"; ip -o addr show 2>/dev/null'
 
 PROBE_TIMEOUT_SECONDS = 15
+
+#: How long the live test's answer is trusted, and how long "could not
+#: ask" is.
+ANSWER_TTL_SECONDS = 6 * 3600
+NO_ANSWER_TTL_SECONDS = 600
+
+#: (host id, address) → (monotonic expiry, answer).
+_answers: dict[tuple[int, str], tuple[float, bool | None]] = {}
 
 
 Address = tuple[str, ipaddress.IPv4Interface | ipaddress.IPv6Interface]
@@ -148,6 +165,24 @@ async def ask_the_host(db: AsyncSession, host: Any) -> bool | None:
     return runs_here(client, addresses)
 
 
+async def _asked(db: AsyncSession, host: Any) -> bool | None:
+    """:func:`ask_the_host`, through the cache."""
+    key = (host.id, str(host.ip_address))
+    now = time.monotonic()
+    kept = _answers.get(key)
+    if kept is not None and kept[0] > now:
+        return kept[1]
+    answer = await ask_the_host(db, host)
+    ttl = ANSWER_TTL_SECONDS if answer is not None else NO_ANSWER_TTL_SECONDS
+    _answers[key] = (now + ttl, answer)
+    return answer
+
+
+def forget() -> None:
+    """Drop every cached answer."""
+    _answers.clear()
+
+
 async def labdog_runs_on(db: AsyncSession, host: Any, *, ask: bool = True) -> bool:
     """Whether LabDog runs on ``host``.
 
@@ -158,4 +193,4 @@ async def labdog_runs_on(db: AsyncSession, host: Any, *, ask: bool = True) -> bo
         return True
     if not ask:
         return False
-    return bool(await ask_the_host(db, host))
+    return bool(await _asked(db, host))

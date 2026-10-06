@@ -71,6 +71,9 @@ SESSION_STATUSES = (
     "cancelled",
 )
 
+#: A session in one of these has stopped and will not go on by itself.
+TERMINAL_SESSION_STATUSES = ("succeeded", "failed", "cancelled")
+
 APPROVAL_STATUSES = ("pending", "approved", "rejected", "expired")
 
 

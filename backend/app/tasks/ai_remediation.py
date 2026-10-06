@@ -12,7 +12,8 @@ Three entry points:
 * ``run_rollback`` — a rollback someone asked for from the session page.
 
 The judging and the rolling back live in :mod:`app.ai.remediation`; this
-module only schedules them and owns the transactions.
+module only schedules them, owns the transactions, and hands a host to its
+next queued sync or action run once a rollback has let go of it.
 """
 
 from __future__ import annotations
@@ -33,10 +34,11 @@ async def _sweep() -> dict:
     from app.ai.models import AISession, AlertEvent
     from app.db import task_session
     from app.notifications.service import notify_remediation_checked
+    from app.tasks.host_lock import release_host_queue
 
     async with task_session() as db:
         now = datetime.now(UTC)
-        abandoned, failed_rollbacks = await remediation.release_abandoned(db, now)
+        abandoned, freed_hosts = await remediation.release_abandoned(db, now)
         due, overdue = await remediation.find_due(db, now)
         claimed = [event_id for event_id in due if await remediation.claim(db, event_id, now)]
         late = [
@@ -65,24 +67,27 @@ async def _sweep() -> dict:
             await notify_remediation_checked(db, event, session)
         await db.commit()
 
-    # After the commit, so a check cannot start before its claim has landed.
+    # After the commit, so a check cannot start before its claim has landed,
+    # nor a queued sync before the abandoned rollback's row is closed.
+    for host_id in freed_hosts:
+        await release_host_queue(host_id, after="an abandoned rollback")
     for event_id in claimed:
         celery_app.send_task(
             "app.tasks.ai_remediation.check_remediation", kwargs={"alert_event_id": event_id}
         )
-    if claimed or late or abandoned or failed_rollbacks:
+    if claimed or late or abandoned or freed_hosts:
         logger.info(
             "ai_remediation: %d check(s) dispatched, %d too late, %d abandoned, "
             "%d rollback(s) abandoned",
             len(claimed),
             len(late),
             len(abandoned),
-            failed_rollbacks,
+            len(freed_hosts),
         )
     return {
         "dispatched": len(claimed),
         "unchecked": len(late) + len(abandoned),
-        "rollbacks_abandoned": failed_rollbacks,
+        "rollbacks_abandoned": len(freed_hosts),
     }
 
 
@@ -97,6 +102,7 @@ async def _check(alert_event_id: int) -> dict:
     from app.ai.models import AISession, AlertEvent
     from app.db import task_session
     from app.notifications.service import notify_remediation_checked
+    from app.tasks.host_lock import release_host_queue
 
     async with task_session() as db:
         event = await db.get(AlertEvent, alert_event_id, populate_existing=True)
@@ -109,23 +115,28 @@ async def _check(alert_event_id: int) -> dict:
             if event.investigation_session_id
             else None
         )
+        busy = None
         if session is None:
             assessment = remediation.Assessment(
                 "unchecked", "The session was deleted before its fix could be checked."
             )
         else:
-            assessment = await remediation.assess(db, event, session)
-        await remediation.record_outcome(db, event, assessment, datetime.now(UTC))
+            assessment, busy = await remediation.judge(db, event, session)
+        if not await remediation.record_outcome(db, event, assessment, datetime.now(UTC)):
+            # Closed as abandoned while this ran, and the operator told so.
+            return {"alert_event_id": alert_event_id, "outcome": "skipped"}
         await db.commit()
 
         rollback = None
         if assessment.outcome == "made_worse" and session is not None:
-            rollback = await remediation.roll_back_automatically(db, event, session)
+            rollback = await remediation.roll_back_automatically(db, event, session, busy=busy)
             await db.commit()
 
         await notify_remediation_checked(db, event, session, rollback)
         await db.commit()
 
+    if rollback is not None:
+        await release_host_queue(event.host_id, after=f"ai_rollback_id={rollback.id}")
     return {
         "alert_event_id": alert_event_id,
         "outcome": assessment.outcome,
@@ -135,9 +146,9 @@ async def _check(alert_event_id: int) -> dict:
 
 @celery_app.task(
     name="app.tasks.ai_remediation.check_remediation",
-    # The probe takes up to a minute, the busy wait up to ten, and a
-    # rollback up to ten more while the machine restarts. Well inside
-    # ``remediation.ABANDONED_AFTER``, which assumes it.
+    # The probe takes up to a minute (twice, around a busy wait of up to
+    # ten), and a rollback up to ten more while the machine restarts. Well
+    # inside ``remediation.ABANDONED_AFTER``, which assumes it.
     soft_time_limit=2400,
     time_limit=2700,
 )
@@ -150,32 +161,40 @@ async def _run_rollback(rollback_id: int) -> dict:
     from app.ai import remediation
     from app.ai.models import AIRollback, AISession
     from app.db import task_session
+    from app.tasks.host_lock import release_host_queue
 
     async with task_session() as db:
         rollback = await db.get(AIRollback, rollback_id, populate_existing=True)
         if rollback is None or rollback.status != "running":
             return {"rollback_id": rollback_id, "status": "skipped"}
+        host_id = rollback.host_id
 
+        # The request claimed the host: its running row has kept syncs and
+        # action runs off it since, however long this waited in the queue.
         session = await db.get(AISession, rollback.session_id) if rollback.session_id else None
         try:
-            if session is None or rollback.host_id is None:
+            if session is None or host_id is None:
                 raise remediation.RollbackRefused(
                     "The session or the host was deleted before the rollback started."
                 )
             # Planned again rather than carried over from the request: the
             # snapshot rows and the VM mapping are read now, when they are
             # about to be used.
-            plan = await remediation.plan_rollback(db, session=session, host_id=rollback.host_id)
+            plan = await remediation.plan_rollback(
+                db, session=session, host_id=host_id, exclude_rollback_id=rollback.id
+            )
         except remediation.RollbackRefused as exc:
             rollback.status = "refused"
             rollback.detail = str(exc)[:4000]
             rollback.finished_at = datetime.now(UTC)
-            await db.commit()
-            return {"rollback_id": rollback_id, "status": "refused"}
-
-        await remediation.perform_rollback(db, rollback, plan)
+        else:
+            await remediation.perform_rollback(db, rollback, plan)
         await db.commit()
-        return {"rollback_id": rollback_id, "status": rollback.status}
+        status = rollback.status
+
+    if host_id is not None:
+        await release_host_queue(host_id, after=f"ai_rollback_id={rollback_id}")
+    return {"rollback_id": rollback_id, "status": status}
 
 
 @celery_app.task(

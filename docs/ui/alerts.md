@@ -317,11 +317,16 @@ it has been checked, whether the fix worked.
 A full-auto session ends when the model says it is done, which is its own
 opinion of its work. `ai.alert_remediation_check_minutes` (10) after the
 session ended, LabDog checks for itself, whenever the session changed the
-host:
+host. A session someone **cancelled** is not checked: they have most
+likely taken the host over, and the check would judge — and perhaps roll
+back — their work.
 
 1. Can it still reach the host over SSH? Three attempts, twenty seconds
    apart, so a host that is restarting is not mistaken for a dead one. A
    changed SSH host key counts as unreachable: LabDog will not connect.
+   When the host does not answer, LabDog asks Proxmox as well. If Proxmox
+   does not answer either, the fault may be on LabDog's side — a lost
+   route, DNS — and the fix is reported as **not checked** instead.
 2. Has a new **critical** alert fired on the host since the first change,
    and is it still firing?
 3. Has the alert the session was started for resolved?
@@ -336,7 +341,11 @@ session's first change, starts the machine, waits for SSH, and marks the
 host out of sync. That costs something: the machine restarts and
 **everything written on it since the snapshot is lost** — mail delivered,
 files uploaded, rows committed. If LabDog's own sync or action run is
-working on the host it waits up to ten minutes for it first. Full auto
+working on the host it waits up to ten minutes for it first, then checks
+the host again: a sync that reloaded the firewall can make a host look
+unreachable for a moment, and that is no reason to undo the fix. While
+the rollback runs, syncs and action runs for the host wait in its queue,
+and run after it. Full auto
 then stays off that host for 24 hours, so a fix that broke it once is not
 tried again straight away.
 
@@ -435,8 +444,10 @@ message** is off on the Grafana contact point that points at LabDog.
 **not rolled back** or **rollback failed** tag on the row: it says why —
 `ai.alert_auto_rollback` is off, the snapshot was not taken or has
 expired, LabDog's own work kept the host busy, or Proxmox refused. A
-rollback on ZFS storage also needs every newer snapshot of the VM gone;
-LabDog deletes the session's own, but not anyone else's.
+rollback on ZFS storage also needs every newer snapshot of the VM gone.
+LabDog deletes the session's own, but not anyone else's: when a newer
+snapshot belongs to an action run or someone else, it refuses before
+deleting anything, and names the snapshot in the way.
 
 **An alert on the full-auto list ran read-only (or at approval).** Hover
 the level tag on its row. It names the safeguard that held it back — see

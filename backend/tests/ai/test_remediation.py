@@ -21,6 +21,7 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import httpx
 import pytest
 from sqlalchemy import select
 
@@ -60,6 +61,13 @@ async def _clear_settings_cache():
     invalidate_cache()
     yield
     invalidate_cache()
+
+
+@pytest.fixture(autouse=True)
+def _forget_where_labdog_runs():
+    labdog_host.forget()
+    yield
+    labdog_host.forget()
 
 
 @pytest.fixture(autouse=True)
@@ -123,17 +131,53 @@ def ssh():
 
 
 class FakeProxmox:
+    """The hypervisor. ``on_vm`` is the VM's snapshots, oldest first, and
+    ``storage_type`` the type of the storage its disk is on."""
+
     def __init__(self) -> None:
         self.created: list[str] = []
         self.deleted: list[str] = []
+        self.on_vm: list[str] = ["labdog-ai-snap-1"]
+        self.storage_type = "zfspool"
+        self.api_down = False
 
     async def create_snapshot(self, pve_node, vmid, name, description="", *, vm_type="qemu"):  # noqa: ARG002
         self.created.append(name)
+        self.on_vm.append(name)
         return f"UPID:{name}"
 
     async def delete_snapshot(self, pve_node, vmid, name, *, vm_type="qemu"):  # noqa: ARG002
         self.deleted.append(name)
+        if name in self.on_vm:
+            self.on_vm.remove(name)
         return f"UPID:rm:{name}"
+
+    async def list_snapshots(self, pve_node, vmid, *, vm_type="qemu"):  # noqa: ARG002
+        taken = [{"name": n, "snaptime": 1_790_000_000 + i} for i, n in enumerate(self.on_vm)]
+        return [*taken, {"name": "current", "parent": self.on_vm[-1] if self.on_vm else None}]
+
+    async def get_vm_config(self, pve_node, vmid, *, vm_type="qemu"):  # noqa: ARG002
+        return {
+            "scsi0": "tank:vm-210-disk-0,size=32G",
+            "ide2": "local:iso/debian.iso,media=cdrom",
+            "net0": "virtio=BC:24:11:00:00:01,bridge=vmbr0",
+        }
+
+    async def list_node_storage(self, pve_node):  # noqa: ARG002
+        return [
+            {"storage": "tank", "type": self.storage_type},
+            {"storage": "local", "type": "dir"},
+        ]
+
+    async def get_vm_status(self, pve_node, vmid, *, vm_type="qemu"):  # noqa: ARG002
+        if self.api_down:
+            raise httpx.ConnectError("All connection attempts failed")
+        return {"status": "running"}
+
+    async def test_connection(self):
+        if self.api_down:
+            raise httpx.ConnectError("All connection attempts failed")
+        return {"version": "8.4"}
 
     async def wait_for_task(self, *args, **kwargs):  # noqa: ARG002
         return None
@@ -323,14 +367,25 @@ class TestWhatIsDue:
             {"call_status": "blocked"},
             {"snapshots": ()},
             {"status": "running"},
+            {"status": "cancelled"},
         ],
-        ids=["approval", "read-only", "only-reads", "blocked-write", "no-commands", "running"],
+        ids=[
+            "approval",
+            "read-only",
+            "only-reads",
+            "blocked-write",
+            "no-commands",
+            "running",
+            "cancelled",
+        ],
     )
     async def test_only_a_finished_full_auto_fix_that_changed_the_host(
         self, db, ai_provider, over
     ) -> None:
         """A person decided every change at approval, and nothing changed
-        in the others — there is no unattended fix to judge."""
+        in the others — there is no unattended fix to judge. A cancelled
+        session was stopped by someone, most likely to take the host over:
+        what a check found would be their work, not the model's."""
         host = await create_host(db)
         event, _, _ = await _fix(db, ai_provider, host, **over)
         due, overdue = await remediation.find_due(db, datetime.now(UTC))
@@ -387,10 +442,10 @@ class TestWhatIsDue:
         )
         await db.flush()
 
-        abandoned, rollbacks = await remediation.release_abandoned(db, datetime.now(UTC))
+        abandoned, freed = await remediation.release_abandoned(db, datetime.now(UTC))
 
         assert abandoned == [event.id]
-        assert rollbacks == 1
+        assert freed == [host.id]
         await db.refresh(event)
         assert event.remediation_outcome == "unchecked"
         rollback = (
@@ -435,7 +490,7 @@ class TestJudgingTheFix:
         verdict = await remediation.assess(db, event, session)
         assert verdict.outcome == "not_effective"
 
-    async def test_an_unreachable_host_is_worse(self, db, ai_provider, ssh) -> None:
+    async def test_an_unreachable_host_is_worse(self, db, ai_provider, ssh, proxmox) -> None:
         host = await _mapped_host(db)
         event, session, _ = await _fix(db, ai_provider, host, alert_status="resolved")
         ssh.reachable = False
@@ -444,7 +499,7 @@ class TestJudgingTheFix:
         assert "can no longer reach" in verdict.detail
         assert ssh.connects == remediation.PROBE_ATTEMPTS
 
-    async def test_a_timeout_says_so(self, db, ai_provider, ssh) -> None:
+    async def test_a_timeout_says_so(self, db, ai_provider, ssh, proxmox) -> None:
         """Seen live: an unanswered SYN surfaces as a bare ``TimeoutError``."""
         host = await _mapped_host(db)
         event, session, _ = await _fix(db, ai_provider, host, alert_status="resolved")
@@ -462,6 +517,61 @@ class TestJudgingTheFix:
         assert verdict.outcome == "made_worse"
         assert verdict.detail.endswith("the last with: timed out.")
 
+    async def test_an_outage_on_labdogs_side_is_not_held_against_the_host(
+        self, db, ai_provider, ssh, proxmox
+    ) -> None:
+        """LabDog's own route or DNS gone: neither the host nor Proxmox
+        answers, and that says nothing about the fix."""
+        host = await _mapped_host(db)
+        event, session, _ = await _fix(db, ai_provider, host, alert_status="resolved")
+        ssh.reachable = False
+        proxmox.api_down = True
+        verdict = await remediation.assess(db, event, session)
+        assert verdict.outcome == "unchecked"
+        assert "LabDog's side" in verdict.detail
+        assert "All connection attempts failed" in verdict.detail
+
+    async def test_a_host_without_a_vm_is_compared_against_any_proxmox_node(
+        self, db, ai_provider, ssh, proxmox
+    ) -> None:
+        await _mapped_host(db, ip="10.0.0.40")
+        key = await create_ssh_key(db)
+        host = await create_host(db, ip="10.0.0.41", ssh_key_id=key.id)
+        event, session, _ = await _fix(db, ai_provider, host, alert_status="resolved")
+        ssh.reachable = False
+        proxmox.api_down = True
+        assert (await remediation.assess(db, event, session)).outcome == "unchecked"
+        proxmox.api_down = False
+        assert (await remediation.assess(db, event, session)).outcome == "made_worse"
+
+    async def test_an_error_from_proxmox_is_still_an_answer(
+        self, db, ai_provider, ssh, proxmox, monkeypatch
+    ) -> None:
+        """A refused token means the network to Proxmox works."""
+        from app.proxmox.client import ProxmoxError
+
+        async def refused(*args, **kwargs):  # noqa: ARG001
+            raise ProxmoxError("permission check failed", 403)
+
+        monkeypatch.setattr(proxmox, "get_vm_status", refused)
+        host = await _mapped_host(db)
+        event, session, _ = await _fix(db, ai_provider, host, alert_status="resolved")
+        ssh.reachable = False
+        assert (await remediation.assess(db, event, session)).outcome == "made_worse"
+
+    async def test_a_new_alert_still_counts_when_labdog_is_cut_off(
+        self, db, ai_provider, ssh, proxmox
+    ) -> None:
+        host = await _mapped_host(db)
+        event, session, _ = await _fix(db, ai_provider, host, alert_status="resolved")
+        await _alert(db, host.id, alertname="PostgresDown", starts_at=datetime.now(UTC))
+        ssh.reachable = False
+        proxmox.api_down = True
+        verdict = await remediation.assess(db, event, session)
+        assert verdict.outcome == "made_worse"
+        assert "PostgresDown" in verdict.detail
+        assert "LabDog's side" in verdict.detail
+
     async def test_one_answer_in_three_is_enough(self, db, ai_provider, ssh) -> None:
         """A host mid-restart fails one probe and answers the next."""
         host = await _mapped_host(db)
@@ -478,7 +588,9 @@ class TestJudgingTheFix:
         assert verdict.outcome == "fixed"
         assert len(attempts) == 2
 
-    async def test_a_changed_host_key_is_worse_and_not_retried(self, db, ai_provider, ssh) -> None:
+    async def test_a_changed_host_key_is_worse_and_not_retried(
+        self, db, ai_provider, ssh, proxmox
+    ) -> None:
         host = await _mapped_host(db)
         event, session, _ = await _fix(db, ai_provider, host, alert_status="resolved")
         ssh.key_changed = True
@@ -530,8 +642,9 @@ class TestJudgingTheFix:
     async def test_the_outcome_is_recorded_and_audited(self, db, ai_provider) -> None:
         host = await create_host(db)
         event, session, _ = await _fix(db, ai_provider, host)
+        assert await remediation.claim(db, event.id, datetime.now(UTC))
         verdict = remediation.Assessment("not_effective", "still firing")
-        await remediation.record_outcome(db, event, verdict, datetime.now(UTC))
+        assert await remediation.record_outcome(db, event, verdict, datetime.now(UTC))
         assert event.remediation_outcome == "not_effective"
         audit = (
             await db.execute(
@@ -541,6 +654,18 @@ class TestJudgingTheFix:
             )
         ).scalar_one()
         assert audit.after_state["session_id"] == session.id
+
+    async def test_a_check_closed_while_it_ran_is_left_closed(self, db, ai_provider) -> None:
+        """The sweep marked it abandoned and said so by email; a verdict
+        now would contradict that."""
+        host = await create_host(db)
+        event, _, _ = await _fix(db, ai_provider, host)
+        event.remediation_outcome = "unchecked"
+        await db.flush()
+        verdict = remediation.Assessment("made_worse", "unreachable")
+        assert not await remediation.record_outcome(db, event, verdict, datetime.now(UTC))
+        await db.refresh(event)
+        assert event.remediation_outcome == "unchecked"
 
 
 # ---------------------------------------------------------------------------
@@ -627,6 +752,24 @@ class TestWhereLabDogRuns:
         ssh.reachable = False
         assert not await labdog_host.labdog_runs_on(db, here)
 
+    @pytest.mark.parametrize("reachable", [True, False], ids=["answered", "could-not-ask"])
+    async def test_the_hosts_answer_is_kept(self, db, ssh, reachable) -> None:
+        """Every full-auto decision asks, and an alerting host is often
+        down: one connect timeout per host, not one per alert."""
+        here = await _mapped_host(db)
+        ssh.reachable = reachable
+        for _ in range(3):
+            await labdog_host.labdog_runs_on(db, here)
+        assert ssh.connects == 1
+
+    async def test_could_not_ask_is_kept_for_less(self, db, ssh, monkeypatch) -> None:
+        here = await _mapped_host(db)
+        ssh.reachable = False
+        monkeypatch.setattr(labdog_host, "NO_ANSWER_TTL_SECONDS", -1)
+        await labdog_host.labdog_runs_on(db, here)
+        await labdog_host.labdog_runs_on(db, here)
+        assert ssh.connects == 2
+
 
 # ---------------------------------------------------------------------------
 # Rolling back
@@ -641,6 +784,7 @@ class TestRollingBack:
         past a newer snapshot."""
         host = await _mapped_host(db)
         _, session, calls = await _fix(db, ai_provider, host, snapshots=("s1", "s2", "s3"))
+        proxmox.on_vm = ["s1", "s2", "s3"]
 
         rollback, plan = await remediation.prepare_rollback(
             db, session=session, host_id=host.id, trigger="manual"
@@ -662,6 +806,117 @@ class TestRollingBack:
             )
         ).scalar_one()
         assert audit.after_state["status"] == "succeeded"
+
+    @pytest.mark.parametrize("storage", ["lvmthin", "dir", "rbd"])
+    async def test_storage_that_restores_any_snapshot_keeps_the_later_ones(
+        self, db, ai_provider, ssh, proxmox, storage
+    ) -> None:
+        host = await _mapped_host(db)
+        _, session, calls = await _fix(db, ai_provider, host, snapshots=("s1", "s2", "s3"))
+        proxmox.on_vm = ["s1", "s2", "s3"]
+        proxmox.storage_type = storage
+        rollback, plan = await remediation.prepare_rollback(
+            db, session=session, host_id=host.id, trigger="manual"
+        )
+        await remediation.perform_rollback(db, rollback, plan)
+        assert rollback.status == "succeeded"
+        assert proxmox.deleted == []
+        assert proxmox.restored == ["s1"]
+        assert calls[1].snapshot_pruned_at is None
+
+    async def test_unknown_storage_is_treated_as_zfs(
+        self, db, ai_provider, ssh, proxmox, monkeypatch
+    ) -> None:
+        """The token may not see the storage. Deleting the session's own
+        later snapshots costs less than a restore ZFS refuses."""
+
+        async def hidden(pve_node):  # noqa: ARG001
+            return []
+
+        monkeypatch.setattr(proxmox, "list_node_storage", hidden)
+        host = await _mapped_host(db)
+        _, session, _ = await _fix(db, ai_provider, host, snapshots=("s1", "s2"))
+        proxmox.on_vm = ["s1", "s2"]
+        rollback, plan = await remediation.prepare_rollback(
+            db, session=session, host_id=host.id, trigger="manual"
+        )
+        await remediation.perform_rollback(db, rollback, plan)
+        assert proxmox.deleted == ["s2"]
+        assert proxmox.restored == ["s1"]
+
+    async def test_a_newer_snapshot_that_is_not_the_sessions_stops_it_before_anything_goes(
+        self, db, ai_provider, ssh, proxmox
+    ) -> None:
+        """ZFS would refuse the restore anyway, and by then s2 — a valid
+        restore point — would have been deleted for nothing."""
+        host = await _mapped_host(db)
+        _, session, calls = await _fix(db, ai_provider, host, snapshots=("s1", "s2"))
+        proxmox.on_vm = ["s1", "s2", "pre-upgrade-from-an-action-run"]
+        rollback, plan = await remediation.prepare_rollback(
+            db, session=session, host_id=host.id, trigger="manual"
+        )
+        await remediation.perform_rollback(db, rollback, plan)
+        assert rollback.status == "refused"
+        assert "pre-upgrade-from-an-action-run" in rollback.detail
+        assert "Nothing was deleted" in rollback.detail
+        assert proxmox.deleted == []
+        assert proxmox.restored == []
+        assert calls[1].snapshot_pruned_at is None
+
+    async def test_a_snapshot_gone_from_proxmox(self, db, ai_provider, ssh, proxmox) -> None:
+        host = await _mapped_host(db)
+        _, session, _ = await _fix(db, ai_provider, host, snapshots=("s1", "s2"))
+        proxmox.on_vm = ["s2"]
+        rollback, plan = await remediation.prepare_rollback(
+            db, session=session, host_id=host.id, trigger="manual"
+        )
+        await remediation.perform_rollback(db, rollback, plan)
+        assert rollback.status == "refused"
+        assert "no longer on" in rollback.detail
+        assert proxmox.deleted == []
+
+    async def test_a_snapshot_another_rollback_went_back_past(
+        self, db, ai_provider, ssh, proxmox
+    ) -> None:
+        """LVM-thin: S1 took s1, S2 later took s2, and S1 was rolled back to
+        s1. s2 holds S1's change; restoring it would bring that back."""
+        proxmox.storage_type = "lvmthin"
+        host = await _mapped_host(db)
+        _, earlier, _ = await _fix(
+            db, ai_provider, host, snapshots=("s1",), finished_ago=timedelta(minutes=30)
+        )
+        _, later, _ = await _fix(db, ai_provider, host, snapshots=("s2",))
+        proxmox.on_vm = ["s1", "s2"]
+        rollback, plan = await remediation.prepare_rollback(
+            db, session=earlier, host_id=host.id, trigger="automatic"
+        )
+        await remediation.perform_rollback(db, rollback, plan)
+        assert rollback.status == "succeeded"
+
+        with pytest.raises(remediation.RollbackRefused, match="bring back what that rollback"):
+            await remediation.prepare_rollback(db, session=later, host_id=host.id, trigger="manual")
+
+    async def test_going_back_further_than_another_rollback_is_allowed(
+        self, db, ai_provider, ssh, proxmox
+    ) -> None:
+        """S2's rollback restored s2; S1's s1 is older still, so restoring it
+        undoes more, never brings anything back."""
+        proxmox.storage_type = "lvmthin"
+        host = await _mapped_host(db)
+        _, earlier, _ = await _fix(
+            db, ai_provider, host, snapshots=("s1",), finished_ago=timedelta(minutes=30)
+        )
+        _, later, _ = await _fix(db, ai_provider, host, snapshots=("s2",))
+        proxmox.on_vm = ["s1", "s2"]
+        rollback, plan = await remediation.prepare_rollback(
+            db, session=later, host_id=host.id, trigger="manual"
+        )
+        await remediation.perform_rollback(db, rollback, plan)
+        rollback, plan = await remediation.prepare_rollback(
+            db, session=earlier, host_id=host.id, trigger="manual"
+        )
+        await remediation.perform_rollback(db, rollback, plan)
+        assert proxmox.restored == ["s2", "s1"]
 
     async def test_a_failed_rollback_says_so(self, db, ai_provider, ssh, proxmox) -> None:
         host = await _mapped_host(db)
@@ -753,6 +1008,75 @@ class TestRollingBack:
             )
 
 
+class TestTheHostQueue:
+    """A rollback stops and restores the machine: nothing else may run on
+    it meanwhile, and what was queued behind it runs after."""
+
+    async def test_not_while_labdog_is_working_on_the_host(
+        self, db, ai_provider, ssh, proxmox
+    ) -> None:
+        host = await _mapped_host(db)
+        job_id = await _running_sync(db, host.id)
+        _, session, _ = await _fix(db, ai_provider, host)
+        with pytest.raises(remediation.HostBusy, match=f"sync {job_id}"):
+            await remediation.prepare_rollback(
+                db, session=session, host_id=host.id, trigger="manual"
+            )
+
+    async def test_a_claimed_rollback_holds_the_host(self, db, ai_provider, ssh, proxmox) -> None:
+        from app.tasks.host_lock import check_host_busy, check_hosts_busy
+
+        host = await _mapped_host(db)
+        _, session, _ = await _fix(db, ai_provider, host)
+        rollback, _ = await remediation.prepare_rollback(
+            db, session=session, host_id=host.id, trigger="manual"
+        )
+        blocker = await check_host_busy(db, host.id)
+        assert (blocker.kind, blocker.id) == ("ai_rollback", rollback.id)
+        assert (await check_hosts_busy(db, [host.id])).kind == "ai_rollback"
+        assert await remediation.host_busy(db, host.id) == (
+            f"LabDog's rollback {rollback.id} is working on this host"
+        )
+
+    async def test_one_rollback_per_host_across_sessions(
+        self, db, ai_provider, ssh, proxmox
+    ) -> None:
+        """The second goes back further than the first, so no rule but the
+        queue stops it."""
+        proxmox.storage_type = "lvmthin"
+        host = await _mapped_host(db)
+        _, second, _ = await _fix(
+            db, ai_provider, host, snapshots=("s1",), finished_ago=timedelta(minutes=30)
+        )
+        _, first, _ = await _fix(db, ai_provider, host, snapshots=("s2",))
+        proxmox.on_vm = ["s1", "s2"]
+        await remediation.prepare_rollback(db, session=first, host_id=host.id, trigger="manual")
+        with pytest.raises(remediation.HostBusy, match="rollback"):
+            await remediation.prepare_rollback(
+                db, session=second, host_id=host.id, trigger="manual"
+            )
+
+    @pytest.mark.parametrize("outcome", ["succeeded", "refused"])
+    async def test_the_worker_hands_the_host_on(
+        self, db, ai_provider, ssh, proxmox, tasks_use_test_db, outcome
+    ) -> None:
+        from app.tasks.ai_remediation import _run_rollback
+
+        host = await _mapped_host(db)
+        _, session, calls = await _fix(db, ai_provider, host)
+        rollback, _ = await remediation.prepare_rollback(
+            db, session=session, host_id=host.id, trigger="manual"
+        )
+        if outcome == "refused":
+            calls[0].snapshot_pruned_at = datetime.now(UTC)
+            await db.flush()
+        with patch("app.tasks.host_lock.release_host_queue") as release:
+            result = await _run_rollback(rollback.id)
+        assert result["status"] == outcome
+        release.assert_awaited_once()
+        assert release.await_args.args == (host.id,)
+
+
 async def _running_sync(db, host_id: int) -> int:
     from app.models.sync_job import SyncJob
 
@@ -781,10 +1105,48 @@ class TestRollingBackAutomatically:
         host = await _mapped_host(db)
         job_id = await _running_sync(db, host.id)
         event, session, _ = await _fix(db, ai_provider, host)
-        rollback = await remediation.roll_back_automatically(db, event, session)
+        ssh.reachable = False
+
+        verdict, busy = await remediation.judge(db, event, session)
+        assert verdict.outcome == "made_worse"
+        assert f"sync {job_id}" in busy
+
+        rollback = await remediation.roll_back_automatically(db, event, session, busy=busy)
         assert rollback.status == "refused"
         assert f"sync {job_id}" in rollback.detail
         assert proxmox.restored == []
+
+    async def test_after_waiting_it_looks_again(
+        self, db, ai_provider, ssh, proxmox, monkeypatch
+    ) -> None:
+        """The probe failed while a sync restarted networking. By the time
+        the sync is done the host answers, and is not rolled back."""
+        host = await _mapped_host(db)
+        event, session, _ = await _fix(db, ai_provider, host, alert_status="resolved")
+        ssh.reachable = False
+        looks = []
+
+        async def busy_once(db_, host_id):  # noqa: ARG001
+            looks.append(host_id)
+            if len(looks) == 1:
+                return "LabDog's sync 7 is working on this host"
+            ssh.reachable = True
+            return None
+
+        monkeypatch.setattr(remediation, "host_busy", busy_once)
+        verdict, busy = await remediation.judge(db, event, session)
+        assert verdict.outcome == "fixed"
+        assert busy is None
+        assert len(looks) == 2
+
+    async def test_no_wait_when_the_host_is_free(self, db, ai_provider, ssh, proxmox) -> None:
+        host = await _mapped_host(db)
+        event, session, _ = await _fix(db, ai_provider, host)
+        ssh.reachable = False
+        verdict, busy = await remediation.judge(db, event, session)
+        assert verdict.outcome == "made_worse"
+        assert busy is None
+        assert ssh.connects == remediation.PROBE_ATTEMPTS
 
     async def test_a_refusal_is_kept_with_its_reason(self, db, ai_provider, ssh, proxmox) -> None:
         host = await _mapped_host(db)
@@ -836,10 +1198,13 @@ class TestTheTasks:
 
         host = await _mapped_host(db)
         event, session, _ = await _fix(db, ai_provider, host, snapshots=("s1", "s2"))
+        proxmox.on_vm = ["s1", "s2"]
         assert await remediation.claim(db, event.id, datetime.now(UTC))
         ssh.reachable = False
 
-        result = await _check(event.id)
+        with patch("app.tasks.host_lock.release_host_queue") as release:
+            result = await _check(event.id)
+        release.assert_awaited_once()
 
         assert result == {
             "alert_event_id": event.id,
@@ -882,6 +1247,32 @@ class TestTheTasks:
         event.remediation_outcome = "fixed"
         await db.flush()
         assert (await _check(event.id))["outcome"] == "skipped"
+
+    async def test_a_check_the_sweep_closed_meanwhile_does_nothing_more(
+        self, db, ai_provider, ssh, proxmox, tasks_use_test_db, sent, monkeypatch
+    ) -> None:
+        """Claimed, then slow enough that the sweep gave up on it and said
+        so: no second, contradicting verdict, and no rollback."""
+        from app.tasks.ai_remediation import _check
+
+        host = await _mapped_host(db)
+        event, _, _ = await _fix(db, ai_provider, host)
+        assert await remediation.claim(db, event.id, datetime.now(UTC))
+        ssh.reachable = False
+        real_assess = remediation.assess
+
+        async def slow(db_, event_, session_):
+            verdict = await real_assess(db_, event_, session_)
+            await remediation.mark_unchecked(
+                db_, event_.id, datetime.now(UTC), "abandoned", expect="checking"
+            )
+            return verdict
+
+        monkeypatch.setattr(remediation, "assess", slow)
+        assert (await _check(event.id))["outcome"] == "skipped"
+        await db.refresh(event)
+        assert event.remediation_outcome == "unchecked"
+        assert proxmox.restored == []
 
     async def test_a_requested_rollback_is_carried_out(
         self, db, ai_provider, ssh, proxmox, tasks_use_test_db
@@ -1040,6 +1431,7 @@ class TestTheApi:
         response = await superuser_client.post(f"/api/ai/sessions/{session.id}/rollback", json={})
         assert response.status_code == 409
         assert "sync" in response.json()["detail"]
+        assert "Try again" in response.json()["detail"]
         sent.assert_not_called()
 
     async def test_the_session_says_what_a_rollback_would_restore(
@@ -1047,6 +1439,7 @@ class TestTheApi:
     ) -> None:
         host = await _mapped_host(db)
         _, session, _ = await _fix(db, ai_provider, host, snapshots=("s1", "s2"))
+        proxmox.on_vm = ["s1", "s2"]
 
         before = (await superuser_client.get(f"/api/ai/sessions/{session.id}")).json()
         [target] = before["rollback_targets"]
@@ -1061,8 +1454,32 @@ class TestTheApi:
         await remediation.perform_rollback(db, rollback, plan)
 
         after = (await superuser_client.get(f"/api/ai/sessions/{session.id}")).json()
-        assert after["rollback_targets"][0]["unavailable_reason"] == "Already rolled back."
+        assert "already rolled back" in after["rollback_targets"][0]["unavailable_reason"]
         assert [r["status"] for r in after["rollbacks"]] == ["succeeded"]
+
+    async def test_the_button_follows_the_endpoints_rules(
+        self, db, ai_provider, ssh, proxmox, superuser_client
+    ) -> None:
+        """A session whose snapshot another rollback went back past: the
+        endpoint refuses it, so the button is off, with the same reason."""
+        proxmox.storage_type = "lvmthin"
+        host = await _mapped_host(db)
+        _, earlier, _ = await _fix(
+            db, ai_provider, host, snapshots=("s1",), finished_ago=timedelta(minutes=30)
+        )
+        _, later, _ = await _fix(db, ai_provider, host, snapshots=("s2",))
+        proxmox.on_vm = ["s1", "s2"]
+        rollback, plan = await remediation.prepare_rollback(
+            db, session=earlier, host_id=host.id, trigger="manual"
+        )
+        await remediation.perform_rollback(db, rollback, plan)
+
+        detail = (await superuser_client.get(f"/api/ai/sessions/{later.id}")).json()
+        reason = detail["rollback_targets"][0]["unavailable_reason"]
+        assert "bring back what that rollback undid" in reason
+        response = await superuser_client.post(f"/api/ai/sessions/{later.id}/rollback", json={})
+        assert response.status_code == 409
+        assert response.json()["detail"] == reason
 
     async def test_the_alert_list_shows_the_outcome_and_the_rollback(
         self, db, ai_provider, superuser_client

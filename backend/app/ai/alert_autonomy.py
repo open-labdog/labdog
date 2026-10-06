@@ -189,7 +189,8 @@ async def _full_auto_refusal(db: AsyncSession, event: Any) -> str | None:
         if refusal:
             return refusal
 
-    # Before the lock: the live half of this test is an SSH connection.
+    # Before the lock: the live half of this test is an SSH connection,
+    # though its answer is cached (see app.ai.labdog_host).
     if await _is_labdog_host(db, event.host_id):
         return (
             "LabDog runs on this host, so a fix could take LabDog down with it, and LabDog "
@@ -371,6 +372,7 @@ async def busy_refusal(
         "sync": f"sync {blocker.id}",
         "action_host": f"action run {blocker.id}",
         "action_group": f"group action run {blocker.id}",
+        "ai_rollback": f"rollback {blocker.id}",
     }.get(blocker.kind, f"{blocker.kind} {blocker.id}")
     if blocker.action_key:
         what += f" ({blocker.action_key})"
