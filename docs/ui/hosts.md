@@ -231,6 +231,16 @@ Recurring scans. Each row shows the CIDRs, the schedule, the mode (**auto**
 adds what it finds; **pending** queues it for approval), the last run and an
 **enabled** checkbox, with **edit · run now · pending · delete**.
 
+**run now** queues the scan and a toast reports the result when it finishes:
+how many hosts it added, how many are waiting in *Pending approval* (with a
+**View hosts** and/or **Review** button), that it found nothing new, or why
+it failed. A run that takes longer than two minutes, because the range is
+large or it waits for one of the four scan slots, gets a "still running"
+toast first and its result later. The toasts appear only while you stay on
+this tab; the *last run* column always shows the outcome. Unlike a
+scheduled run, **run now** also reports hosts you dismissed from *Pending
+approval* again. It is unavailable while the schedule is disabled.
+
 **add scan schedule** asks for a name, one or more CIDRs, the SSH key and
 port to verify with, default groups, a schedule (every *n*
 minutes/hours/days, or a cron expression), and whether to add discovered

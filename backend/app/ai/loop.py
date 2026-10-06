@@ -158,6 +158,10 @@ ALERT_LEVEL_NOTES = {
         "instead.\n"
         "- After a change, check that the condition the alert describes has "
         "cleared.\n"
+        "- LabDog checks the host itself a few minutes after you finish. If it "
+        "can no longer reach the host, or a new critical alert has fired on it, "
+        "it restores the snapshot taken before your first change, undoing "
+        "everything you did.\n"
         "- End with exactly what you changed, or say that you changed nothing."
     ),
 }

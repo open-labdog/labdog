@@ -37,6 +37,12 @@ by transitioning the per-member ActionHostRun rows to `running` before
 committing. On finish, call `dispatch_next_pending_for_host` for every
 member (each member can now unblock a different queued operation).
 
+A rollback by the assistant (``AIRollback``, see `app.ai.remediation`)
+takes part as well, without a ``pending`` state of its own: it claims
+the host under the lock or is refused, its ``running`` row is what
+`check_host_busy` sees while Proxmox restores the machine, and it
+releases the host's queue when it ends.
+
 Self-exclusion in the busy check is NOT needed for sync and group-action
 callers — their own rows are still in `queued`/`pending` state at the
 time of the check. However, host-targeted action runs are a special case:
@@ -70,7 +76,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-BlockerKind = Literal["sync", "action_host", "action_group"]
+BlockerKind = Literal["sync", "action_host", "action_group", "ai_rollback"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,9 +93,11 @@ class BlockerInfo:
     * ``action_host``  — host-targeted ``ActionRun`` is running on this host.
     * ``action_group`` — group-targeted ``ActionRun`` is running and this
       host is one of its members.
+    * ``ai_rollback``  — an ``AIRollback`` is restoring this host's VM to a
+      snapshot the assistant took (:mod:`app.ai.remediation`).
 
-    ``id`` is the primary key of the blocking row (``SyncJob.id`` or
-    ``ActionRun.id``). ``host_id`` is the host being blocked (matters
+    ``id`` is the primary key of the blocking row (``SyncJob.id``,
+    ``ActionRun.id`` or ``AIRollback.id``). ``host_id`` is the host being blocked (matters
     for group dispatch — names the specific busy member, not the run's
     nominal target). ``action_key`` is the action key for the two
     ``action_*`` kinds; ``None`` for ``sync``.
@@ -225,8 +233,10 @@ async def check_host_busy(
 ) -> BlockerInfo | None:
     """First blocker on ``host_id``, or None if the host is free.
 
-    Walks three sources, returns at the first hit:
+    Walks four sources, returns at the first hit:
 
+    0. ``AIRollback`` with ``status='running'`` and ``host_id=X`` (Proxmox
+       is stopping and restoring the machine; nothing else may run on it).
     1. ``SyncJob`` with ``status='running'`` and ``host_id=X``
        (the existing sync queue).
     2. ``ActionRun`` with ``status='running'`` and ``host_id=X``
@@ -278,8 +288,20 @@ async def check_host_busy(
         ``is not None`` truthy-check (the return is a frozen dataclass,
         not a bool).
     """
+    from app.ai.models import AIRollback
     from app.models.action_run import ActionHostRun, ActionRun
     from app.models.sync_job import JobStatus, SyncJob
+
+    # 0. A rollback of this host's VM.
+    rollback_hit = (
+        await db.execute(
+            select(AIRollback.id)
+            .where(AIRollback.host_id == host_id, AIRollback.status == "running")
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if rollback_hit is not None:
+        return BlockerInfo(kind="ai_rollback", id=rollback_hit, host_id=host_id)
 
     # 1. SyncJob running on this host.
     sync_hit = (
@@ -378,7 +400,7 @@ async def check_hosts_busy(db: AsyncSession, host_ids: list[int]) -> BlockerInfo
     ("Waiting for sync 7 on host node-1").
 
     Equivalent to scanning each host via `check_host_busy` but
-    expressed as three queries instead of ``3N``.
+    expressed as five queries instead of ``5N``.
 
     Args:
         db: An open async session inside a transaction holding locks
@@ -395,15 +417,28 @@ async def check_hosts_busy(db: AsyncSession, host_ids: list[int]) -> BlockerInfo
     if not host_ids:
         return None
 
+    from app.ai.models import AIRollback
     from app.models.action_run import ActionHostRun, ActionRun
     from app.models.sync_job import JobStatus, SyncJob
 
     ordered = sorted(set(host_ids))
 
     # host_id → (kind, id, action_key) for the FIRST hit per host.
-    # We accept any one of the three sources hitting first (the lock
+    # We accept any one of the sources hitting first (the lock
     # invariant means a host has at most one running op anyway).
     blockers: dict[int, BlockerInfo] = {}
+
+    rollback_rows = (
+        await db.execute(
+            select(AIRollback.id, AIRollback.host_id).where(
+                AIRollback.host_id.in_(ordered), AIRollback.status == "running"
+            )
+        )
+    ).all()
+    for row in rollback_rows:
+        blockers.setdefault(
+            row.host_id, BlockerInfo(kind="ai_rollback", id=row.id, host_id=row.host_id)
+        )
 
     sync_rows = (
         await db.execute(

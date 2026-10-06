@@ -167,6 +167,8 @@ safeguards a named alert must pass.
 | Remediation Daily Cap | `ai.alert_remediation_daily_cap` | `3` | 1 – 100 | Most full-auto sessions that may change one host in 24 hours, across all alerts. |
 | Alert Max Commands | `ai.alert_max_commands` | `15` | 1 – 200 | Shell commands in a full-auto alert session. The lower of this and `ai.max_commands` applies. Too few, and a fix whose first attempts fail runs out partway and leaves the host half changed. The session gets this many model turns plus five, even above `ai.max_iterations`. |
 | Alert Wall Clock | `ai.alert_wall_clock_seconds` | `900` | 30 – 21600 s | Run time for a full-auto alert session. The lower of this and `ai.wall_clock_seconds` applies. Each change waits for its snapshot first, so a fix of several changes needs more time than an investigation. |
+| Fix Check Delay | `ai.alert_remediation_check_minutes` | `10` | 2 – 120 min | How long after a full-auto session ends before LabDog [checks whether its fix worked](alerts.md#checking-the-fix-and-rolling-back). Long enough for the alert to resolve. |
+| Automatic Rollback | `ai.alert_auto_rollback` | `1` (on) | 0 – 1 | Restore the snapshot from before the first change when the check finds the fix made the host worse. A fix that only failed is never rolled back automatically. |
 
 **Changes and approvals.**
 

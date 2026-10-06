@@ -282,6 +282,14 @@ row's tag says which:
 7. The host is under its **daily cap**: fewer than
    `ai.alert_remediation_daily_cap` (3) full-auto sessions changed it in
    the last 24 hours, across all alerts.
+8. **LabDog does not run on the host.** A fix there could take LabDog
+   down with it, and LabDog cannot roll back the machine it runs on — see
+   [below](#the-machine-labdog-runs-on) for how it tells.
+9. **The last automatic fix on the host has been checked**, and none made
+   it worse in the last 24 hours — see
+   [Checking the fix](#checking-the-fix-and-rolling-back). A second fix
+   before the first is judged would leave the check unable to tell which
+   one the host's state is down to.
 
 "Changed" means a command the classifier called a change reached the
 host — including one that exited non-zero, since a restart that failed
@@ -302,10 +310,83 @@ Every full-auto change gets the same treatment as one from the
 [Assistant](assistant.md): a snapshot first, the command in the audit
 log, and the session's transcript under **view →**. The session's creation
 is audited too, with the level and the reason for it.
-Subscribe to **Automatic fix made** under
+Subscribe to **Automatic fixes** under
 [Email notifications](notifications.md) to be told what changed — every
-command, whether it worked, and the snapshot taken before it — without
-having to go and look.
+command, whether it worked, and the snapshot taken before it — and, once
+it has been checked, whether the fix worked.
+
+### Checking the fix, and rolling back
+
+A full-auto session ends when the model says it is done, which is its own
+opinion of its work. `ai.alert_remediation_check_minutes` (10) after the
+session ended, LabDog checks for itself, whenever the session changed the
+host. A session someone **cancelled** is not checked: they have most
+likely taken the host over, and the check would judge — and perhaps roll
+back — their work.
+
+1. Can it still reach the host over SSH? Three attempts, twenty seconds
+   apart, so a host that is restarting is not mistaken for a dead one. A
+   changed SSH host key counts as unreachable: LabDog will not connect.
+   When the host does not answer, LabDog asks Proxmox as well. If Proxmox
+   does not answer either, the fault may be on LabDog's side — a lost
+   route, DNS — and the fix is reported as **not checked** instead.
+2. Has a new **critical** alert fired on the host since the first change,
+   and is it still firing?
+3. Has the alert the session was started for resolved?
+
+The answer lands on the alert's row as a tag — **fixed**, **fix did not
+work**, or **fix made it worse** — with what LabDog found on hover.
+
+**A fix that made the host worse is rolled back** while
+`ai.alert_auto_rollback` is on (the default). "Worse" is a yes to either of
+the first two questions. LabDog restores the snapshot taken before the
+session's first change, starts the machine, waits for SSH, and marks the
+host out of sync. That costs something: the machine restarts and
+**everything written on it since the snapshot is lost** — mail delivered,
+files uploaded, rows committed. If LabDog's own sync or action run is
+working on the host it waits up to ten minutes for it first, then checks
+the host again: a sync that reloaded the firewall can make a host look
+unreachable for a moment, and that is no reason to undo the fix. While
+the rollback runs, syncs and action runs for the host wait in its queue,
+and run after it. Full auto
+then stays off that host for 24 hours, so a fix that broke it once is not
+tried again straight away.
+
+**A fix that only failed is not rolled back.** The alert still firing
+means the fix did not work, not that it did harm: the host was already in
+that state before. You are told, and the session has a
+[Roll back](assistant.md#rolling-back) button if you want the host as it
+was before the fix anyway.
+
+A check that falls due while LabDog is down runs when it is back, up to
+30 minutes late. Past that it is marked **fix not checked** rather than
+made: judging — and perhaps rolling back — a host long after the fact
+would throw away all that time's writes on stale evidence.
+
+The check depends on hearing that the alert resolved, so leave **Disable
+resolved message** off on the Grafana contact point. Without resolved
+notifications every fix reads as not working.
+
+#### The machine LabDog runs on
+
+Rolling that machine back would stop LabDog half-way, with nothing left
+to start it again, and put LabDog's own database back to the snapshot. So
+LabDog refuses both full auto and rollbacks there. A host whose address is
+`[security] labdog_server_ip` in LabDog's configuration — the address the
+firewall rules keep SSH open for — is that machine. Otherwise LabDog finds
+it from the address each host sees it connect from:
+
+- **Every other host sees LabDog coming from this host's address.** A
+  container on a bridge network — the usual Docker install — reaches the
+  rest of the LAN through its host's address.
+- **This host sees LabDog coming from one of its own addresses, or from
+  inside one of its container bridges.** A native install, or a container
+  with host networking or on a compose network. LabDog asks the host for
+  its interfaces over SSH to tell.
+
+A container on a **macvlan** network has a LAN address of its own and
+looks like any other machine. Do not put that host's alerts on the
+full-auto list.
 
 ### Scope
 
@@ -357,6 +438,19 @@ logs.
 
 **Alerts appear but nothing is investigated.** Read the investigation tag. It names
 which of the six gates stopped it.
+
+**Every fix is marked "fix did not work", although the alerts cleared.**
+LabDog never heard that they resolved. Check that **Disable resolved
+message** is off on the Grafana contact point that points at LabDog.
+
+**A fix made the host worse but it was not rolled back.** Hover the
+**not rolled back** or **rollback failed** tag on the row: it says why —
+`ai.alert_auto_rollback` is off, the snapshot was not taken or has
+expired, LabDog's own work kept the host busy, or Proxmox refused. A
+rollback on ZFS storage also needs every newer snapshot of the VM gone.
+LabDog deletes the session's own, but not anyone else's: when a newer
+snapshot belongs to an action run or someone else, it refuses before
+deleting anything, and names the snapshot in the way.
 
 **An alert on the full-auto list ran read-only (or at approval).** Hover
 the level tag on its row. It names the safeguard that held it back — see

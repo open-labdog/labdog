@@ -1,11 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
-import { showSuccess, showError } from "@/lib/toast"
+import { showSuccess, showError, showInfo } from "@/lib/toast"
+import { scanRunAnnouncement, type ScanRunQueued, type ScanRunStatus } from "@/lib/scan-run"
 import { plural, shortAgo } from "@/lib/fleet"
 import { Confirm, Table, Tag, Toolbar } from "@/components/ld"
 import { ScanConfigDialog } from "@/components/scans/scan-config-dialog"
@@ -22,6 +24,21 @@ function formatSchedule(scan: ScanConfig): string {
   return "—"
 }
 
+/** A triggered run is polled every 2 s; after two minutes (a large sweep, or
+ *  a wait for one of the four scan slots) the operator is told it is still
+ *  running and polling slows down. After half an hour the watch gives up:
+ *  Celery reports a lost task as pending for ever. */
+const RUN_WATCH_POLL_MS = 2000
+const RUN_WATCH_SLOW_POLL_MS = 10_000
+const RUN_WATCH_SLOW_AFTER_MS = 120_000
+const RUN_WATCH_GIVE_UP_MS = 30 * 60_000
+
+interface RunWatch {
+  taskId: string
+  configId: number
+  name: string
+}
+
 function runStatus(scan: ScanConfig): "ok" | "error" | "running" | "never" {
   if (scan.last_run_status === "running") return "running"
   if (!scan.last_run_at) return "never"
@@ -29,10 +46,80 @@ function runStatus(scan: ScanConfig): "ok" | "error" | "running" | "never" {
   return "ok"
 }
 
+/** Polls one "run now" by its task id and announces the outcome in a toast.
+ *  The schedule's last-run fields can't be used for this: they don't say
+ *  which run wrote them, and a run that fails like the previous one leaves
+ *  them unchanged. Renders nothing. */
+function ScanRunWatcher({ run, onDone }: { run: RunWatch; onDone: (taskId: string) => void }) {
+  const queryClient = useQueryClient()
+  const router = useRouter()
+  const [slow, setSlow] = useState(false)
+  const { data } = useQuery<ScanRunStatus>({
+    queryKey: ["scan-run", run.taskId],
+    queryFn: () => apiFetch<ScanRunStatus>(`/api/scans/${run.configId}/runs/${run.taskId}`),
+    refetchInterval: (q) =>
+      q.state.data && q.state.data.status !== "pending" ? false : slow ? RUN_WATCH_SLOW_POLL_MS : RUN_WATCH_POLL_MS,
+  })
+
+  // Timers, not the poll result, so they fire even while every poll comes
+  // back unchanged.
+  useEffect(() => {
+    const slowTimer = setTimeout(() => {
+      setSlow(true)
+      showInfo(`Scan "${run.name}" is still running; you'll get a toast when it finishes`)
+    }, RUN_WATCH_SLOW_AFTER_MS)
+    const giveUpTimer = setTimeout(() => {
+      showInfo(`Stopped waiting for scan "${run.name}"; the last-run column shows its result`)
+      onDone(run.taskId)
+    }, RUN_WATCH_GIVE_UP_MS)
+    return () => {
+      clearTimeout(slowTimer)
+      clearTimeout(giveUpTimer)
+    }
+  }, [run.taskId, run.name, onDone])
+
+  useEffect(() => {
+    if (!data) return
+    const announcement = scanRunAnnouncement(run.name, data)
+    if (!announcement) return
+    onDone(run.taskId)
+    // The list's last-run column, and whatever the run added or queued.
+    queryClient.invalidateQueries({ queryKey: ["scans"], exact: true })
+    if (announcement.tone === "error") {
+      showError(announcement.message)
+      return
+    }
+    if (announcement.tone === "info") {
+      showInfo(announcement.message)
+      return
+    }
+    const { added, pending } = announcement
+    const review = { label: "Review", onClick: () => router.push(`/discovery?tab=pending&scan=${run.configId}`) }
+    showSuccess(announcement.message, {
+      duration: 10_000,
+      action: added > 0 ? { label: "View hosts", onClick: () => router.push("/hosts") } : review,
+      cancel: added > 0 && pending > 0 ? review : undefined,
+    })
+    if (pending > 0) {
+      for (const key of ["pending-summary", "pending", "pending-hosts"]) {
+        queryClient.invalidateQueries({ queryKey: ["scans", key] })
+      }
+      queryClient.invalidateQueries({ queryKey: ["scans", run.configId] })
+    }
+    if (added > 0) {
+      queryClient.invalidateQueries({ queryKey: ["hosts-summary"] })
+      queryClient.invalidateQueries({ queryKey: ["hosts"] })
+    }
+  }, [data, run, onDone, router, queryClient])
+
+  return null
+}
+
 /** The recurring scan-schedule list, embedded in the Discovery screen's
  *  Scan schedules tab (no route of its own). */
 export default function ScansPage() {
-  const queryClient = useQueryClient()
+  // "run now" clicks not yet reported back, one per queued task.
+  const [runs, setRuns] = useState<RunWatch[]>([])
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingScan, setEditingScan] = useState<ScanConfig | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ScanConfig | null>(null)
@@ -42,6 +129,8 @@ export default function ScansPage() {
     queryFn: () => apiFetch<ScanConfig[]>("/api/scans"),
     refetchInterval: 10000,
   })
+
+  const finishRun = useCallback((taskId: string) => setRuns((rs) => rs.filter((r) => r.taskId !== taskId)), [])
 
   const toggleMutation = useApiMutation({
     mutationFn: ({ id, enabled }: { id: number; enabled: boolean }) => apiFetch(`/api/scans/${id}`, { method: "PUT", body: JSON.stringify({ enabled }) }),
@@ -56,9 +145,9 @@ export default function ScansPage() {
 
   async function handleRun(scan: ScanConfig) {
     try {
-      await apiFetch(`/api/scans/${scan.id}/run`, { method: "POST" })
+      const { task_id } = await apiFetch<ScanRunQueued>(`/api/scans/${scan.id}/run`, { method: "POST" })
       showSuccess(`Run triggered for "${scan.name}"`)
-      await queryClient.invalidateQueries({ queryKey: ["scans"] })
+      setRuns((rs) => [...rs, { taskId: task_id, configId: scan.id, name: scan.name }])
     } catch (e) {
       showError(e instanceof Error ? e.message : "Failed to trigger run")
     }
@@ -108,7 +197,7 @@ export default function ScansPage() {
             cell: (r) => (
               <span className="flex flex-wrap justify-end gap-0.5">
                 <button type="button" className="btn btn-sm btn-ghost" onClick={() => openEdit(r)}>edit</button>
-                <button type="button" className="btn btn-sm btn-ghost" onClick={() => handleRun(r)}>run now</button>
+                <button type="button" className="btn btn-sm btn-ghost" disabled={!r.enabled} title={r.enabled ? undefined : "Enable the schedule to run it"} onClick={() => handleRun(r)}>run now</button>
                 {(r.last_run_hosts_pending ?? 0) > 0 && <Link href={`/discovery?tab=pending&scan=${r.id}`} className="btn btn-sm btn-ghost hover:no-underline">pending</Link>}
                 <button type="button" className="btn btn-sm btn-ghost text-danger" onClick={() => setDeleteTarget(r)}>delete</button>
               </span>
@@ -120,6 +209,8 @@ export default function ScansPage() {
         loading={isLoading}
         empty="No scan schedules yet. Add one to automatically discover hosts on your network."
       />
+
+      {runs.map((run) => <ScanRunWatcher key={run.taskId} run={run} onDone={finishRun} />)}
 
       {dialogOpen && (
         <ScanConfigDialog

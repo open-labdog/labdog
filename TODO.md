@@ -390,7 +390,8 @@ Left open:
   while the AI's command runs, because AI sessions are not participants
   in the per-host queue. Closing that means a claim for the session (or
   for each command) and a dispatch-next when it ends — the same
-  machinery `app/tasks/host_lock.py` gives syncs and runs.
+  machinery `app/tasks/host_lock.py` gives syncs and runs (a rollback
+  already takes part, see `prepare_rollback` in `app/ai/remediation.py`).
 
 - **Harden the webhook as a root trigger.** Full auto now needs a token
   of at least 32 characters. Still worth having: a source-IP allowlist,
@@ -401,14 +402,33 @@ Left open:
   alertname list is already explicit. Revisit if operators want a
   named alert to act only at `critical`.
 
-- **Phase 3: close the loop.** Did the fix work?
-  - Link the resolution to the remediation: when the same alert (by
-    fingerprint) resolves after a remediation session, record that on
-    the `AlertEvent`. When it keeps firing past a window, mark the
-    remediation as not effective and stop retrying.
-  - Surface remediation outcomes on `/alerts` and the overview's Pending
-    lane: which alerts were fixed automatically, which were escalated,
-    which failed.
+- **Diagnostics the command policy cannot prove read-only count as
+  changes.** Seen in the live test on 2026-10-04 (sessions 20–22 on
+  `tester`): `nginx -t`, `nginx -V`, `last -x` and `sudo journalctl -k`
+  were classified as writes, so at full auto each took a Proxmox snapshot
+  (three for one real restart), and sessions that only read were counted
+  as having changed the host — by the cooldown, the daily cap and the
+  check afterwards. Add the common diagnostic forms to
+  `command_policy.yaml`, or let operators add them (see
+  [AI command policy](#ai-command-policy--rules-operators-can-edit)).
+
+- **Show fix outcomes on the Overview.** `/alerts` tags each checked fix
+  as fixed, not effective or made worse, and with any rollback. The
+  Overview's Pending lane does not, and a fix that did not work or was
+  rolled back is exactly what should be in front of an operator without
+  opening the alerts page.
+
+- **Let an operator lift the 24-hour lockout.** A fix judged `made_worse`
+  keeps full auto off that host for 24 hours (`WORSE_SUSPENDS_FULL_AUTO`
+  in `app/ai/remediation.py`, read by `recently_made_worse`). The window
+  is fixed, covers every alert on the host, and nothing in the UI, the
+  API or the settings shows or clears it; the only trace is the note on
+  the next listed alert that runs read-only. In the 2026-10-04 live test
+  the test host stayed locked until the window ran out, and the way past
+  it was moving `remediation_checked_at` on the old alert row by hand in
+  the database. Make the window a setting (`ai.alert_worse_suspension_hours`,
+  0 = no lockout), show "full auto suspended until …" on the host, and add
+  a button that lifts it, audit-logged.
 
 - **Later: remediate through action packs.** `propose_action` (above)
   lets the assistant run a named, vetted action pack instead of shell

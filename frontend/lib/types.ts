@@ -1189,6 +1189,41 @@ export interface AISessionDetail extends AISession {
   messages: AIMessage[]
   tool_calls: AIToolCall[]
   approvals: AIApprovalRequest[]
+  /** Every attempt to put a host back, oldest first, refused ones included. */
+  rollbacks: AIRollback[]
+  /** Each host the session changed, and whether it can be rolled back now. */
+  rollback_targets: AIRollbackTarget[]
+}
+
+export type AIRollbackStatus = "running" | "succeeded" | "failed" | "refused"
+
+/** One attempt to restore a host to the snapshot a session took before
+ *  its first change there. `automatic` ones come from the check after a
+ *  full-auto fix made the host worse. */
+export interface AIRollback {
+  id: number
+  session_id: number | null
+  host_id: number | null
+  alert_event_id: number | null
+  hostname: string
+  snapshot_name: string | null
+  trigger: "automatic" | "manual"
+  requested_by_user_id: number | null
+  status: AIRollbackStatus
+  detail: string | null
+  started_at: string
+  finished_at: string | null
+}
+
+export interface AIRollbackTarget {
+  host_id: number
+  hostname: string
+  /** What a rollback restores: the snapshot from before the first change. */
+  snapshot_name: string | null
+  snapshot_taken_at: string | null
+  /** Why the button is off. Null means it can be pressed — which checks
+   *  everything again before anything happens. */
+  unavailable_reason: string | null
 }
 
 export interface AIUsageDay {
@@ -1273,6 +1308,17 @@ export interface AlertEvent {
    */
   investigation_autonomy: AIAutonomyLevel | null
   investigation_autonomy_note: string | null
+  /**
+   * Whether a full-auto fix worked, as LabDog checked it afterwards. Null
+   * when there was nothing to check — the session could not change the
+   * host, or did not.
+   */
+  remediation_outcome: "checking" | "fixed" | "not_effective" | "made_worse" | "unchecked" | null
+  remediation_detail: string | null
+  remediation_checked_at: string | null
+  /** The latest rollback of this alert's session, if there was one. */
+  rollback_status: AIRollbackStatus | null
+  rollback_detail: string | null
   created_at: string
 }
 

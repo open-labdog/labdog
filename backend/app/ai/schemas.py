@@ -313,10 +313,55 @@ class AIApprovalDecision(BaseModel):
     note: str | None = Field(default=None, max_length=2000)
 
 
+class AIRollbackRequest(BaseModel):
+    #: The host to roll back. May be left out when the session changed
+    #: exactly one, which is every alert session.
+    host_id: int | None = None
+
+
+class AIRollbackResponse(BaseModel):
+    """One attempt to restore a host to the snapshot a session took."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    session_id: int | None
+    host_id: int | None
+    alert_event_id: int | None
+    hostname: str
+    snapshot_name: str | None
+    #: ``automatic`` (the check after a fix made the host worse) or
+    #: ``manual``.
+    trigger: str
+    requested_by_user_id: int | None
+    #: running, succeeded, failed, or refused — wanted and not attempted.
+    status: str
+    detail: str | None
+    started_at: datetime
+    finished_at: datetime | None
+
+
+class AIRollbackTarget(BaseModel):
+    """A host the session changed, and whether it can be rolled back now."""
+
+    host_id: int
+    hostname: str
+    #: The snapshot a rollback would restore: the one taken before the
+    #: session's first change on this host.
+    snapshot_name: str | None
+    snapshot_taken_at: datetime | None
+    #: Why the button is off, when it is. ``None`` means it can be pressed —
+    #: which still re-checks everything, so a stale page cannot roll back
+    #: what it should not.
+    unavailable_reason: str | None = None
+
+
 class AISessionDetail(AISessionResponse):
     messages: list[AIMessageResponse] = Field(default_factory=list)
     tool_calls: list[AIToolCallResponse] = Field(default_factory=list)
     approvals: list[AIApprovalResponse] = Field(default_factory=list)
+    rollbacks: list[AIRollbackResponse] = Field(default_factory=list)
+    rollback_targets: list[AIRollbackTarget] = Field(default_factory=list)
 
 
 def session_to_response(session: AISession) -> AISessionResponse:
@@ -396,4 +441,14 @@ class AlertEventResponse(BaseModel):
     #: whole transcript. Enough to see what it decided without leaving the
     #: page; the link is there for the reasoning.
     investigation_summary: str | None = None
+    #: Whether a full-auto fix worked, as LabDog checked it afterwards —
+    #: see ``app.ai.models.REMEDIATION_OUTCOMES``. NULL when there was
+    #: nothing to check.
+    remediation_outcome: str | None = None
+    remediation_detail: str | None = None
+    remediation_checked_at: datetime | None = None
+    #: The latest rollback of this alert's session, when there is one:
+    #: running, succeeded, failed, or refused, and what happened.
+    rollback_status: str | None = None
+    rollback_detail: str | None = None
     created_at: datetime
