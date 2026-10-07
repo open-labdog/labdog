@@ -255,8 +255,10 @@ A one-off scan:
 1. Enter a CIDR (e.g. `192.168.1.0/24`). Ranges larger than `/20` are
    refused by default — the limit is `discovery.min_prefix` in
    `labdog.toml` (`LABDOG_DISCOVERY__MIN_PREFIX`).
-2. **Scan network** probes every address for an open port 22. A meter shows
-   progress; results arrive as the scan runs.
+2. **Scan network** probes every address for an open port 22, except the
+   ones that are already hosts in LabDog. A meter shows progress; results
+   arrive as the scan runs. The result names the addresses it left out, so
+   a host a scan schedule added a minute ago is not mistaken for a miss.
 3. **discovered hosts** lists each hit with its address, resolved hostname
    and SSH status. Tick the ones you want.
 4. In **add *n* hosts**, pick the SSH key and, optionally, groups, then

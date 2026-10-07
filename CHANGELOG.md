@@ -412,6 +412,14 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **Discovery › Scan now says which addresses it left out.** A scan skips
+  the addresses that are already hosts in LabDog and never said so, so a
+  range whose only SSH host had just been added by a scan schedule came
+  back "No new SSH hosts found on this network" and read as a miss. The
+  result now names them: "2 addresses are already in LabDog and were not
+  scanned: tester (10.10.10.164), …", or counts them beside the table when
+  the scan found new hosts too.
+
 - **The "Automatic fixes" email shows each command's exit status.** Every
   line of "What ran" repeated the command inside its status brackets, and
   a command of about 110 characters or more pushed the exit status out of
