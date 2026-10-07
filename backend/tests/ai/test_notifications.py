@@ -370,7 +370,7 @@ class TestRemediation:
                 classification="mutating",
                 target_host_id=host.id,
                 status=status,
-                result_summary="systemctl restart nginx (exit 0)",
+                result_summary="exit 0",
                 snapshot_name=snapshot,
             )
         )
@@ -414,6 +414,118 @@ class TestRemediation:
         await db.flush()
         await _report_remediation(db, session.id)
         assert await _queued(db, "alert_remediation") == []
+
+
+class TestRemediationReportsTheExitStatus:
+    """BUG-113: the email printed each command and then, in its status
+    brackets, the call's summary, which began with the same command cut
+    at 120 characters. A long command pushed the exit status out of the
+    120-character bracket. Driven through both places that store the
+    summary, with the real ``run_ssh_command`` and a host that answers 4.
+    """
+
+    PATH = "/etc/nginx/conf.d/zz-upload-limits.conf"
+    COMMAND = (
+        "sed -i 's/client_max_body_size 50mm;/client_max_body_size 50m;/' "
+        f"{PATH} && cat {PATH} && nginx -t && systemctl --no-block reload nginx.service"
+    )
+
+    @pytest.fixture
+    def answers_4(self):
+        from types import SimpleNamespace
+
+        class _Conn:
+            async def run(self, command, check=False):  # noqa: ARG002
+                return SimpleNamespace(stdout="", stderr="sed: -e expression #1", exit_status=4)
+
+        @asynccontextmanager
+        async def connect(host, db, client_keys=None, connect_timeout=None):  # noqa: ARG001
+            yield _Conn()
+
+        with (
+            patch("app.ai.tools.ssh.ssh_connect_host", connect),
+            patch("app.ai.loop.snapshot_if_mutating", self._no_snapshot),
+        ):
+            yield
+
+    @staticmethod
+    async def _no_snapshot(db, **kwargs):  # noqa: ARG004
+        return None, None
+
+    async def _host(self, db):
+        from tests.conftest import create_ssh_key
+
+        key = await create_ssh_key(db)
+        return await create_host(db, hostname="web1.home.arpa", ssh_key_id=key.id)
+
+    async def _email_body(self, db, session) -> str:
+        assert await notify_remediation(db, session) == 1
+        [row] = await _queued(db, "alert_remediation")
+        return row.body
+
+    def test_the_command_is_long_enough_to_have_lost_it(self) -> None:
+        assert len(self.COMMAND) >= 200
+        assert classify_command(self.COMMAND).classification == "mutating"
+
+    async def test_through_the_agent_loop(
+        self, db, smtp_on, answers_4, ai_provider, make_session
+    ) -> None:
+        from app.ai.loop import AgentLoop, LoopCaps
+        from tests.ai.fake_provider import FakeProvider, ScriptedTurn, call
+
+        await _user(db, events=("alert_remediation",))
+        host = await self._host(db)
+        session = await make_session(autonomy_level="full_auto", target_host_ids=[host.id])
+        fake = FakeProvider(
+            [
+                ScriptedTurn(
+                    tool_calls=[
+                        call(
+                            "run_ssh_command",
+                            host_id=host.id,
+                            command=self.COMMAND,
+                            purpose="fix the typo in the upload limit",
+                        )
+                    ]
+                ),
+                ScriptedTurn(text="sed failed; nothing changed."),
+            ]
+        )
+        await AgentLoop(db, session, ai_provider, LoopCaps(), provider=fake).run()
+
+        body = await self._email_body(db, session)
+        assert "[failed: exit 4]" in body
+        assert body.count("client_max_body_size 50mm") == 1
+
+    async def test_through_the_agent_sdk_runner(
+        self, db, smtp_on, answers_4, ai_provider, make_session
+    ) -> None:
+        pytest.importorskip("claude_agent_sdk", reason="optional [agent] extra not installed")
+        from app.ai.agent_sdk.runner import AgentSDKRunner
+        from app.ai.loop import LoopCaps
+        from tests.ai.fake_sdk_client import FakeSDKClient, assistant, result
+
+        await _user(db, events=("alert_remediation",))
+        host = await self._host(db)
+        session = await make_session(autonomy_level="full_auto", target_host_ids=[host.id])
+        runner = None
+
+        async def run_the_command():
+            await runner._execute_tool(
+                runner._permitted["run_ssh_command"],
+                {"host_id": host.id, "command": self.COMMAND, "purpose": "fix the typo"},
+            )
+
+        fake = FakeSDKClient(
+            [assistant("sed failed; nothing changed."), result()], on_query=run_the_command
+        )
+        runner = AgentSDKRunner(db, session, ai_provider, LoopCaps(), client_factory=fake.factory)
+        with patch("app.ai.agent_sdk.runner.snapshot_if_mutating", self._no_snapshot):
+            await runner.run()
+
+        body = await self._email_body(db, session)
+        assert "[failed: exit 4]" in body
+        assert body.count("client_max_body_size 50mm") == 1
 
 
 # ---------------------------------------------------------------------------
