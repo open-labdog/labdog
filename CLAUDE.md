@@ -36,8 +36,8 @@ cd frontend && npm install
 ```bash
 cd backend
 source .venv/bin/activate
-pytest tests/ --ignore=tests/integration -v    # unit/module tests
-pytest tests/integration/ -v -m integration     # integration tests
+pytest tests/ -v                                # everything, integration included
+pytest tests/ -v -m "not integration"           # skip the git round-trip tests
 ```
 
 Tests use testcontainers to auto-spin a PostgreSQL instance. The conftest.py `pytest_configure` hook sets test-safe security env vars (`LABDOG_SECURITY__SECRET_KEY`, `LABDOG_SECURITY__ENCRYPTION_KEY`) before app modules are imported.

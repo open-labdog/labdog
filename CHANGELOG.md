@@ -420,6 +420,14 @@ The format follows [Keep a Changelog]; LabDog follows
   scanned: tester (10.10.10.164), …", or counts them beside the table when
   the scan found new hosts too.
 
+- **The "Automatic fixes" email shows each command's exit status.** Every
+  line of "What ran" repeated the command inside its status brackets, and
+  a command of about 110 characters or more pushed the exit status out of
+  them: `sed -i … && cat …  [failed: sed -i 's/…/' /etc/ngi]`. The
+  brackets now hold only the outcome and the status, `[failed: exit 4]`.
+  The assistant's transcript shows the same shorter line under each
+  command.
+
 - **Run now on a scan schedule is a manual run again.** The endpoint was
   defined twice and the older copy answered, so a run now still hid the
   hosts you had dismissed from review, and on a disabled schedule it said
