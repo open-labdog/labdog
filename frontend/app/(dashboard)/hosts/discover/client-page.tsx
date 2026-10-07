@@ -16,12 +16,18 @@ interface DiscoveredHost {
   hostname: string | null
   ssh_status: "open" | "refused"
 }
+/** In the range and already a host, so not scanned. */
+interface KnownHost {
+  ip: string
+  hostname: string | null
+}
 interface ScanStatus {
   job_id: string
   status: "pending" | "running" | "done" | "error"
   progress: number
   total: number
   hosts_found: DiscoveredHost[]
+  skipped_known?: KnownHost[]
   error?: string
 }
 interface FailedHost {
@@ -40,6 +46,19 @@ const cidrSchema = z.object({
 type CidrInput = z.infer<typeof cidrSchema>
 
 type Phase = "idle" | "scanning" | "done" | "adding"
+
+/** "tester (10.10.10.164), 10.10.10.7 and 3 more" */
+function knownList(hosts: KnownHost[], max = 6): string {
+  const named = hosts.slice(0, max).map((h) => (h.hostname ? `${h.hostname} (${h.ip})` : h.ip))
+  const more = hosts.length - named.length
+  return more > 0 ? `${named.join(", ")} and ${more} more` : named.join(", ")
+}
+
+/** The scan leaves out addresses that are already hosts; say so, or an empty result reads as a miss. */
+function skippedSentence(hosts: KnownHost[]): string {
+  const n = hosts.length
+  return `${n} address${n === 1 ? " is" : "es are"} already in LabDog and ${n === 1 ? "was" : "were"} not scanned: ${knownList(hosts)}.`
+}
 
 /** The manual scan-now form, embedded in the Discovery screen's Scan now
  *  tab (no route of its own). */
@@ -119,6 +138,7 @@ export default function DiscoverHostsPage() {
   }
 
   const hostsFound = scanStatus?.hosts_found ?? []
+  const skippedKnown = scanStatus?.skipped_known ?? []
   const progressPct = scanStatus && scanStatus.total > 0 ? Math.round((scanStatus.progress / scanStatus.total) * 100) : 0
 
   return (
@@ -144,10 +164,18 @@ export default function DiscoverHostsPage() {
 
       {scanError && <Banner tone="danger">{scanError}</Banner>}
 
-      {phase !== "scanning" && phase !== "idle" && hostsFound.length === 0 && !addResult && <Banner tone="idle">No new SSH hosts found on this network.</Banner>}
+      {phase !== "scanning" && phase !== "idle" && hostsFound.length === 0 && !addResult && (
+        <Banner tone="idle">
+          No new SSH hosts found on this network.{skippedKnown.length > 0 && ` ${skippedSentence(skippedKnown)}`}
+        </Banner>
+      )}
 
       {hostsFound.length > 0 && (phase === "done" || phase === "adding") && (
-        <Panel title="discovered hosts" pad={0}>
+        <Panel
+          title="discovered hosts"
+          meta={skippedKnown.length > 0 && <span title={skippedSentence(skippedKnown)}>{skippedKnown.length} already in LabDog, not scanned</span>}
+          pad={0}
+        >
           <Table<DiscoveredHost>
             cols={[
               { k: "ip", label: "ip address", w: "140px", sortable: false, cell: (h) => <span className="mono text-text">{h.ip}</span> },

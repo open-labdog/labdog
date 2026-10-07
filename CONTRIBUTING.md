@@ -34,10 +34,7 @@ spin up Postgres via testcontainers, so you need Docker available.
 ```bash
 # Backend — runs in ~40s
 cd backend && source .venv/bin/activate
-pytest tests/ --ignore=tests/integration -q
-
-# Backend integration — requires Docker
-pytest tests/integration -m integration
+pytest tests/ -q
 
 # Backend lint + format (still in backend/, ruff comes from .[dev]).
 # `ruff format --check` is a separate CI gate from `ruff check`, so a

@@ -35,6 +35,58 @@ test.describe("Overview page", () => {
     await expect(page.getByRole("heading", { name: "Pending" })).toBeVisible()
   })
 
+  test("only a destructive action's schedule is tagged snap", async ({ page }) => {
+    // BUG-98: every schedule stores snapshot_enabled, but the runner only
+    // snapshots before a destructive action, so the tag promised a
+    // rollback point the non-destructive one never gets.
+    const schedule = (id: number, name: string, destructive: boolean) => ({
+      id,
+      target_kind: "fleet",
+      target_id: null,
+      action_key: `key-${id}`,
+      parameters: {},
+      schedule_cron: "0 4 * * 0",
+      enabled: true,
+      snapshot_enabled: true,
+      verify_enabled: true,
+      auto_rollback: true,
+      batch_size: 1,
+      last_dispatched_at: null,
+      created_at: "2026-10-01T00:00:00Z",
+      updated_at: "2026-10-01T00:00:00Z",
+      target_name: null,
+      action_name: name,
+      pack_name: "bundled",
+      destructive,
+      last_run: null,
+    })
+    await page.route(/\/api\/scheduled-actions\/?(\?.*)?$/, (r) =>
+      r.request().method() === "GET"
+        ? r.fulfill({
+            json: [schedule(9101, "Upgrade Linux packages", true), schedule(9102, "Update Docker Compose images", false)],
+          })
+        : r.fallback(),
+    )
+    await page.goto("/overview?view=upcoming")
+    const row = (name: string) => page.getByText(name, { exact: true }).locator("xpath=../..")
+    await expect(row("Upgrade Linux packages").getByText("snap", { exact: true })).toBeVisible()
+    await expect(row("Update Docker Compose images")).toBeVisible()
+    await expect(row("Update Docker Compose images").getByText("snap", { exact: true })).toHaveCount(0)
+  })
+
+  test("the pane highlights the view that is open", async ({ page }) => {
+    // BUG-97: with trailingSlash the pathname is /overview/, and Summary
+    // stayed highlighted whichever view was open.
+    await page.goto("/overview")
+    const pane = page.getByRole("complementary")
+    const summary = pane.getByRole("link", { name: "Summary" })
+    await expect(summary).toHaveAttribute("aria-current", "page")
+    await pane.getByRole("link", { name: "Fleet state" }).click()
+    await expect(page).toHaveURL(/\/overview\/?\?view=state/)
+    await expect(pane.getByRole("link", { name: "Fleet state" })).toHaveAttribute("aria-current", "page")
+    await expect(summary).not.toHaveAttribute("aria-current", "page")
+  })
+
   test("rail carries the four zones and Settings", async ({ page }) => {
     await page.goto("/overview")
     const rail = page.getByRole("navigation", { name: "Zones" })

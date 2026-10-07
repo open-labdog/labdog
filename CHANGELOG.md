@@ -421,6 +421,31 @@ The format follows [Keep a Changelog]; LabDog follows
   error. It is now held for approval like any other, without a host, and
   refused as out of scope if approved.
 
+- **Overview › Upcoming tags "snap" only on a schedule that takes a
+  snapshot.** A schedule of a non-destructive action, such as Update Docker
+  Compose images, showed the tag although LabDog never snapshots before
+  one, under a footer saying snapshot-backed runs are reversible.
+
+- **The Overview pane highlights the view that is open.** Pending, Fleet
+  state, Activity and Upcoming changed the page, but the highlight stayed
+  on Summary.
+
+- **Discovery › Scan now says which addresses it left out.** A scan skips
+  the addresses that are already hosts in LabDog and never said so, so a
+  range whose only SSH host had just been added by a scan schedule came
+  back "No new SSH hosts found on this network" and read as a miss. The
+  result now names them: "2 addresses are already in LabDog and were not
+  scanned: tester (10.10.10.164), …", or counts them beside the table when
+  the scan found new hosts too.
+
+- **The "Automatic fixes" email shows each command's exit status.** Every
+  line of "What ran" repeated the command inside its status brackets, and
+  a command of about 110 characters or more pushed the exit status out of
+  them: `sed -i … && cat …  [failed: sed -i 's/…/' /etc/ngi]`. The
+  brackets now hold only the outcome and the status, `[failed: exit 4]`.
+  The assistant's transcript shows the same shorter line under each
+  command.
+
 - **Run now on a scan schedule is a manual run again.** The endpoint was
   defined twice and the older copy answered, so a run now still hid the
   hosts you had dismissed from review, and on a disabled schedule it said
