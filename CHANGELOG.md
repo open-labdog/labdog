@@ -412,6 +412,11 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **Overview › Upcoming tags "snap" only on a schedule that takes a
+  snapshot.** A schedule of a non-destructive action, such as Update Docker
+  Compose images, showed the tag although LabDog never snapshots before
+  one, under a footer saying snapshot-backed runs are reversible.
+
 - **Run now on a scan schedule is a manual run again.** The endpoint was
   defined twice and the older copy answered, so a run now still hid the
   hosts you had dismissed from review, and on a disabled schedule it said
