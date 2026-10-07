@@ -412,6 +412,14 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **Discovery › Scan now says which addresses it left out.** A scan skips
+  the addresses that are already hosts in LabDog and never said so, so a
+  range whose only SSH host had just been added by a scan schedule came
+  back "No new SSH hosts found on this network" and read as a miss. The
+  result now names them: "2 addresses are already in LabDog and were not
+  scanned: tester (10.10.10.164), …", or counts them beside the table when
+  the scan found new hosts too.
+
 - **Run now on a scan schedule is a manual run again.** The endpoint was
   defined twice and the older copy answered, so a run now still hid the
   hosts you had dismissed from review, and on a disabled schedule it said

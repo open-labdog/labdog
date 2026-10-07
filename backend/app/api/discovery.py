@@ -21,6 +21,7 @@ from app.schemas.discovery import (
     BulkAddResponse,
     DiscoveredHost,
     FailedHost,
+    KnownHost,
     ScanRequest,
     ScanStatus,
 )
@@ -70,6 +71,7 @@ async def start_scan(
 async def get_scan_status(
     job_id: str,
     _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Poll scan job status."""
     result = AsyncResult(job_id, app=celery_app)
@@ -95,10 +97,23 @@ async def get_scan_status(
             )
             for h in data.get("hosts_found", [])
         ]
+        # Named now rather than by the task, so a host renamed since
+        # shows its current name. Absent from results of older workers.
+        skipped = data.get("skipped_known", [])
+        names: dict[str, str] = {}
+        if skipped:
+            rows = await db.execute(
+                select(Host.ip_address, Host.hostname)
+                .where(Host.ip_address.in_(skipped))
+                .order_by(Host.id)
+            )
+            for ip, hostname in rows.all():
+                names.setdefault(ip, hostname)
         return ScanStatus(
             job_id=job_id,
             status="done",
             hosts_found=hosts_found,
+            skipped_known=[KnownHost(ip=ip, hostname=names.get(ip)) for ip in skipped],
             total=data.get("total_scanned", 0),
             progress=data.get("total_scanned", 0),
         )
