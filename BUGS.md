@@ -158,8 +158,7 @@ container, its database and its logs.
 
 Filed 2026-10-04 while checking this file and TODO.md against `dev`
 at `f1583444`. BUG-109 was first noticed investigating AI session 18
-and is confirmed against lin-manager's database. BUG-110 was
-reproduced locally.
+and is confirmed against lin-manager's database.
 
 ### Correctness — Low
 
@@ -187,38 +186,6 @@ reproduced locally.
 
       Severity Low: nothing runs that should not; the record is
       incomplete.
-
-### Tests — Low
-
-- [ ] **BUG-110** `backend/tests/integration/` — five of the seven
-      integration tests fail, and CI never runs them
-
-      Symptom: `pytest tests/integration` on `dev` fails 5 of 7. Both CI
-      pytest runs pass `--ignore=tests/integration`
-      (`.github/workflows/ci.yml:266`, `:819`), so nothing noticed.
-
-      Root cause: the tests were not updated when the code moved.
-      - `test_gitops_e2e.py::TestWebhookReceiver` (3 tests) post to
-        `/webhooks/github`. BUG-56 (`a03d438a`) moved the route to
-        `/api/webhooks/github`, and the CSRF middleware answers the old
-        path with 403.
-      - `test_gitops_e2e.py::TestMultiModuleGroupYAML::test_full_module_sweep`
-        expects a `workflow` module, which went with the legacy workflow
-        subsystem (`0b3f21c6`).
-      - `test_full_workflow.py` registers and logs in at `/auth/...`.
-        Those routes are under `/api/auth/` now, so the CSRF middleware
-        refuses the first POST. It also shells out to `alembic`, which
-        is found only when the venv's `bin` is on `PATH`.
-
-      Production is unaffected: the main suite covers the moved routes
-      (`tests/test_webhook_csrf.py`).
-
-      Fix direction: update the paths, the module set and the CSRF
-      handling, then either run `tests/integration` in CI or delete what
-      the main suite already covers. A test that nothing runs will rot
-      again.
-
-      Severity Low: test-only.
 
 ---
 
