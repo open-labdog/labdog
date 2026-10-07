@@ -15,12 +15,20 @@ class DiscoveredHost(BaseModel):
     ssh_status: str = "open"  # "open" or "refused"
 
 
+class KnownHost(BaseModel):
+    """An address in the range that is already a host, so was not scanned."""
+
+    ip: str
+    hostname: str | None = None
+
+
 class ScanStatus(BaseModel):
     job_id: str
     status: str  # "pending" | "running" | "done" | "error"
     progress: int = 0  # hosts scanned so far
     total: int = 0  # total hosts to scan
     hosts_found: list[DiscoveredHost] = []
+    skipped_known: list[KnownHost] = []  # in the range, already in LabDog
     error: str | None = None
 
 

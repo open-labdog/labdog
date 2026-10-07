@@ -157,20 +157,36 @@ export function zoneDef(k: ZoneKey): ZoneDef {
   return k === "settings" ? SETTINGS_ZONE : (ZONE_DEFS.find((z) => z.k === k) ?? ZONE_DEFS[0])
 }
 
-/** Which pane item is the current page. Compares path, then `view`/`tab`/`section` params. */
-export function itemIsActive(item: PaneItem, pathname: string, search: URLSearchParams): boolean {
-  const [itemPath, itemQuery] = item.href.split("?")
+/** `/overview/` → `/overview`. `trailingSlash: true` gives every pathname one; item hrefs have none. */
+function withoutTrailingSlash(path: string): string {
+  return path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path
+}
+
+/**
+ * Which pane item is the current page. Compares path, then the
+ * `view`/`tab`/`section` param an item names. `siblings` are the pane's
+ * other items: an item with no query is its path's default view, so it
+ * gives way only to a sibling on the same path that names the view shown.
+ */
+export function itemIsActive(
+  item: PaneItem,
+  pathname: string,
+  search: URLSearchParams,
+  siblings: readonly PaneItem[] = [],
+): boolean {
+  const [href, itemQuery] = item.href.split("?")
+  const itemPath = withoutTrailingSlash(href)
+  const path = withoutTrailingSlash(pathname)
   // A page beneath the item (/groups/3?tab=config) belongs to the item's
   // default entry; its own params say nothing about sibling items.
-  if (pathname !== itemPath) return itemQuery === undefined && pathname.startsWith(itemPath + "/")
-  const itemParams = new URLSearchParams(itemQuery ?? "")
-  // An item with no query is the default view of its path: active only
-  // when no sibling item's discriminating param is set.
+  if (path !== itemPath) return itemQuery === undefined && path.startsWith(itemPath + "/")
+  if (itemQuery === undefined) {
+    return !siblings.some((s) => s !== item && s.href.includes("?") && itemIsActive(s, pathname, search))
+  }
+  const itemParams = new URLSearchParams(itemQuery)
   for (const key of ["view", "tab", "section"]) {
     const want = itemParams.get(key)
-    const have = search.get(key)
-    if (want !== null) return have === want
-    if (have !== null && itemQuery === undefined) return false
+    if (want !== null) return search.get(key) === want
   }
   return true
 }
