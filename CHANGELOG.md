@@ -412,6 +412,10 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **The Overview pane highlights the view that is open.** Pending, Fleet
+  state, Activity and Upcoming changed the page, but the highlight stayed
+  on Summary.
+
 - **Discovery › Scan now says which addresses it left out.** A scan skips
   the addresses that are already hosts in LabDog and never said so, so a
   range whose only SSH host had just been added by a scan schedule came

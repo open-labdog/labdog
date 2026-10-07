@@ -84,33 +84,6 @@ container, its database and its logs.
 
 ### Usability — Low
 
-- [ ] **BUG-97** `frontend/components/shell/zones.ts:161-176` — the
-      Overview pane keeps "Summary" highlighted whichever view is open
-
-      Symptom: in the Overview pane, clicking Pending, Fleet state,
-      Activity or Upcoming changes the page, but the highlight stays on
-      Summary. Reproduced against `next dev`: at
-      `/overview/?view=state` the only link with `aria-current="page"`
-      is Summary.
-
-      Root cause: `next.config.ts` sets `trailingSlash: true`, so the
-      pathname is `/overview/`, while the pane items' hrefs are
-      `/overview` and `/overview?view=...`. In `itemIsActive`,
-      `pathname !== itemPath` is always true. That branch treats the page
-      as one beneath the item, which only matches items without a query:
-      Summary is always active and the query items never are. Items
-      without a query elsewhere (`/hosts`, `/runs`, ...) still work by
-      the same accident, since `/hosts/` starts with `/hosts/`. Overview
-      is the only zone whose items differ by query, so it is the only one
-      visibly broken.
-
-      Fix direction: normalise a trailing slash off `pathname` (and
-      `itemPath`) before comparing in `itemIsActive`. Add a unit test for
-      `itemIsActive` with a trailing-slash pathname, or extend an e2e
-      spec to assert `aria-current` after clicking an Overview item.
-
-      Severity Low: navigation works; only the highlight is wrong.
-
 - [ ] **BUG-98** `frontend/app/(dashboard)/overview/client-page.tsx:119`,
       `frontend/components/scheduled-actions/schedule-action-dialog.tsx:121`
       — a schedule of a non-destructive action shows "snap" although no

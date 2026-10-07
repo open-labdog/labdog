@@ -47,7 +47,7 @@ export function Pane({
       </header>
       <div className="scroll flex flex-1 flex-col gap-px px-2 pb-2">
         {z.items.map((it) => {
-          const on = itemIsActive(it, pathname, search)
+          const on = itemIsActive(it, pathname, search, z.items)
           const n = it.n?.(counts)
           const badge = it.badge?.(counts)
           return (

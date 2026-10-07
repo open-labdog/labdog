@@ -35,6 +35,19 @@ test.describe("Overview page", () => {
     await expect(page.getByRole("heading", { name: "Pending" })).toBeVisible()
   })
 
+  test("the pane highlights the view that is open", async ({ page }) => {
+    // BUG-97: with trailingSlash the pathname is /overview/, and Summary
+    // stayed highlighted whichever view was open.
+    await page.goto("/overview")
+    const pane = page.getByRole("complementary")
+    const summary = pane.getByRole("link", { name: "Summary" })
+    await expect(summary).toHaveAttribute("aria-current", "page")
+    await pane.getByRole("link", { name: "Fleet state" }).click()
+    await expect(page).toHaveURL(/\/overview\/?\?view=state/)
+    await expect(pane.getByRole("link", { name: "Fleet state" })).toHaveAttribute("aria-current", "page")
+    await expect(summary).not.toHaveAttribute("aria-current", "page")
+  })
+
   test("rail carries the four zones and Settings", async ({ page }) => {
     await page.goto("/overview")
     const rail = page.getByRole("navigation", { name: "Zones" })
