@@ -270,60 +270,8 @@ logs.
 ## Open — 2026-10-06 full-auto live test
 
 Filed 2026-10-06 after two live runs of a full-auto alert fix on a test VM
-(AI sessions 25 and 26 on lin-manager). BUG-113 was confirmed against the
-delivered email and the database; BUG-114 is a local pytest collection
-failure, confirmed by the single-file run quoted in it.
-
-### Correctness — Low
-
-- [ ] **BUG-113** `backend/app/notifications/service.py:403`,
-      `backend/app/ai/tools/ssh.py:241` — the "A full-auto investigation
-      changed …" email repeats each command in its status brackets and
-      loses the exit status of a long one
-
-      Symptom: each line of "What ran" is `  - <command>  [failed:
-      <summary>]`, and the summary starts with the command. For a short
-      one that is only redundant: `nginx -t  [failed: nginx -t (exit
-      127)]`. For a command of about 110 characters or more the bracket is
-      cut before the exit status, so the one fact the bracket exists for
-      is gone: `sed -i 's/…/…/' /etc/nginx/conf.d/zz-upload-limits.conf &&
-      cat /etc/nginx/conf.d/zz-upload-limits.conf  [failed: sed -i
-      's/client_max_body_size 50mm;/client_max_body_size 50m;/' /etc/ngi]`.
-      Seen in session 26's email; the exit status (4) is in the database.
-
-      Root cause: on a command that ran, `_run_ssh_command` returns
-      `ToolResult(summary=f"{command[:120]} (exit {exit_status})")`
-      (`ssh.py:241`). The callers store it as `result_summary` with
-      `(result.summary or result.content)[:1000]`: `loop.py:440`,
-      `agent_sdk/runner.py:523` and `approvals.py:231`
-      (`tasks/ai_task.py:270` publishes the same value to the live
-      transcript). The email then prints
-      `one_line(call.result_summary, 120)` after the command it has
-      already printed. The summary is 120 characters of command plus the
-      status, so the 120-character cut always lands inside the command
-      when the command is long. The other `run_ssh_command` outcomes have
-      no command prefix: a refusal stores its reason (`ssh.py:151`), a
-      connection failure `host key mismatch`, `timed out` or `ssh error`
-      (`ssh.py:201/210/218`), and the early returns with no summary at all
-      (no such host, no SSH key, key gone, key unusable) store
-      `result.content` instead.
-
-      Fix direction: fix it at the source. Make the summary at
-      `ssh.py:241` just `exit {exit_status}`. The command in it is
-      redundant everywhere it is shown: the only other reader,
-      `frontend/components/ai/tool-call.tsx`, already uses
-      `arguments.command` as the headline, and the approvals page shows
-      `approval.summary` (from `arguments.purpose`, `approvals.py:96`), not
-      `result_summary`. Stripping the command in the email instead would
-      mean matching the raw `command[:120]` before `clean()` and
-      `one_line()` change it, which breaks when a secret is redacted or
-      cut at character 120, and would still have to leave every other
-      summary above alone. Add a test with a 200-character command that
-      the exit status survives in the email, through both the `AgentLoop`
-      and the Agent SDK runner (`agent_sdk/runner.py:523`) paths.
-
-      Severity Low: the report and the transcript have the detail; the
-      email is the only place that loses it.
+(AI sessions 25 and 26 on lin-manager). BUG-114 is a local pytest
+collection failure, confirmed by the single-file run quoted in it.
 
 ### Tests — Low
 
