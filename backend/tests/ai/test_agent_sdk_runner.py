@@ -27,6 +27,7 @@ from tests.ai.fake_sdk_client import (  # noqa: E402
     rate_limit,
     result,
 )
+from tests.conftest import create_host  # noqa: E402
 
 
 async def _run(db, session, provider_row, messages, *, caps=None, events=None, on_query=None):
@@ -276,6 +277,56 @@ class TestRefusalsAreRecorded:
         assert rows[0].status == "blocked"
         assert rows[0].tool_name == "run_ssh_command"
         assert rows[0].classification == "mutating"
+
+    async def test_a_refused_call_records_its_host(self, db, ai_provider, make_session) -> None:
+        """BUG-109: the API path's refusal carries the host and this one
+        did not, so the audit trail said a command was refused but not
+        where."""
+        host = await create_host(db)
+        session = await make_session(autonomy_level="read_only", target_host_ids=[host.id])
+        runner = AgentSDKRunner(db, session, ai_provider, LoopCaps())
+
+        await runner._can_use_tool(
+            "mcp__labdog__run_ssh_command",
+            {"host_id": host.id, "command": "systemctl restart nginx"},
+            _FakeContext(),
+        )
+
+        [row] = (
+            (await db.execute(select(AIToolCall).where(AIToolCall.session_id == session.id)))
+            .scalars()
+            .all()
+        )
+        assert row.status == "blocked"
+        assert row.target_host_id == host.id
+
+    @pytest.mark.parametrize("named", [987_654, "other", "1", None])
+    async def test_a_host_it_may_not_touch_is_left_unset(
+        self, db, ai_provider, make_session, named
+    ) -> None:
+        """The id comes from the model and the column is a foreign key: a
+        made-up one would fail the insert and lose the record."""
+        host = await create_host(db)
+        other = await create_host(db, ip="10.0.0.2")
+        session = await make_session(autonomy_level="read_only", target_host_ids=[host.id])
+        runner = AgentSDKRunner(db, session, ai_provider, LoopCaps())
+
+        await runner._can_use_tool(
+            "mcp__labdog__run_ssh_command",
+            {
+                "host_id": other.id if named == "other" else named,
+                "command": "systemctl restart nginx",
+            },
+            _FakeContext(),
+        )
+
+        [row] = (
+            (await db.execute(select(AIToolCall).where(AIToolCall.session_id == session.id)))
+            .scalars()
+            .all()
+        )
+        assert row.status == "blocked"
+        assert row.target_host_id is None
 
     async def test_a_permitted_call_is_allowed_and_not_pre_recorded(
         self, db, ai_provider, make_session
