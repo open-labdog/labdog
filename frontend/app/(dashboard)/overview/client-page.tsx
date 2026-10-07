@@ -116,7 +116,8 @@ function SchedRow({ s, radius, fleet }: { s: ScheduledAction; radius: number; fl
       <Tag tone={radius > fleet / 2 && fleet > 1 ? "warn" : undefined} title={`${radius} of ${fleet} hosts — unattended`}>
         {radius} host{radius === 1 ? "" : "s"}
       </Tag>
-      {s.snapshot_enabled && (
+      {/* The flag is stored for every schedule, but only a destructive action snapshots. */}
+      {s.destructive && s.snapshot_enabled && (
         <Tag tone="ok" title="Proxmox snapshot before running">
           snap
         </Tag>

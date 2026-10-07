@@ -76,57 +76,6 @@ content policy.
 
 ---
 
-## Open — 2026-09-28 lin-manager upgrade
-
-Filed 2026-09-28 after upgrading lin-manager (container recreated
-15:34 UTC, migration 0040 applied). Confirmed against the running
-container, its database and its logs.
-
-### Usability — Low
-
-- [ ] **BUG-98** `frontend/app/(dashboard)/overview/client-page.tsx:119`,
-      `frontend/components/scheduled-actions/schedule-action-dialog.tsx:121`
-      — a schedule of a non-destructive action shows "snap" although no
-      snapshot is ever taken
-
-      Symptom: Overview › Scheduled shows a green "snap" tag on "Update
-      Docker Compose images" (`docker-compose-update`, group `docker`).
-      That action's manifest says `destructive: false`, with the comment
-      "No Proxmox snapshot: the playbook waits for health itself and
-      rolls back at the image level". No run of it has snapshotted:
-      every `action_host_runs.snapshot_name` for runs 166-213 is empty.
-      The tag reads as a promise of a rollback point that does not exist,
-      and the panel's footer adds "Snapshot-backed ones are reversible."
-
-      Root cause: the schedule dialog's initial state sets
-      `snapshotEnabled: true` (also `verifyEnabled` and `autoRollback`),
-      and shows the toggles only when `action.destructive`. For a
-      non-destructive action the operator never sees them, and the
-      defaults are saved anyway: schedule 2 on lin-manager has all three
-      true, as do its runs. The runner is right to ignore them
-      (`action_host.py:613` only snapshots when
-      `spec.destructive and spec.snapshot_enabled`), but the Overview row
-      (`SchedRow`) renders the tag from `snapshot_enabled` alone. The
-      Schedules list is not affected: it shows its snap/verify/rollback
-      tags only when `r.destructive`.
-
-      Fix direction: render "snap" on the Overview only when
-      `s.destructive && s.snapshot_enabled`. The schedule response already
-      carries `destructive` (`app/api/scheduled_actions.py:164`, typed in
-      `lib/types.ts`), so this needs no API change. Also stop storing true
-      for non-destructive actions: send `false` from the dialog, or have
-      the API normalise the three flags when the action is not
-      destructive. Optionally a migration clearing them on existing
-      schedules of non-destructive actions. Ad-hoc runs need nothing: the
-      run dialog sends no flags (the column defaults to true, which the
-      runner ignores for a non-destructive action), and the run view shows
-      no "snap" tag.
-
-      Severity Low: nothing runs differently, but the UI claims a
-      rollback point for an unattended action that has none.
-
----
-
 ## Open — 2026-10-04 housekeeping pass
 
 Filed 2026-10-04 while checking this file and TODO.md against `dev`

@@ -412,6 +412,11 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **Overview › Upcoming tags "snap" only on a schedule that takes a
+  snapshot.** A schedule of a non-destructive action, such as Update Docker
+  Compose images, showed the tag although LabDog never snapshots before
+  one, under a footer saying snapshot-backed runs are reversible.
+
 - **The Overview pane highlights the view that is open.** Pending, Fleet
   state, Activity and Upcoming changed the page, but the highlight stayed
   on Summary.
