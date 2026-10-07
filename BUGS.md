@@ -271,8 +271,7 @@ logs.
 
 Filed 2026-10-06 after two live runs of a full-auto alert fix on a test VM
 (AI sessions 25 and 26 on lin-manager). BUG-113 was confirmed against the
-delivered email and the database; BUG-114 is a local pytest collection
-failure, confirmed by the single-file run quoted in it.
+delivered email and the database.
 
 ### Correctness — Low
 
@@ -324,32 +323,3 @@ failure, confirmed by the single-file run quoted in it.
 
       Severity Low: the report and the transcript have the detail; the
       email is the only place that loses it.
-
-### Tests — Low
-
-- [ ] **BUG-114** `backend/tests/ai/conftest.py:9-10` — a single AI test
-      file cannot be run on its own: it fails at startup with
-      "security.secret_key is not set"
-
-      Symptom: `pytest tests/ai/test_alert_autonomy.py` from `backend/`
-      with no `LABDOG_SECURITY__*` variables prints "FATAL: LabDog cannot
-      start: security.secret_key is not set" and runs nothing. Running
-      the whole directory, `pytest tests/ai`, fails the same way, so it is
-      not a workaround. `pytest tests/` works, which is why CI never
-      notices.
-
-      Root cause: `tests/ai/conftest.py` imports `app.ai.loop` and
-      `app.ai.models` at module level. When a path under `tests/ai/` is
-      (or `tests/ai` itself) is named on the command line, pytest loads
-      that conftest as an initial conftest, before any `pytest_configure`
-      hook runs, so the import reads the settings before
-      `tests/conftest.py:76` has set the test keys. Run as `pytest tests/`, the subdirectory conftest is loaded
-      during collection, after `pytest_configure`.
-
-      Fix direction: move the two imports into the fixtures that use them,
-      or set the defaults at the top of `tests/conftest.py`, outside
-      `pytest_configure`. Check both `pytest tests/ai/test_loop.py` and
-      `pytest tests/ai` with a clean environment.
-
-      Severity Low: test-only, and the workaround is exporting the three
-      variables.
