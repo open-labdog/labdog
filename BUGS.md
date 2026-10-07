@@ -157,36 +157,7 @@ container, its database and its logs.
 ## Open — 2026-10-04 housekeeping pass
 
 Filed 2026-10-04 while checking this file and TODO.md against `dev`
-at `f1583444`. BUG-109 was first noticed investigating AI session 18
-and is confirmed against lin-manager's database. BUG-110 was
-reproduced locally.
-
-### Correctness — Low
-
-- [ ] **BUG-109** `backend/app/ai/agent_sdk/runner.py:456-469` — a
-      command refused on the Claude Agent SDK path is recorded without
-      its host
-
-      Symptom: on lin-manager, none of the 6 `run_ssh_command` calls with
-      status `blocked` has a `target_host_id`, while all 18 executed
-      calls and both errored ones do. The instance's only provider is
-      `claude_agent`. The audit trail shows that a command was refused,
-      but not which host it was for.
-
-      Root cause: this path refuses in the SDK permission callback
-      (`_can_use_tool`), before the tool runs, and its `record_refusal`
-      writes the `AIToolCall` without `target_host_id`. The API path
-      refuses inside `tools/ssh.py`, whose `ToolResult` carries
-      `target_host_id=host_id`, and `loop.py` copies it onto the record.
-
-      Fix direction: set `target_host_id` in `record_refusal` from the
-      call's `host_id`, but only when it is an int in the session's
-      `target_host_ids`. The column is a foreign key to `hosts.id`, so a
-      made-up id would fail the insert and lose the record. Add a test
-      that a refused SDK call records its host.
-
-      Severity Low: nothing runs that should not; the record is
-      incomplete.
+at `f1583444`. BUG-110 was reproduced locally.
 
 ### Tests — Low
 

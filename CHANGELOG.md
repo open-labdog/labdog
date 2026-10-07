@@ -412,6 +412,15 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **A command the assistant was refused records which host it was for.**
+  On a Claude subscription (the Agent SDK provider), a refused
+  `run_ssh_command` was listed in the session and the audit trail without
+  its host; the other providers already recorded it. And in a session
+  that asks for approval, a change on a host the session was not given, or
+  on a host id the model made up, failed the whole session with a database
+  error. It is now held for approval like any other, without a host, and
+  refused as out of scope if approved.
+
 - **Run now on a scan schedule is a manual run again.** The endpoint was
   defined twice and the older copy answered, so a run now still hid the
   hosts you had dismissed from review, and on a disabled schedule it said

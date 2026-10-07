@@ -68,7 +68,7 @@ from app.ai import approvals, service
 from app.ai.agent_sdk.bridge import NO_BUILTIN_TOOLS, build_tool_server, local_tool_name
 from app.ai.agent_sdk.environment import build_sdk_env, ensure_state_dir
 from app.ai.alert_autonomy import busy_refusal
-from app.ai.gate import decide
+from app.ai.gate import decide, target_host
 from app.ai.loop import LoopCaps, LoopOutcome, build_system_prompt
 from app.ai.models import AIApprovalRequest, AIProvider, AISession, AIToolCall
 from app.ai.providers.claude_cli import DEFAULT_CONFIG_DIR
@@ -460,6 +460,7 @@ class AgentSDKRunner:
                     tool_name=name,
                     arguments=arguments or {},
                     classification=verdict.classification,
+                    target_host_id=target_host(arguments or {}, self.session.target_host_ids),
                     status="blocked",
                     result_summary=verdict.reason[:1000],
                     started_at=datetime.now(UTC),
