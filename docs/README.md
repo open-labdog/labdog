@@ -416,8 +416,8 @@ Tests use testcontainers to spin up a throwaway PostgreSQL instance automaticall
 
 ```bash
 cd backend && source .venv/bin/activate
-pytest tests/ --ignore=tests/integration -v           # unit/module tests
-pytest tests/integration/ -v -m integration           # integration tests (requires Docker)
+pytest tests/ -v                                      # everything, integration included
+pytest tests/ -v -m "not integration"                 # skip the git round-trip tests
 ```
 
 The test suite covers: audit, auth, cron, crypto, diff, discovery, drift, gitops (converter, importer, lockdown, pipeline, serializer, webhooks), groups, hosts, merge, packages, parsers, renderers, resolver, rules, service commands, services, SSH terminal, sync, and user management.
@@ -636,7 +636,7 @@ labdog/
 │   │   └── workflows/       # Proxmox snapshot / verify / rollback steps
 │   ├── alembic/             # Database migrations
 │   ├── tests/               # pytest suite
-│   │   ├── integration/     # Integration tests (require full stack)
+│   │   ├── integration/     # GitOps round trips through a local git repo
 │   │   └── test_*.py        # Unit/module tests
 │   ├── Dockerfile
 │   └── pyproject.toml
