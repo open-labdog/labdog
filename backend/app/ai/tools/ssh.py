@@ -238,7 +238,10 @@ async def _run_ssh_command(ctx: ToolContext, args: dict[str, Any]) -> ToolResult
         ok=exit_status == 0,
         target_host_id=host_id,
         classification=verdict.classification,
-        summary=f"{command[:120]} (exit {exit_status})",
+        # Only the status: every reader of the summary (the transcript, the
+        # remediation email) already shows the command beside it, and a
+        # command prefix pushed the status out of any cut shorter than it.
+        summary=f"exit {exit_status}",
     )
 
 
