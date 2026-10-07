@@ -412,6 +412,10 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **The Overview pane highlights the view that is open.** Pending, Fleet
+  state, Activity and Upcoming changed the page, but the highlight stayed
+  on Summary.
+
 - **Run now on a scan schedule is a manual run again.** The endpoint was
   defined twice and the older copy answered, so a run now still hid the
   hosts you had dismissed from review, and on a disabled schedule it said
