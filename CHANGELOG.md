@@ -13,6 +13,18 @@ _Nothing yet._
 
 ### Added
 
+- **The run log is coloured, and can be searched.** Ansible's output is
+  stored as plain text, so a `fatal:` line looked like an `ok:` line and a
+  failure had to be read for. The log now colours each line by what it
+  says: results in the status colours, `[ERROR]` and `fatal:` with the
+  explanation and the result under them in red, `[WARNING]` in amber, task
+  and play headers set apart, LabDog's own step lines in blue, and each
+  non-zero count in a `PLAY RECAP` row in its colour. Older runs are
+  coloured too. A search box highlights matches and steps through them, a
+  **first failure** button scrolls to the first failure, and **wrap**
+  switches between wrapping and scrolling sideways. Copying still gives
+  the plain text.
+
 - **The run log and the SSH terminal can be resized, maximized and
   minimized.** Both had a fixed size: the log 60% of the window, the
   terminal its panel, at a text size nobody could change. Each now has

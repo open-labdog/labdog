@@ -1,11 +1,13 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { API_BASE, apiFetch } from "@/lib/api"
 import { toast } from "sonner"
 import { Banner, PageHead, RunStatus, Table, Window } from "@/components/ld"
 import type { ActionHostRun, ActionRun } from "@/lib/types"
+import { AnsibleLog, findMatches } from "@/components/ansible-log"
+import { FAILURE_KINDS, parseAnsibleLog } from "@/lib/ansible-log"
 
 const TERMINAL = new Set(["succeeded", "failed", "partial", "cancelled"])
 
@@ -55,6 +57,8 @@ export function ActionRunDetail({ runId }: { runId: number }) {
   // Which host's log to show, by ActionHostRun.id. null = combined view.
   const [selectedHostRunId, setSelectedHostRunId] = useState<number | null>(null)
   const [pinToBottom, setPinToBottom] = useState(true)
+  const [query, setQuery] = useState("")
+  const [current, setCurrent] = useState(0)
   const outputRef = useRef<HTMLPreElement>(null)
   // Tracks the runId we've already loaded persisted output for, so the
   // terminal fetch runs exactly once per run (see the effect below).
@@ -135,9 +139,10 @@ export function ActionRunDetail({ runId }: { runId: number }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId, run?.status, queryClient])
 
+  // A search holds the view on its match, so it suspends the pin.
   useEffect(() => {
-    if (pinToBottom && outputRef.current) outputRef.current.scrollTop = outputRef.current.scrollHeight
-  }, [output, hostOutputs, selectedHostRunId, pinToBottom])
+    if (pinToBottom && !query && outputRef.current) outputRef.current.scrollTop = outputRef.current.scrollHeight
+  }, [output, hostOutputs, selectedHostRunId, pinToBottom, query])
 
   // Toggle the per-host log filter. Clicking the active host clears back
   // to the combined view. Fetches the host's log on demand if it isn't
@@ -176,6 +181,28 @@ export function ActionRunDetail({ runId }: { runId: number }) {
   const selectedHost = selectedHostRunId !== null ? run?.host_runs.find((hr) => hr.id === selectedHostRunId) ?? null : null
   const selectedLabel = selectedHost ? hostLabel(selectedHost) : null
   const paneText = selectedHostRunId !== null ? hostOutputs[selectedHostRunId] ?? "" : output
+  const lines = useMemo(() => parseAnsibleLog(paneText), [paneText])
+  const matches = useMemo(() => findMatches(lines, query), [lines, query])
+  const firstFailure = useMemo(() => lines.findIndex((l) => FAILURE_KINDS.has(l.kind) && !l.cont), [lines])
+  const failureCount = useMemo(() => lines.filter((l) => FAILURE_KINDS.has(l.kind) && !l.cont).length, [lines])
+
+  /** Centre `el` in the log without scrolling the page around it. */
+  const reveal = (el: Element | null | undefined) => {
+    const pre = outputRef.current
+    if (!pre || !(el instanceof HTMLElement)) return
+    pre.scrollTop = el.offsetTop - pre.clientHeight / 2
+  }
+  const goToMatch = (i: number) => {
+    if (matches.length === 0) return
+    const next = (i + matches.length) % matches.length
+    setCurrent(next)
+    // After the re-render that moves the "current" highlight.
+    requestAnimationFrame(() => reveal(outputRef.current?.querySelector(`[data-match="${next}"]`)))
+  }
+  const jumpToFailure = () => {
+    setPinToBottom(false)
+    reveal(outputRef.current?.querySelector(`[data-line="${firstFailure}"]`))
+  }
   const paneFallback = selectedHostRunId !== null
     ? hostOutputs[selectedHostRunId] === undefined ? "Loading…" : "(no output captured for this host)"
     : isLoading ? "Loading…" : isTerminal ? "(no output captured)" : "Waiting for output…"
@@ -237,22 +264,60 @@ export function ActionRunDetail({ runId }: { runId: number }) {
           defaultFontSize={11}
           escRestores
           testId="log-window"
-          actions={
-            <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-text-3">
-              <input type="checkbox" checked={pinToBottom} onChange={(e) => setPinToBottom(e.target.checked)} /> pin to bottom
-            </label>
-          }
-        >
-          {({ fontSize }) => (
-            <pre
-              ref={outputRef}
-              data-testid="run-log"
-              className="mono scroll m-0 min-h-0 flex-1 px-2.5 py-2 leading-[1.75] text-text-2"
-              style={{ fontSize, whiteSpace: "pre-wrap", wordBreak: "break-word" }}
-            >
-              {paneText || paneFallback}
-            </pre>
+          actions={({ pref, update }) => (
+            <>
+              <div className="flex items-center gap-1">
+                <input
+                  type="search"
+                  className="inp mono"
+                  style={{ width: 150, height: 22, padding: "0 6px", fontSize: 11 }}
+                  placeholder="search the log"
+                  aria-label="Search the log"
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value)
+                    setCurrent(0)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault()
+                      goToMatch(current + (e.shiftKey ? -1 : 1))
+                    } else if (e.key === "Escape" && query) {
+                      // Clears the search first; a second Esc can leave a maximized log.
+                      e.preventDefault()
+                      setQuery("")
+                    }
+                  }}
+                />
+                {query && (
+                  <span className="mono num text-[10.5px] text-text-3" data-testid="search-count">
+                    {matches.length ? `${current + 1}/${matches.length}` : "0/0"}
+                  </span>
+                )}
+              </div>
+              {firstFailure >= 0 && (
+                <button type="button" className="btn btn-sm" style={{ color: "var(--danger)" }} onClick={jumpToFailure}>
+                  {failureCount > 1 ? `first of ${failureCount} failures ↓` : "first failure ↓"}
+                </button>
+              )}
+              <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-text-3">
+                <input type="checkbox" checked={pref.wrap} onChange={(e) => update({ wrap: e.target.checked })} /> wrap
+              </label>
+              <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-text-3">
+                <input type="checkbox" checked={pinToBottom} onChange={(e) => setPinToBottom(e.target.checked)} /> pin to bottom
+              </label>
+            </>
           )}
+        >
+          {({ fontSize, pref }) =>
+            paneText ? (
+              <AnsibleLog lines={lines} fontSize={fontSize} wrap={pref.wrap} query={query} current={current} preRef={outputRef} />
+            ) : (
+              <pre ref={outputRef} data-testid="run-log" className="mono scroll m-0 min-h-0 flex-1 px-2.5 py-2 leading-[1.75] text-text-3" style={{ fontSize }}>
+                {paneFallback}
+              </pre>
+            )
+          }
         </Window>
       </div>
     </>

@@ -87,6 +87,34 @@ The text size, the height and whether it is minimized are remembered in
 this browser, separately for the log and the terminal. Nothing is saved on
 the server.
 
+The log is coloured by what each line says, so a failure stands out from
+the tasks around it:
+
+| Colour | Lines |
+|---|---|
+| Green | `ok:` results |
+| Amber | `changed:`, `rescued:`, `...ignoring` and `[WARNING]` |
+| Red | `failed:`, `fatal:`, `unreachable:` and `[ERROR]`, with the result or explanation under them, and LabDog's own lines when they report a failure (`[verify] … status=failed`) |
+| Grey | `skipping:` and `included:` |
+| Blue | `PLAY` headers and LabDog's own step lines (`[preflight]`, `[snapshot]`, `[cleanup]`, …) |
+| Bold | `TASK` headers |
+
+In each `PLAY RECAP` row the host is bold and each count that is not zero
+takes its colour: `failed` and `unreachable` red, `changed` amber.
+
+Also in the log's header:
+
+- **Search the log** highlights every match and shows how many there are.
+  **Enter** goes to the next, **Shift+Enter** to the previous, and **Esc**
+  clears the search.
+- **first failure ↓** appears when the log has a failure and scrolls to the
+  first one; it turns off *pin to bottom* so the log stays there.
+- **wrap** switches between wrapping long lines and scrolling sideways,
+  remembered like the text size.
+
+Copying from the log gives the plain text Ansible printed; the colours are
+not part of it.
+
 A multi-host run survives LabDog restarting in the middle of it — which
 upgrading Docker on LabDog's own host will do. Within about ten minutes
 LabDog notices that nothing is handing out the run's hosts any more and
