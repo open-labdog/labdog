@@ -364,6 +364,21 @@ The format follows [Keep a Changelog]; LabDog follows
   1–1000; and the settings reference gains `ssh.command_timeout`,
   `logging.run_retention_days` and `logging.drift_retention_days`.
 
+- **An action pack's playbook may not import files that sit next to it.**
+  Only the playbook's own text and the pack's roles reach a run, so a
+  playbook that pulled in a relative path with `import_tasks`,
+  `include_tasks`, `vars_files` or `import_playbook` failed before its first
+  task; the private pack's `docker-compose-update` did. Such a playbook is
+  now refused when the pack loads, with a log line naming the files, rather
+  than when someone runs it. Move the imported files into a role. Imports
+  inside roles, and paths that are only resolved at run time, are not
+  affected, and no bundled action does this.
+
+- **The schedule dialog's host and group pickers can be searched.** They
+  were native selects, which only jump to the first option starting with
+  what you type. Every word typed must now appear in a host's name or
+  address, so `node 10.0.2` narrows to that subnet's nodes.
+
 ### Removed
 
 - The `INTEGRATIONS` nav group, the sometimes-present Pending collapsible,
@@ -608,6 +623,59 @@ The format follows [Keep a Changelog]; LabDog follows
   name but marked them used only after pairing them all, so two
   `run_ssh_command`s in one turn both showed the first — and the second, with
   its result or the approval it was waiting on, never appeared in its place.
+
+- **The web terminal works behind a reverse proxy again.** 0.10.0 started
+  checking the terminal's origin against `security.allowed_origins`, which
+  a deployment serving the UI and the API from one host had no reason to
+  set, so every terminal ended at once with "Connection failed: Closed
+  (1006)". The terminal now accepts its own origin; the setting is only
+  needed for a frontend served from elsewhere. A refused handshake is
+  logged with the origin and the host it came to.
+- **Enabled services no longer show as permanent drift.** A state
+  collection looked for enablement in a column `systemctl list-units`
+  does not have, so every service with `enabled: true` sat out of sync
+  (`enabled_mismatch`) on hosts without drift checks, and a sync could not
+  clear it. Collection now reads `systemctl list-unit-files`, and a host
+  whose enablement is unknown is not reported as drifted.
+- **Two runs on overlapping groups no longer wait on each other for
+  good.** A group run held every member host for as long as it ran,
+  including hosts it had finished and hosts it had not reached, so a
+  nightly `linux-upgrade` on one group and `docker-compose-update` on a
+  group inside it each waited for the other until one was failed six
+  hours later. A group run now holds a host only while its own run on
+  that host is working: hosts take one run at a time, groups do not.
+- **"Collect all" no longer ends with a warning that reads `''`.** A host
+  run that wrote no output kept a column default of two quote characters,
+  which the host page showed as a warning after every collection.
+  Migration 0040 fixes the default and empties the rows written with it.
+- **A host's last sync time is recorded.** A sync stamped only the
+  per-module rows, so the host itself always read "never". It is now
+  stamped when a sync finishes, and migration 0041 fills it in from the
+  sync history already there.
+- **The first Git repository and the first action pack added to an older
+  install no longer fail.** On an install from before May 2026 the first
+  new row in each table collided with the seeded one and answered 500;
+  the retry worked. Migration 0039 repairs every id sequence left in that
+  state.
+- **Conflicts answer 4xx, not 500.** A Git repository or action pack name
+  that is already taken, by a create or a rename, is a 409; switching a
+  pack's source without the field the new source needs is a 400 naming
+  it; and an action parameter refused for its content (template
+  delimiters) is a 422 with the reason, not an opaque 500.
+- **An assistant session that reaches its token budget stops for that
+  reason instead of failing.** On a Claude subscription each API response
+  arrives as one message per content block, all carrying the whole
+  response's usage, and each was counted, so a run reached
+  `ai.max_tokens_total` at about half what it had used. The interrupt at
+  the cap could also land inside a database write and fail the session
+  with "This Session's transaction has been rolled back", hiding the real
+  reason. Usage is counted once per response, a call cut off by the
+  interrupt is closed as interrupted and never runs, and the session
+  reports the cap.
+- **Settings › Fleet no longer shows two "uncategorised" cards.**
+  `ssh.command_timeout` and `logging.drift_retention_days` are filed under
+  SSH and Logging, and a test now fails when a setting is left out of the
+  page's categories.
 
 ### Security
 
