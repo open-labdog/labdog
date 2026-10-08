@@ -37,6 +37,76 @@ Each release notes in `CHANGELOG.md` whether it carries breaking
 schema changes, deprecated config fields, or non-reversible
 migrations. Read that section before upgrading.
 
+### Upgrading to 0.11.0
+
+Nothing is required. Every new thing that can change a host or send mail
+is off until you turn it on: alert investigations stay read-only, no
+alert is on the full-auto list, no mail server is configured and nobody
+is subscribed, and schedules keep reading their cron expressions in UTC.
+Four things are worth checking.
+
+**1. The AI assistant refuses more at read-only.** A command now counts
+as read-only only in a form listed in `backend/app/ai/command_policy.yaml`;
+a subcommand or option the list does not name counts as a change. Before,
+it was the other way round, so most of `qm`, `pct` and `pvesh`, container
+runtimes, systemd tools, `ip`, package managers and storage tools ran in a
+read-only session whatever the subcommand. `wget`, `man`, `xxd`, `initctl`
+and `at` now need approval too. A read-only session, which is what
+scheduled checks and alert investigations run as by default, will be
+refused commands it used to run. The refusal names the read-only forms of
+the command, so the assistant usually finds one; if a scheduled check
+keeps failing on one, look at its refused calls in the session. See
+[Autonomy levels](ui/assistant.md#autonomy-levels).
+
+**2. Retention keys in `labdog.toml` now log a warning at startup.**
+`audit_retention_days`, `run_retention_days` and `drift_retention_days`
+under `[logging]`, or as `LABDOG_LOGGING__…` variables, never did
+anything: retention is read only from **Settings › System**. Check that
+the values there are what you meant to keep, then delete the keys. The
+packaged `labdog.toml` no longer has them, so a `.deb` or `.rpm` upgrade
+of a modified config may ask which version to keep.
+
+**3. A pack playbook that imports a file next to it is no longer loaded.**
+Only the playbook's own text and the pack's roles reach a run, so a
+playbook using `import_tasks`, `include_tasks`, `vars_files` or
+`import_playbook` with a relative path never got past its first task. It
+is now refused when the pack loads: the action is missing from the
+library, and the log says `pack '<name>': failed to load manifest …`,
+naming the files. Move them into a role. No bundled action is affected.
+
+**4. If you rotated the encryption key on 0.10.0 or earlier**, re-enter
+each Git repository's webhook secret. The rotation script skipped that
+column, so signed push webhooks have answered 500 since, and GitOps has
+not imported a push. See
+[encryption-key-rotation.md](encryption-key-rotation.md).
+
+Smaller things to know:
+
+- **The `security.allowed_origins` workaround for the web terminal** from
+  the 0.10.0 notes can go: the terminal accepts its own origin again. Keep
+  the setting only for a frontend served from another host.
+- **Email** needs `notifications.public_url` set before it sends anything
+  with a link; LabDog will not build links from a request's `Host`
+  header. See [Notifications](ui/notifications.md).
+- **Full auto for named alerts** needs Grafana's contact point to send
+  resolved notifications, or every fix is judged as not working, and it is
+  refused on the machine LabDog itself runs on. See
+  [Alerts](ui/alerts.md#full-auto-for-named-alerts).
+- **Setting `scheduling.timezone`** keeps every schedule's clock time and
+  moves it to the new zone: `0 3 * * *` then runs at 03:00 there. Check
+  existing schedules after changing it.
+- **The navigation was rebuilt.** Old URLs (`/dashboard`, `/schedules`,
+  `/action-packs`, `/hosts/discover`, `/groups/{id}/rules` and the other
+  module pages) redirect, so bookmarks keep working.
+- **Docker:** no compose change is needed.
+
+Eight migrations (`0039`–`0046`) apply with the normal step below. All
+are forward-safe. Three repair data and leave it repaired on downgrade:
+`0039` advances id sequences, `0040` empties host-run output that was
+two quote characters, `0041` fills in each host's last sync time.
+Downgrading past `0045` and `0046` drops the mail settings, outbox and
+subscriptions, and the rollback history.
+
 ### Upgrading to 0.10.0
 
 This release is mostly the fixes from a full security and correctness
