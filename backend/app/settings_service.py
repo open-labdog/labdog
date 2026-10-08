@@ -12,7 +12,7 @@ from app.ai.alert_autonomy import validate_alertnames
 from app.ai.alert_mission import DEFAULT_TEMPLATE as DEFAULT_ALERT_MISSION
 from app.ai.alert_mission import FIELDS as ALERT_MISSION_FIELDS
 from app.ai.alert_mission import validate_template as validate_alert_mission
-from app.cron_walk import TIMEZONE_SETTING, validate_timezone
+from app.cron_walk import TIMEZONE_SETTING, timezone_names, validate_timezone
 from app.models.app_setting import AppSetting
 from app.notifications.urls import validate_public_url
 
@@ -143,6 +143,10 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "type": "string",
         "default": "UTC",
         "validator": validate_timezone,
+        # Offered, not enforced: the validator decides, so a legacy or
+        # alias name already saved stays valid. A callable, evaluated per
+        # request, so importing this module does not scan the tz database.
+        "suggestions": timezone_names,
         "description": "Timezone that schedule cron expressions are read in.",
         "help": (
             "An IANA name such as Europe/Stockholm. Covers scheduled actions and discovery "
@@ -597,6 +601,7 @@ async def get_all_settings(db: AsyncSession) -> list[dict]:
                 "min": defn.get("min"),
                 "max": defn.get("max"),
                 "choices": defn.get("choices"),
+                "suggestions": defn["suggestions"]() if "suggestions" in defn else None,
                 "max_length": defn.get("max_length"),
                 "updated_at": db_row.updated_at.isoformat()
                 if db_row and db_row.updated_at
