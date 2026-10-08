@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
-import { Help, Panel, Tag } from "@/components/ld"
+import { Help, Panel, Picker, Tag } from "@/components/ld"
 
 interface AppSetting {
   key: string
@@ -21,6 +21,13 @@ interface AppSetting {
   min?: number | null
   max?: number | null
   choices?: string[] | null
+  /**
+   * Values to offer in a searchable list, for a setting with too many to
+   * show as a select (the ~600 IANA timezones). Unlike `choices` they are
+   * not enforced: the server's validator decides, so a value saved before
+   * it was listed stays as it is.
+   */
+  suggestions?: string[] | null
   /** Character cap for `text` settings. Absent on every other type. */
   max_length?: number | null
   updated_at: string | null
@@ -448,6 +455,26 @@ export function SettingsEditor({
       )
     }
 
+    if (setting.suggestions) {
+      const options = setting.suggestions.map((v) => ({ value: v, label: v }))
+      // A saved value the list does not have (a legacy alias) is still shown as selected.
+      if (!setting.suggestions.includes(currentValue)) options.unshift({ value: currentValue, label: currentValue })
+      return (
+        <div className="flex items-start gap-1.5">
+          <div style={{ width: 240 }}>
+            <Picker<string>
+              options={options}
+              value={currentValue}
+              onChange={(v) => v !== null && setValue(setting.key, v)}
+              placeholder="Type to search…"
+              testId={`setting-${setting.key}`}
+            />
+          </div>
+          {saveButton}
+        </div>
+      )
+    }
+
     if (setting.choices || isToggle(setting)) {
       const options = setting.choices
         ? setting.choices.map((c) => ({ value: c, label: c }))
@@ -493,8 +520,9 @@ export function SettingsEditor({
     const setting = settingsMap.get(key)
     if (!setting) return null
     const stacked = isMultiline(setting)
+    // A searchable list opens below its input; centring would slide the label down with it.
     return (
-      <div key={key} className={`flex gap-3 border-b border-line-faint px-[11px] py-[9px] last:border-b-0 ${stacked ? "flex-col" : "items-center"}`}>
+      <div key={key} className={`flex gap-3 border-b border-line-faint px-[11px] py-[9px] last:border-b-0 ${stacked ? "flex-col" : setting.suggestions ? "items-start" : "items-center"}`}>
         <div className="min-w-0 flex-1">
           <div className="text-xs text-text">{setting.description}</div>
           {/* Both lines are operative text an operator reads and quotes:

@@ -18,6 +18,7 @@ from app.cron_walk import (
     iter_fire_times,
     next_fire_time,
     resolve_timezone,
+    timezone_names,
     validate_timezone,
 )
 
@@ -116,6 +117,30 @@ def test_the_setting_runs_the_validator():
     assert ss._validate(TIMEZONE_SETTING, " Europe/Stockholm ") == "Europe/Stockholm"
     with pytest.raises(ValueError, match=f"^{TIMEZONE_SETTING}: unknown timezone"):
         ss._validate(TIMEZONE_SETTING, "Europe/Nowhere")
+
+
+def test_every_offered_name_is_one_the_validator_takes():
+    """The settings page offers these. One the server then refused would
+    be a dropdown entry that cannot be saved."""
+    names = timezone_names()
+    assert {"UTC", "Europe/Stockholm", "America/New_York", "US/Eastern"} <= set(names)
+    assert names == sorted(names)
+    for name in names:
+        assert validate_timezone(name) == name
+
+
+async def test_the_settings_api_offers_them(superuser_client):
+    resp = await superuser_client.get("/api/settings")
+    assert resp.status_code == 200
+    by_key = {s["key"]: s for s in resp.json()}
+    assert by_key[TIMEZONE_SETTING]["suggestions"] == timezone_names()
+    # Offered, not enforced: no choices, so a saved alias stays valid.
+    assert by_key[TIMEZONE_SETTING]["choices"] is None
+    assert by_key["drift.check_interval_minutes"]["suggestions"] is None
+
+
+def test_names_that_are_not_places_are_not_offered():
+    assert not {"localtime", "posixrules", "Factory"} & set(timezone_names())
 
 
 def test_an_unloadable_stored_name_falls_back_to_utc(caplog):

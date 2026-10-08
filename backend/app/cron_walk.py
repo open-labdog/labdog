@@ -23,8 +23,9 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator
 from datetime import UTC, datetime, tzinfo
+from functools import cache
 from typing import TYPE_CHECKING
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 from croniter import croniter
 
@@ -46,6 +47,19 @@ _ALIASES = {
     "@midnight": "0 0 * * *",
     "@hourly": "0 * * * *",
 }
+
+
+# Loadable, but not a place: the server's own clock, a template file, and
+# a zone that reads "-00". Still accepted if typed; just not offered.
+_NOT_OFFERED = frozenset({"localtime", "posixrules", "Factory"})
+
+
+@cache
+def timezone_names() -> list[str]:
+    """The IANA names the settings page offers for ``scheduling.timezone``,
+    sorted. Taken from the tz database ``validate_timezone`` loads from, so
+    the page never offers a name the server would refuse."""
+    return sorted(available_timezones() - _NOT_OFFERED)
 
 
 def validate_timezone(name: str) -> str:

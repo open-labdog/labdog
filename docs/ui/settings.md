@@ -67,7 +67,7 @@ always visible.
 
 | Setting | Key | Default | Range | Description |
 |---------|-----|---------|-------|-------------|
-| Timezone | `scheduling.timezone` | `UTC` | IANA name | The timezone [scheduled actions](scheduled-actions.md#timezone) and cron-scheduled discovery scans read their cron expressions in, e.g. `Europe/Stockholm`. Changing it keeps each schedule's clock time and moves it to the new zone — `0 3 * * *` then runs at 03:00 there — so check existing schedules afterwards. Cron jobs LabDog manages on hosts run on each host's own clock and are not affected. |
+| Timezone | `scheduling.timezone` | `UTC` | IANA name | The timezone [scheduled actions](scheduled-actions.md#timezone) and cron-scheduled discovery scans read their cron expressions in, e.g. `Europe/Stockholm`. Picked from a searchable list of the names the server knows: type any part of one, such as `stockholm` or `new york`. Changing it keeps each schedule's clock time and moves it to the new zone — `0 3 * * *` then runs at 03:00 there — so check existing schedules afterwards. Cron jobs LabDog manages on hosts run on each host's own clock and are not affected. |
 
 ### Workflows
 

@@ -108,8 +108,8 @@ The format follows [Keep a Changelog]; LabDog follows
 - **Schedules can run on local time.** A new setting,
   `scheduling.timezone` under Settings › Fleet › Scheduling, names the
   timezone every scheduled action's and cron-scheduled discovery scan's
-  expression is read in. It defaults to `UTC`, so nothing moves on
-  upgrade. Set it to `Europe/Stockholm` and `1 4 * * 0` runs at 04:01
+  expression is read in, picked from a searchable list of the IANA names
+  the server knows. It defaults to `UTC`, so nothing moves on upgrade. Set it to `Europe/Stockholm` and `1 4 * * 0` runs at 04:01
   Stockholm time all year; on UTC it ran at 06:01 in summer and 05:01 in
   winter. Across a daylight-saving change, a time the clock skips runs
   once at the jump and a time it repeats runs once, as in Vixie cron.

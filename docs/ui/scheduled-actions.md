@@ -112,8 +112,8 @@ timing alone.
 ## Timezone
 
 Every cron expression is read in one timezone, `scheduling.timezone` in
-[Settings › Fleet](settings.md#scheduling). It defaults to `UTC`; set it to
-an IANA name such as `Europe/Stockholm` and `1 4 * * 0` runs at 04:01 on
+[Settings › Fleet](settings.md#scheduling). It defaults to `UTC`; pick an
+IANA name such as `Europe/Stockholm` from the searchable list there, and `1 4 * * 0` runs at 04:01 on
 Stockholm's clock all year, summer and winter. Discovery scans with a
 cron schedule follow the same setting. Cron jobs LabDog manages on hosts
 do not: they run on each host's own clock.

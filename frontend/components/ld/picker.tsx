@@ -3,8 +3,8 @@
 import { useId, useState } from "react"
 import { Command } from "cmdk"
 
-export interface PickerOption {
-  value: number
+export interface PickerOption<V extends string | number = number> {
+  value: V
   label: string
   /** Shown after the label, dimmer, and searched like it — an IP address. */
   meta?: string
@@ -21,7 +21,7 @@ export interface PickerOption {
  * own layer. Built on cmdk, which the command palette already uses, so the
  * arrow keys and Enter behave the same in both.
  */
-export function Picker({
+export function Picker<V extends string | number = number>({
   options,
   value,
   onChange,
@@ -31,9 +31,9 @@ export function Picker({
   testId,
   className = "",
 }: {
-  options: PickerOption[]
-  value: number | null
-  onChange: (value: number | null) => void
+  options: PickerOption<V>[]
+  value: V | null
+  onChange: (value: V | null) => void
   placeholder: string
   disabled?: boolean
   empty?: string
@@ -46,7 +46,7 @@ export function Picker({
   const selected = options.find((o) => o.value === value) ?? null
   const shown = selected ? (selected.meta ? `${selected.label} · ${selected.meta}` : selected.label) : ""
 
-  const pick = (o: PickerOption) => {
+  const pick = (o: PickerOption<V>) => {
     onChange(o.value)
     setQuery("")
     setOpen(false)
