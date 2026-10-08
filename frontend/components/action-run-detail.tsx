@@ -4,10 +4,13 @@ import { useEffect, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { API_BASE, apiFetch } from "@/lib/api"
 import { toast } from "sonner"
-import { Banner, CodeBlock, PageHead, RunStatus, Table } from "@/components/ld"
+import { Banner, PageHead, RunStatus, Table, Window } from "@/components/ld"
 import type { ActionHostRun, ActionRun } from "@/lib/types"
 
 const TERMINAL = new Set(["succeeded", "failed", "partial", "cancelled"])
+
+// What the log was before it could be resized: 60% of a typical window.
+const LOG_DEFAULT_HEIGHT = 560
 
 // Strip terminal control sequences from Ansible output.
 //
@@ -211,31 +214,46 @@ export function ActionRunDetail({ runId }: { runId: number }) {
         {run?.status === "pending" && run.pending_reason && <Banner tone="warn">Waiting: {run.pending_reason}</Banner>}
 
         {isMultiHost && run && (
-          <Table<ActionHostRun>
-            cols={[
-              { k: "host", label: "host", w: "minmax(140px,1fr)", sortable: false, cell: (hr) => <span className="mono trunc">{hostLabel(hr)}{hr.host_id === null && <span className="text-text-faint"> (deleted)</span>}</span> },
-              { k: "status", label: "status", w: "120px", right: true, sortable: false, cell: (hr) => <RunStatus s={hr.status} reason={hr.pending_reason} /> },
-            ]}
-            rows={run.host_runs}
-            keyOf={(hr) => hr.id}
-            onRowClick={(hr) => selectHostRun(hr.id)}
-            activeKey={selectedHostRunId ?? undefined}
-            footer={selectedHostRunId !== null && <button type="button" className="btn btn-sm btn-ghost" onClick={() => setSelectedHostRunId(null)}>show all hosts</button>}
-          />
+          // Its own scroll past ~9 rows, so the log below cannot squeeze it.
+          <div className="flex shrink-0 flex-col" style={{ maxHeight: 320 }}>
+            <Table<ActionHostRun>
+              cols={[
+                { k: "host", label: "host", w: "minmax(140px,1fr)", sortable: false, cell: (hr) => <span className="mono trunc">{hostLabel(hr)}{hr.host_id === null && <span className="text-text-faint"> (deleted)</span>}</span> },
+                { k: "status", label: "status", w: "120px", right: true, sortable: false, cell: (hr) => <RunStatus s={hr.status} reason={hr.pending_reason} /> },
+              ]}
+              rows={run.host_runs}
+              keyOf={(hr) => hr.id}
+              onRowClick={(hr) => selectHostRun(hr.id)}
+              activeKey={selectedHostRunId ?? undefined}
+              footer={selectedHostRunId !== null && <button type="button" className="btn btn-sm btn-ghost" onClick={() => setSelectedHostRunId(null)}>show all hosts</button>}
+            />
+          </div>
         )}
 
-        <CodeBlock
+        <Window
+          storageKey="log"
           title={selectedLabel ? `ansible output — ${selectedLabel}` : "ansible output"}
+          defaultHeight={LOG_DEFAULT_HEIGHT}
+          defaultFontSize={11}
+          escRestores
+          testId="log-window"
           actions={
             <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-text-3">
               <input type="checkbox" checked={pinToBottom} onChange={(e) => setPinToBottom(e.target.checked)} /> pin to bottom
             </label>
           }
-          maxH="60vh"
-          preRef={outputRef}
         >
-          {paneText || paneFallback}
-        </CodeBlock>
+          {({ fontSize }) => (
+            <pre
+              ref={outputRef}
+              data-testid="run-log"
+              className="mono scroll m-0 min-h-0 flex-1 px-2.5 py-2 leading-[1.75] text-text-2"
+              style={{ fontSize, whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+            >
+              {paneText || paneFallback}
+            </pre>
+          )}
+        </Window>
       </div>
     </>
   )

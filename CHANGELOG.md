@@ -13,6 +13,19 @@ _Nothing yet._
 
 ### Added
 
+- **The run log and the SSH terminal can be resized, maximized and
+  minimized.** Both had a fixed size: the log 60% of the window, the
+  terminal its panel, at a text size nobody could change. Each now has
+  **A−**/**A+** for the text size, a button that fills the browser window
+  with it, one that folds it to its header, and a strip along its bottom
+  edge to drag for the height (double-click for the default). The choices
+  are remembered in the browser, separately for the log and the terminal.
+  Minimizing the terminal keeps its session, and a new text size resizes
+  the remote terminal so full-screen programs redraw to fit. **Esc**
+  leaves a maximized log but not the terminal, where it belongs to the
+  shell. A multi-host run's host table no longer gets squeezed by the
+  log: it keeps its own height and scrolls past about nine hosts.
+
 - **LabDog checks an automatic fix afterwards, and rolls back one that
   made the host worse.** `ai.alert_remediation_check_minutes` (default
   10) after a full-auto alert session that changed its host ends, LabDog
