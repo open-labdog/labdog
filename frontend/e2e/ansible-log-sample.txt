@@ -1,0 +1,158 @@
+[preflight] host reachable
+[snapshot] created labdog-242-1790857608 on pve1/200
+[playbook] exit=0 status=successful
+=== Ansible output ===
+
+PLAY [Upgrade Linux packages] **************************************************
+
+TASK [Gathering Facts] *********************************************************
+[WARNING]: Host 'web1' is using the discovered Python interpreter at '/usr/bin/python3.13', but future installation of another Python interpreter could cause a different interpreter to be discovered. See https://docs.ansible.com/ansible-core/2.21/reference_appendices/interpreter_discovery.html for more information.
+ok: [web1]
+
+TASK [role-apt-upgrade : Fail if OS family is not Debian] **********************
+skipping: [web1]
+
+TASK [role-apt-upgrade : Show upgrade plan] ************************************
+ok: [web1] => {
+    "msg": "Upgrade plan for web1 (Debian trixie): Standard upgrade — always runs.  Dist-upgrade — skipped. "
+}
+
+TASK [role-apt-upgrade : Include upgrade tasks] ********************************
+included: /var/lib/labdog/packs/1/roles/role-apt-upgrade/tasks/upgrade.yml for web1
+
+TASK [role-apt-upgrade : Upgrade | Check available disk space] *****************
+ok: [web1]
+
+TASK [role-apt-upgrade : Upgrade | Abort if disk space is insufficient] ********
+skipping: [web1]
+
+TASK [role-apt-upgrade : Upgrade | Check for broken packages] ******************
+ok: [web1]
+
+TASK [role-apt-upgrade : Upgrade | Abort if broken packages are detected] ******
+skipping: [web1]
+
+TASK [role-apt-upgrade : Upgrade | Update apt package index] *******************
+ok: [web1]
+
+TASK [role-apt-upgrade : Upgrade | Abort if apt update failed] *****************
+skipping: [web1]
+
+TASK [role-apt-upgrade : Upgrade | Upgrade packages (safe)] ********************
+changed: [web1]
+
+TASK [role-apt-upgrade : Upgrade | Full-upgrade packages] **********************
+ok: [web1]
+
+TASK [role-apt-upgrade : Upgrade | Include cleanup tasks] **********************
+included: /var/lib/labdog/packs/1/roles/role-apt-upgrade/tasks/cleanup.yml for web1
+
+TASK [role-apt-upgrade : Remove unused dependencies] ***************************
+ok: [web1]
+
+TASK [role-apt-upgrade : Clean partial package cache] **************************
+ok: [web1]
+
+TASK [role-apt-upgrade : Purge full package cache] *****************************
+ok: [web1]
+
+TASK [role-apt-upgrade : Upgrade | Check if reboot is required] ****************
+ok: [web1]
+
+TASK [role-apt-upgrade : Upgrade | Gather service facts] ***********************
+skipping: [web1]
+
+TASK [role-apt-upgrade : Upgrade | Determine which blocked services are running] ***
+skipping: [web1]
+
+TASK [role-apt-upgrade : Upgrade | Warn about services preventing reboot] ******
+skipping: [web1]
+
+TASK [role-apt-upgrade : Upgrade | Reboot node if required] ********************
+skipping: [web1]
+
+TASK [role-apt-upgrade : Include dist-upgrade tasks] ***************************
+skipping: [web1]
+
+TASK [role-apt-upgrade : Dist-upgrade | Deploy NIC rename fix script] **********
+skipping: [web1]
+
+TASK [role-apt-upgrade : Dist-upgrade | Deploy NIC rename fix systemd unit] ****
+skipping: [web1]
+
+TASK [role-apt-upgrade : Dist-upgrade | Enable NIC rename fix service] *********
+skipping: [web1]
+
+TASK [role-apt-upgrade : Reboot node after dist-upgrade] ***********************
+skipping: [web1]
+
+TASK [role-apt-upgrade : Post-reboot | Verify connectivity] ********************
+skipping: [web1]
+
+TASK [role-apt-upgrade : Post-reboot | Gather network facts] *******************
+skipping: [web1]
+
+TASK [role-apt-upgrade : Post-reboot | Report network status] ******************
+skipping: [web1]
+
+PLAY RECAP *********************************************************************
+web1                      : ok=13   changed=1    unreachable=0    failed=0    skipped=16   rescued=0    ignored=0   
+
+[verify] pack playbook exit=2 status=failed passed=False
+=== Verify playbook output ===
+
+PLAY [Verify host is healthy after upgrade] ************************************
+
+TASK [SSH round-trip] **********************************************************
+[WARNING]: Host 'web1' is using the discovered Python interpreter at '/usr/bin/python3.13', but future installation of another Python interpreter could cause a different interpreter to be discovered. See https://docs.ansible.com/ansible-core/2.21/reference_appendices/interpreter_discovery.html for more information.
+ok: [web1]
+
+TASK [Read 1-minute load average (re-sample until it settles)] *****************
+ok: [web1]
+
+TASK [Assert load is below threshold] ******************************************
+ok: [web1] => {
+    "changed": false,
+    "msg": "All assertions passed"
+}
+
+TASK [Read root filesystem usage] **********************************************
+ok: [web1]
+
+TASK [Assert root disk has headroom] *******************************************
+ok: [web1] => {
+    "changed": false,
+    "msg": "All assertions passed"
+}
+
+TASK [Collect systemd unit states] *********************************************
+ok: [web1]
+
+TASK [Compute failed units not covered by the ignore allowlist] ****************
+ok: [web1]
+
+TASK [Determine offending failed units] ****************************************
+ok: [web1]
+
+TASK [Assert no unexpected systemd unit is in 'failed' state] ******************
+[ERROR]: Task failed: Action failed: One or more systemd units are failed: ['chronyd.service']
+Origin: /tmp/labdog-action-xxxxxxxx-verify/project/playbook.yml:106:7
+
+104           {{ _failed_units | reject('in', _ignored_failed_units) | list }}
+105
+106     - name: Assert no unexpected systemd unit is in 'failed' state
+          ^ column 7
+
+fatal: [web1]: FAILED! => {
+    "assertion": "_offending_failed_units | length == 0",
+    "changed": false,
+    "evaluated_to": false,
+    "msg": "One or more systemd units are failed: ['chronyd.service']"
+}
+
+PLAY RECAP *********************************************************************
+web1                      : ok=8    changed=0    unreachable=0    failed=1    skipped=0    rescued=0    ignored=0   
+
+[rollback] restoring labdog-242-1790857608
+[rollback] success=True
+[cleanup] snapshot labdog-242-1790857608 deleted after rollback

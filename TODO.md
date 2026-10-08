@@ -149,40 +149,19 @@ host at all.
 
 ---
 
-## Terminal and log windows — size, text size, readability
+## Terminal and log windows — follow-ups
 
-**Context:** Both windows have a fixed size. The SSH terminal
-(`components/ssh-terminal.tsx`) hard-codes `fontSize: 14` and fills its
-panel. The run log (`components/action-run-detail.tsx`) is a `CodeBlock`
-capped at `maxH="60vh"`, set in the shared 11px `text-text-2` style. The
-log is also hard to scan: ANSI is stripped (`ANSIBLE_NOCOLOR=1`), so a
-long playbook is one wall of grey text in which a `fatal:` line looks the
-same as an `ok:` line.
+Shipped in 0.11.0: resize, maximize, minimize and text size on both
+windows, and a coloured, searchable run log with wrap and a jump to the
+first failure (`components/ld/window.tsx`, `lib/ansible-log.ts`). Left:
 
-- **Resize and minimize.** Add a drag handle or `resize: vertical`, a
-  maximize toggle (fill the viewport) and a minimize/collapse toggle to
-  both windows. Minimizing the SSH terminal must hide it, not unmount it,
-  or the session drops. Skip `fitAddon.fit()` while it is hidden: fitting
-  to a 0×0 box sends a nonsense `sendResize` to the remote PTY.
-- **Text size.** Add A−/A+ (or a small picker) on both windows. For xterm,
-  set `term.options.fontSize`, then `fit()` and `sendResize`. For the log,
-  give `CodeBlock` a font-size prop or CSS variable, not a second
-  hard-coded class. Remember the choice per browser in `localStorage`;
-  this is a viewer convenience, not a setting.
-- **Easier-to-read log output.** Colour Ansible's structure on the client,
-  since the raw text carries no colour any more:
-  - `PLAY` / `TASK` headers set apart as section rules.
-  - `ok:` / `changed:` / `skipping:` / `failed:` / `fatal:` /
-    `unreachable:` lines in the status tones `RunStatus` already uses.
-  - `PLAY RECAP` rendered as a small per-host table.
-
-  Worth considering alongside it:
-  - A wrap on/off toggle.
-  - "Jump to first failure".
-  - Collapsing a task's lines under its header.
-  - In-log search.
-
-  Keep the plain text intact for copy and paste.
+- **Collapse a task's lines under its header** in the run log. The parser
+  already marks every `TASK` line; a fold needs a way to keep the copied
+  text whole.
+- **Show `PLAY RECAP` as a per-host table.** The recap rows are coloured
+  in place now; a table would read better for a big group run, but has to
+  sit outside the `<pre>` so a copy of the log stays the text Ansible
+  printed.
 
 ---
 
