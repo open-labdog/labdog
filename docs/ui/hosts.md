@@ -275,6 +275,13 @@ A full browser-based SSH terminal powered by xterm.js. The connection goes
 through the LabDog server over a WebSocket — no direct SSH access from the
 browser is needed.
 
+The terminal window has the same controls as a run's log (see
+[Running actions](actions.md#running-actions)): text size, minimize,
+maximize and a resize strip along its bottom edge. Minimizing keeps the
+session open. A new text size resizes the remote terminal too, so
+full-screen programs redraw to fit. **Esc** belongs to the shell — `vim`
+and `less` need it — so leave a maximized terminal with **⤡**.
+
 ### Notes
 
 - Sessions close after the idle timeout (`ssh.idle_timeout_seconds` in

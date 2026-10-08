@@ -202,6 +202,7 @@ exported from `@/components/ld`:
 | `Tag`, `Dot`, `Status`, `RunStatus`, `Provenance`, `Kbd`, `Empty` | Atoms — a chip, a status dot, a host sync status, a run status, the "comes from" chip, a key cap, an empty state |
 | `Banner` | A toned sentence with an optional action; `flush` for full width, `pulse` for waiting-on-you |
 | `Facts`, `Stat`, `CodeBlock`, `Copy` | A key/value grid · a big number · a scrolling code/log block (pinnable to the bottom) · a copy button |
+| `Window` | A log or terminal the viewer can size: text size, minimize (hides, never unmounts), maximize to the browser window, a drag strip for the height; all remembered per browser |
 | `Spark`, `Meter`, `StatusBar` | A sparkline · a percentage bar that turns amber above 75% and red above 90% · the fleet status bar |
 | `Modal` | The dialog — title, meta, **esc**, a scrolling body, a footer strip. `onSubmit` turns the whole popup into a form. |
 | `Confirm` | The one yes/no dialog — see [Confirmation Dialogs](#confirmation-dialogs) |

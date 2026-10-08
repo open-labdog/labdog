@@ -10,10 +10,21 @@ import { useTerminalWebSocket } from "@/hooks/use-terminal-websocket"
 interface SshTerminalProps {
   hostId: number
   hostname: string
+  /** Changing it resizes the text in place; the session is kept. */
+  fontSize?: number
 }
 
-export function SshTerminal({ hostId, hostname }: SshTerminalProps) {
+/** A hidden (minimized) container measures 0×0, and fitting to it would
+ *  tell the remote PTY it has a nonsense size. */
+function hasSize(el: HTMLElement | null): boolean {
+  return !!el && el.clientWidth > 0 && el.clientHeight > 0
+}
+
+export function SshTerminal({ hostId, hostname, fontSize = 14 }: SshTerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null)
+  // Read when the terminal is created, so a size change does not recreate
+  // it (and drop the session); the effect below applies later changes.
+  const fontSizeRef = useRef(fontSize)
   const xtermRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const [connectKey, setConnectKey] = useState(0)
@@ -32,7 +43,7 @@ export function SshTerminal({ hostId, hostname }: SshTerminalProps) {
 
     const term = new Terminal({
       cursorBlink: true,
-      fontSize: 14,
+      fontSize: fontSizeRef.current,
       fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
       theme: {
         background: "#1a1b26",
@@ -49,7 +60,7 @@ export function SshTerminal({ hostId, hostname }: SshTerminalProps) {
     term.loadAddon(webLinksAddon)
     term.open(terminalRef.current)
 
-    fitAddon.fit()
+    if (hasSize(terminalRef.current)) fitAddon.fit()
 
     term.onData((data) => {
       sendData(new TextEncoder().encode(data))
@@ -66,11 +77,13 @@ export function SshTerminal({ hostId, hostname }: SshTerminalProps) {
 
     connect()
 
+    const container = terminalRef.current
     const resizeObserver = new ResizeObserver(() => {
+      if (!hasSize(container)) return
       fitAddon.fit()
       sendResize(term.cols, term.rows)
     })
-    resizeObserver.observe(terminalRef.current)
+    resizeObserver.observe(container)
 
     return () => {
       resizeObserver.disconnect()
@@ -83,6 +96,16 @@ export function SshTerminal({ hostId, hostname }: SshTerminalProps) {
     // hostId), so this re-runs on reconnect (connectKey) and host switch —
     // never capturing a stale connect.
   }, [connectKey, connect, sendData, sendResize, close])
+
+  useEffect(() => {
+    fontSizeRef.current = fontSize
+    const term = xtermRef.current
+    if (!term || term.options.fontSize === fontSize) return
+    term.options.fontSize = fontSize
+    if (!hasSize(terminalRef.current)) return
+    fitAddonRef.current?.fit()
+    sendResize(term.cols, term.rows)
+  }, [fontSize, sendResize])
 
   return (
     <div className="flex flex-col h-full">

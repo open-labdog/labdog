@@ -74,6 +74,19 @@ the output to just that host's log; **show all hosts** returns to the
 combined view, which prefixes each host's section with a
 `===== hostname =====` header.
 
+The log window's header has its own controls, and the same ones are on the
+SSH terminal:
+
+- **A− / A+** make the text smaller or larger.
+- **▾** minimizes the window to its header; **▴** brings it back.
+- **⤢** maximizes it to fill the browser window; **⤡** or **Esc** restores it.
+- The strip along the bottom edge resizes the window: drag it, or
+  double-click it to go back to the default height.
+
+The text size, the height and whether it is minimized are remembered in
+this browser, separately for the log and the terminal. Nothing is saved on
+the server.
+
 A multi-host run survives LabDog restarting in the middle of it — which
 upgrading Docker on LabDog's own host will do. Within about ten minutes
 LabDog notices that nothing is handing out the run's hosts any more and
