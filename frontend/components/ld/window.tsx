@@ -25,7 +25,7 @@ const MIN_HEIGHT = 120
 /**
  * A log or a terminal the viewer can size: the CodeBlock header (tag, mono
  * title, meta, the caller's actions) plus text size, minimize and maximize,
- * over a body whose height a handle on the bottom edge drags. Height, text
+ * over a body whose height a handle on its free edge drags. Height, text
  * size, minimized and wrap are remembered per browser under
  * `labdog.window.<storageKey>`.
  *
@@ -36,6 +36,13 @@ const MIN_HEIGHT = 120
  *
  * `defaultHeight="fill"` takes the space the parent's flex column offers
  * until the viewer drags the handle; a number is a height in pixels.
+ *
+ * `anchor` is the edge that stays put. A top-anchored window (the
+ * terminal) has its handle at the bottom and grows downwards; a
+ * bottom-anchored one (the run log, docked under the host table) has it at
+ * the top and grows upwards, over whatever is above it in the column. Either
+ * way it never grows past its parent's box, so the handle cannot be dragged
+ * out of reach.
  */
 export function Window({
   title,
@@ -47,6 +54,7 @@ export function Window({
   defaultFontSize,
   fontRange = [9, 18],
   escRestores = false,
+  anchor = "top",
   className,
   testId,
   children,
@@ -60,6 +68,7 @@ export function Window({
   defaultFontSize: number
   fontRange?: [number, number]
   escRestores?: boolean
+  anchor?: "top" | "bottom"
   className?: string
   testId?: string
   children: (s: WindowState) => ReactNode
@@ -75,7 +84,7 @@ export function Window({
   // rather than to storage on every pointer move.
   const [dragHeight, setDragHeight] = useState<number | null>(null)
   const boxRef = useRef<HTMLDivElement>(null)
-  const drag = useRef<{ y: number; h: number } | null>(null)
+  const drag = useRef<{ y: number; h: number; max: number } | null>(null)
 
   const [minFont, maxFont] = fontRange
   const fontSize = Math.min(maxFont, Math.max(minFont, pref.fontSize))
@@ -91,16 +100,31 @@ export function Window({
     return () => window.removeEventListener("keydown", onKey)
   }, [maximized, escRestores])
 
-  const clampHeight = (h: number) => Math.round(Math.min(Math.max(h, MIN_HEIGHT), window.innerHeight - 24))
+  /** The tallest the window can be without leaving its parent's content
+   *  box: from the anchored edge to the parent's opposite edge. */
+  const maxHeight = (): number => {
+    const box = boxRef.current
+    const parent = box?.parentElement
+    if (!box || !parent) return window.innerHeight
+    const b = box.getBoundingClientRect()
+    const p = parent.getBoundingClientRect()
+    const cs = getComputedStyle(parent)
+    return anchor === "bottom"
+      ? b.bottom - (p.top + parseFloat(cs.paddingTop) + parseFloat(cs.borderTopWidth))
+      : p.bottom - parseFloat(cs.paddingBottom) - parseFloat(cs.borderBottomWidth) - b.top
+  }
+  const clampHeight = (h: number, max: number) => Math.round(Math.min(Math.max(h, MIN_HEIGHT), Math.max(MIN_HEIGHT, max)))
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (!boxRef.current) return
     e.preventDefault()
     e.currentTarget.setPointerCapture(e.pointerId)
-    drag.current = { y: e.clientY, h: boxRef.current.getBoundingClientRect().height }
+    drag.current = { y: e.clientY, h: boxRef.current.getBoundingClientRect().height, max: maxHeight() }
   }
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (drag.current) setDragHeight(clampHeight(drag.current.h + e.clientY - drag.current.y))
+    if (!drag.current) return
+    const dy = e.clientY - drag.current.y
+    setDragHeight(clampHeight(drag.current.h + (anchor === "bottom" ? -dy : dy), drag.current.max))
   }
   const onPointerUp = () => {
     if (drag.current && dragHeight !== null) update({ height: dragHeight })
@@ -116,8 +140,24 @@ export function Window({
       : height === null && defaultHeight === "fill"
         ? "min-h-0 flex-1"
         : "shrink-0"
-  const style = maximized || hidden ? undefined : { height: height ?? (defaultHeight === "fill" ? undefined : defaultHeight) }
+  // maxHeight guards a remembered height on a smaller window than it was set on.
+  const style = maximized || hidden ? undefined : { height: height ?? (defaultHeight === "fill" ? undefined : defaultHeight), maxHeight: "100%" }
   const ctl = "btn btn-sm btn-ghost mono"
+  const handle = !maximized && !hidden && (
+    <div
+      role="separator"
+      aria-orientation="horizontal"
+      aria-label="Drag to resize; double-click for the default size"
+      title="drag to resize · double-click to reset"
+      className={`h-[7px] shrink-0 cursor-ns-resize border-line bg-surface-2 hover:bg-surface-3 ${anchor === "top" ? "border-t" : "border-b"}`}
+      style={{ touchAction: "none" }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      onDoubleClick={() => update({ height: null })}
+    />
+  )
 
   return (
     <div
@@ -125,9 +165,12 @@ export function Window({
       data-testid={testId}
       data-maximized={maximized || undefined}
       data-minimized={hidden || undefined}
-      className={`flex min-w-0 flex-col overflow-hidden rounded-r border border-line bg-surface ${sizing} ${className ?? ""}`}
+      // mt-auto keeps a bottom-anchored window on the bottom edge when there
+      // is nothing above it to take up the space.
+      className={`flex min-w-0 flex-col overflow-hidden rounded-r border border-line bg-surface ${sizing} ${anchor === "bottom" && !maximized ? "mt-auto" : ""} ${className ?? ""}`}
       style={style}
     >
+      {anchor === "bottom" && handle}
       <div className={`flex shrink-0 items-center gap-2 bg-surface-2 px-2.5 py-1.5 ${hidden ? "" : "border-b border-line"}`}>
         {tag}
         {title != null && <span className="mono trunc text-[11.5px] text-text">{title}</span>}
@@ -167,21 +210,7 @@ export function Window({
       <div className="flex min-h-0 flex-1 flex-col" style={{ display: hidden ? "none" : undefined }}>
         {children(state)}
       </div>
-      {!maximized && !hidden && (
-        <div
-          role="separator"
-          aria-orientation="horizontal"
-          aria-label="Drag to resize; double-click for the default size"
-          title="drag to resize · double-click to reset"
-          className="h-[7px] shrink-0 cursor-ns-resize border-t border-line bg-surface-2 hover:bg-surface-3"
-          style={{ touchAction: "none" }}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
-          onDoubleClick={() => update({ height: null })}
-        />
-      )}
+      {anchor === "top" && handle}
     </div>
   )
 }

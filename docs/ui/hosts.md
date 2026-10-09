@@ -277,7 +277,8 @@ browser is needed.
 
 The terminal window has the same controls as a run's log (see
 [Running actions](actions.md#running-actions)): text size, minimize,
-maximize and a resize strip along its bottom edge. Minimizing keeps the
+maximize and a resize strip along its bottom edge, which stops at the
+bottom of the page. Minimizing keeps the
 session open. A new text size resizes the remote terminal too, so
 full-screen programs redraw to fit. **Esc** belongs to the shell — `vim`
 and `less` need it — so leave a maximized terminal with **⤡**.
