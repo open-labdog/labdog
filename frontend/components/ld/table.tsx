@@ -1,6 +1,6 @@
 "use client"
 
-import type { ReactNode } from "react"
+import { Fragment, type ReactNode } from "react"
 import { toneSoft, type Tone } from "./tone"
 
 export interface Col<T> {
@@ -30,6 +30,8 @@ export function Table<T>({
   onSelect,
   onRowClick,
   activeKey,
+  expandedKey,
+  renderExpanded,
   dense = true,
   empty = "Nothing here",
   rowTone,
@@ -45,6 +47,9 @@ export function Table<T>({
   onSelect?: (s: Set<string | number>) => void
   onRowClick?: (row: T) => void
   activeKey?: string | number
+  /** The row whose detail panel is open, rendered full-width right under it. */
+  expandedKey?: string | number
+  renderExpanded?: (row: T) => ReactNode
   dense?: boolean
   empty?: ReactNode
   rowTone?: (row: T) => Tone | undefined
@@ -122,49 +127,59 @@ export function Table<T>({
           const k = keyOf(r)
           const sel = selected?.has(k)
           const active = activeKey === k
+          const expanded = !!renderExpanded && expandedKey === k
           const tone = rowTone?.(r)
           return (
-            <div
-              key={k}
-              role="row"
-              className="row-hover grid border-b border-line-faint"
-              onClick={onRowClick ? () => onRowClick(r) : undefined}
-              style={{
-                gridTemplateColumns: grid,
-                cursor: onRowClick ? "pointer" : "default",
-                background: active ? "var(--accent-soft)" : sel ? "var(--surface-3)" : tone ? toneSoft(tone) : "transparent",
-                boxShadow: active ? "inset 2px 0 0 var(--accent)" : "none",
-              }}
-            >
-              {selected && onSelect && (
-                <label role="cell" onClick={(e) => e.stopPropagation()} className="flex items-center" style={{ padding: pad }}>
-                  <input
-                    type="checkbox"
-                    aria-label="select row"
-                    checked={!!sel}
-                    onChange={(e) => {
-                      const n = new Set(selected)
-                      if (e.target.checked) n.add(k)
-                      else n.delete(k)
-                      onSelect(n)
-                    }}
-                    style={{ accentColor: "var(--accent)" }}
-                  />
-                </label>
-              )}
-              {cols.map((c) => (
-                <div
-                  key={c.k}
-                  role="cell"
-                  className="flex min-w-0 items-center text-xs text-text-2"
-                  style={{ padding: pad, justifyContent: c.right ? "flex-end" : "flex-start" }}
-                >
-                  <div className={c.nowrap === false ? "" : "trunc"} style={{ minWidth: 0, width: c.right ? "auto" : "100%" }}>
-                    {c.cell(r)}
+            <Fragment key={k}>
+              <div
+                role="row"
+                aria-expanded={expanded || undefined}
+                className={`row-hover grid ${expanded ? "" : "border-b border-line-faint"}`}
+                onClick={onRowClick ? () => onRowClick(r) : undefined}
+                style={{
+                  gridTemplateColumns: grid,
+                  cursor: onRowClick ? "pointer" : "default",
+                  background: active ? "var(--accent-soft)" : sel ? "var(--surface-3)" : tone ? toneSoft(tone) : "transparent",
+                  boxShadow: active ? "inset 2px 0 0 var(--accent)" : "none",
+                }}
+              >
+                {selected && onSelect && (
+                  <label role="cell" onClick={(e) => e.stopPropagation()} className="flex items-center" style={{ padding: pad }}>
+                    <input
+                      type="checkbox"
+                      aria-label="select row"
+                      checked={!!sel}
+                      onChange={(e) => {
+                        const n = new Set(selected)
+                        if (e.target.checked) n.add(k)
+                        else n.delete(k)
+                        onSelect(n)
+                      }}
+                      style={{ accentColor: "var(--accent)" }}
+                    />
+                  </label>
+                )}
+                {cols.map((c) => (
+                  <div
+                    key={c.k}
+                    role="cell"
+                    className="flex min-w-0 items-center text-xs text-text-2"
+                    style={{ padding: pad, justifyContent: c.right ? "flex-end" : "flex-start" }}
+                  >
+                    <div className={c.nowrap === false ? "" : "trunc"} style={{ minWidth: 0, width: c.right ? "auto" : "100%" }}>
+                      {c.cell(r)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {expanded && (
+                <div role="row" className="border-b border-line-faint" style={{ background: "var(--accent-soft)", boxShadow: "inset 2px 0 0 var(--accent)" }}>
+                  <div role="cell" aria-colspan={cols.length + (selected ? 1 : 0)} style={{ padding: dense ? "2px 10px 9px" : "4px 10px 12px" }}>
+                    {renderExpanded(r)}
                   </div>
                 </div>
-              ))}
-            </div>
+              )}
+            </Fragment>
           )
         })}
       </div>

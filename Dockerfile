@@ -38,29 +38,6 @@ COPY VERSION .
 RUN uv export --frozen --no-emit-project --extra agent --format requirements-txt -o /tmp/req.txt \
     && uv pip install --no-cache-dir --system -r /tmp/req.txt
 
-# ── Stage 2b: Fetch bundled action pack at a pinned ref ───────────────
-# The bundled pack used to be a byte-identical mirror committed at
-# backend/app/ansible/. We replaced that with a build-time clone so the
-# repo stays clean and the bundle's provenance is a single git ref
-# tracked in the top-level LABDOG_PLAYBOOKS_REF file.
-#
-# All actual clone logic lives in scripts/fetch-bundled-pack.sh -- one
-# source of truth shared with packaging/Makefile, dev/dev.sh, and the
-# CI workflow.
-#
-# CI passes LABDOG_PLAYBOOKS_REF / LABDOG_PLAYBOOKS_REPO via build-args
-# (sourced from the repo-root LABDOG_PLAYBOOKS_REF file + the workflow's
-# own configuration). A local ``docker build`` without overrides uses
-# whatever defaults are pinned below.
-FROM alpine/git:v2.54.0@sha256:0b5f57d22181e8b8fbe8ac5ca8754faa0d577f101b9857418f1acc43955ad464 AS bundled-pack-fetcher
-ARG LABDOG_PLAYBOOKS_REPO=https://github.com/open-labdog/labdog-playbooks.git
-ARG LABDOG_PLAYBOOKS_REF=main
-ENV LABDOG_PLAYBOOKS_REPO=${LABDOG_PLAYBOOKS_REPO}
-ENV LABDOG_PLAYBOOKS_REF=${LABDOG_PLAYBOOKS_REF}
-COPY scripts/fetch-bundled-pack.sh /usr/local/bin/fetch-bundled-pack
-RUN chmod +x /usr/local/bin/fetch-bundled-pack \
-    && /usr/local/bin/fetch-bundled-pack /bundle
-
 # ── Stage 3: Runtime ──────────────────────────────────────────────────
 FROM python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
 WORKDIR /app
@@ -134,9 +111,8 @@ RUN set -eu; \
     ln -sf "$bundled" /usr/local/bin/claude; \
     /usr/local/bin/claude --version
 
-# Backend source (app + alembic). ``backend/app/ansible`` is excluded
-# from the in-repo copy via .dockerignore so the build-time clone
-# (next COPY) is the only source for the bundled pack.
+# Backend source (app + alembic). Action packs are not part of the image:
+# they are synced from git at runtime (the seeded labdog-playbooks pack).
 COPY --chown=labdog:labdog backend/app/ app/
 COPY --chown=labdog:labdog backend/alembic/ alembic/
 COPY --chown=labdog:labdog backend/alembic.ini alembic.ini
@@ -145,10 +121,6 @@ COPY --chown=labdog:labdog backend/alembic.ini alembic.ini
 # version. Ship the VERSION file at the app root so /api/version (and thus the
 # healthcheck) resolves it — see app/api/version.py:_resolve_version().
 COPY --chown=labdog:labdog VERSION VERSION
-
-# Bundled action pack: cloned from labdog-playbooks at build time at
-# the LABDOG_PLAYBOOKS_REF pinned in the repo (see Stage 2b above).
-COPY --from=bundled-pack-fetcher --chown=labdog:labdog /bundle/ app/ansible/
 
 # Frontend static files
 COPY --from=frontend-builder --chown=labdog:labdog /app/out/ /usr/lib/labdog/frontend/out/

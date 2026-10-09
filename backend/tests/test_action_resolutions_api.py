@@ -207,7 +207,7 @@ async def test_resolutions_router_accessible_to_regular_user(regular_user_client
     r1 = await regular_user_client.get("/api/action-resolutions")
     assert r1.status_code == 200
     # PUT/DELETE reach business-logic errors (409/404), not auth errors
-    r2 = await regular_user_client.put("/api/action-resolutions/hello", json={"pack_id": None})
+    r2 = await regular_user_client.put("/api/action-resolutions/hello", json={"pack_id": 1})
     r3 = await regular_user_client.delete("/api/action-resolutions/hello")
     assert r2.status_code not in (401, 403)
     assert r3.status_code not in (401, 403)

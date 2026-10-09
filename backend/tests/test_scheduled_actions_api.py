@@ -11,7 +11,7 @@ from app.models.action_run import ActionRun
 from app.models.scheduled_action import ScheduledAction
 from tests.conftest import create_group, create_host
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("sample_pack")]
 
 
 @pytest.fixture(autouse=True)

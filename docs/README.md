@@ -591,7 +591,7 @@ See [ui/alerts.md](./ui/alerts.md) for the intake paths, deduplication, and the 
 | `POST` | `/api/grafana/instances/{id}/test` · `/api/grafana/instances/test` | Connection test (saved instance / pre-save draft) |
 | `GET` | `/api/grafana/hosts/{id}/metrics` | Instant CPU/memory/disk for a host (queried from the default Mimir instance by the `labdog_host_id` label) |
 
-See [ui/host-metrics.md](./ui/host-metrics.md) for the end-to-end loop with the bundled Alloy install action.
+See [ui/host-metrics.md](./ui/host-metrics.md) for the end-to-end loop with the Alloy install action from `labdog-playbooks`.
 
 ### Metrics export (outbound — Prometheus scrapes LabDog)
 | Method | Path | Description |
@@ -608,7 +608,6 @@ labdog/
 ├── backend/
 │   ├── app/
 │   │   ├── actions/         # Pack loader, registry, manifest schema, git sync
-│   │   ├── ansible/         # Bundled action pack (gitignored; fetched at build time from labdog-playbooks)
 │   │   ├── ansible_runtime/ # Playbook composer + ansible-runner wrapper
 │   │   ├── api/             # FastAPI route handlers (incl. /api/version)
 │   │   ├── audit/           # Audit logging

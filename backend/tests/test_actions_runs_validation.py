@@ -17,7 +17,7 @@ import pytest
 
 from tests.conftest import create_host
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("sample_pack")]
 
 
 @pytest.fixture
@@ -131,7 +131,7 @@ async def test_supports_fleet_exposed_in_actions_listing(superuser_client, db):
 #
 # `_builtin.collect_state` is used deliberately: it declares no parameters,
 # so its param model is empty and rejects *any* extra key. That makes it
-# both the tightest case and one that does not depend on the bundled pack
+# both the tightest case and one that does not depend on the sample pack
 # being present.
 
 

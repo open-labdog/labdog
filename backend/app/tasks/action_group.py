@@ -336,8 +336,9 @@ async def _run_action_group_async(action_run_id: int) -> None:
         master_key = get_master_key()
 
         async with task_session() as db:
-            # Current before the lookup, not only on a miss: a key the
-            # bundled pack also has never misses (BUG-105).
+            # Current before the lookup, not only on a miss: a key this
+            # process knows from an older build never misses, and would
+            # run whichever pack won back then (BUG-105).
             await ensure_registry_current(db)
             run_result = await db.execute(select(ActionRun).where(ActionRun.id == action_run_id))
             run: ActionRun = run_result.scalar_one()

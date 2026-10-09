@@ -859,7 +859,7 @@ async def dispatch_next_pending_for_host(
 
             # The task's time limits come from the action's own timeouts, so
             # this process's registry has to know the action: a pool process
-            # still on the bundled pack would size a git-pack action's limits
+            # still on the built-ins alone would size a pack action's limits
             # from the defaults (BUG-105). After the commit, as it requires.
             from app.actions.registry import ensure_registry_current
             from app.tasks.action_orchestrator import send_host_task

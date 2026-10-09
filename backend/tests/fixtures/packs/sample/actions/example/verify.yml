@@ -1,0 +1,8 @@
+---
+- name: Test fixture
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Do nothing
+      ansible.builtin.debug:
+        msg: fixture

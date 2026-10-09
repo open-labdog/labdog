@@ -61,7 +61,7 @@ async def _check_due_async() -> dict:
     async with task_session() as db:
         # Before any lookup below. This runs on whichever pool process the
         # tick lands on, and one that had not rebuilt since it was forked
-        # held the bundled pack alone: every git-pack schedule was skipped
+        # held the built-ins alone: every pack schedule was skipped
         # as unknown until a tick happened to land elsewhere (BUG-105).
         await ensure_registry_current(db)
         tz = await get_schedule_timezone(db)

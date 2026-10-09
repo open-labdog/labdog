@@ -307,7 +307,7 @@ export interface ClaimAllKeysResponse {
 }
 
 export interface ResolutionPack {
-  pack_id: number | null
+  pack_id: number
   pack_name: string
 }
 
@@ -332,8 +332,7 @@ export interface ContestedActionKey {
 }
 
 export interface ActionResolutionRequest {
-  /** Null = bundled wins. */
-  pack_id: number | null
+  pack_id: number
 }
 
 // ---------------------------------------------------------------------------
@@ -361,9 +360,8 @@ export interface DetectedGitopsFile {
 
 export interface KeyOwner {
   key: string
-  source: "bundled" | "db_pack"
   pack_name: string
-  pack_id: number | null
+  pack_id: number
 }
 
 export interface KeyConflict {
@@ -389,10 +387,8 @@ export interface ActivateKeyResolution {
   action_key: string
   /** Path inside the submitted activation set whose pack wins. */
   winner_pack_path?: string | null
-  /** An existing DB pack wins (operator kept the prior winner). */
+  /** An existing pack wins (operator kept the prior winner). */
   winner_existing_pack_id?: number | null
-  /** Bundled wins. */
-  winner_is_bundled?: boolean
 }
 
 export interface ActivateGitopsBinding {
@@ -818,9 +814,9 @@ export interface ActionDefinition {
   parameters: ActionParameter[]
   /** Pack whose manifest provided this action. */
   pack_name: string
-  /** ActionPack.id of the winning pack. Null for built-in actions,
-   * bundled-pack actions (no DB row), and **unresolved** contested
-   * keys (the operator hasn't pinned a winner). */
+  /** ActionPack.id of the winning pack. Null for built-in actions and
+   * **unresolved** contested keys (the operator hasn't pinned a
+   * winner). */
   winning_pack_id: number | null
   /** True when the action key is contested by multiple packs and the
    * operator has not pinned a winner. The Run button must be disabled

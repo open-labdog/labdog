@@ -522,8 +522,8 @@ async def _sync_packs_then_reload() -> None:
 async def _lifespan(app: FastAPI):
     """Startup: fold the packs already on disk into the action registry,
     then refresh them from their git remotes in the background. Failures
-    are logged but don't prevent the app from booting — bundled actions
-    are always available."""
+    are logged but don't prevent the app from booting — the built-in
+    actions are always available."""
     logger = logging.getLogger(__name__)
 
     # Warm the settings cache before serving. The synchronous readers used
@@ -552,7 +552,7 @@ async def _lifespan(app: FastAPI):
         async with AsyncSessionLocal() as session:
             await reload_registry_async(session)
     except Exception:
-        logger.exception("action registry load failed; bundled pack only")
+        logger.exception("action registry load failed; built-in actions only")
 
     sync_task = asyncio.create_task(_sync_packs_then_reload())
     try:

@@ -252,8 +252,8 @@ async def _run_action_async(action_run_id: int, orchestrator_id: str | None = No
         async with task_session() as db:
             # The dispatch shape comes from the registry, so it has to be
             # this process's current one: a pool process still on the
-            # bundled pack alone would fan a git-pack ``supports_host:
-            # false`` action out per host (BUG-105).
+            # built-ins alone would not know a pack's ``supports_host:
+            # false`` action at all (BUG-105).
             await ensure_registry_current(db)
             run_result = await db.execute(select(ActionRun).where(ActionRun.id == action_run_id))
             run_peek: ActionRun | None = run_result.scalar_one_or_none()

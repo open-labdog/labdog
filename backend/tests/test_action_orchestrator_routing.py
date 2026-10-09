@@ -26,7 +26,7 @@ from app.tasks.action_orchestrator import (
 )
 from tests.conftest import create_host
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("sample_pack")]
 
 
 @pytest.fixture(autouse=True)

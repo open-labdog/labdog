@@ -190,7 +190,7 @@ export default function ActionsPage() {
               startRun(a)
             }}
             loading={isLoading}
-            empty="No actions registered. Add a pack, or check that the bundled pack synced."
+            empty="No actions registered. Add a pack, or check that the labdog-playbooks pack synced."
           />
         </>
       )}

@@ -68,7 +68,7 @@ export function DetectedPackRow({
                       isConflict
                         ? `another pack in this repo also contributes "${key}"`
                         : winner
-                          ? `currently provided by ${winner.source === "bundled" ? "the bundled pack" : `pack "${winner.pack_name}"`}`
+                          ? `currently provided by pack "${winner.pack_name}"`
                           : "action key contributed by this pack"
                     }
                   >

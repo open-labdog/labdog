@@ -72,7 +72,7 @@ const FAKE_ACTIONS: Action[] = [
     supports_host: true,
     supports_fleet: true,
     parameters: [],
-    pack_name: "bundled",
+    pack_name: "labdog-playbooks",
     overridden_from: [],
   },
   {
@@ -87,7 +87,7 @@ const FAKE_ACTIONS: Action[] = [
     supports_host: true,
     supports_fleet: false,
     parameters: [],
-    pack_name: "bundled",
+    pack_name: "labdog-playbooks",
     overridden_from: [],
   },
 ]
@@ -359,7 +359,7 @@ test.describe("Schedules", () => {
           id: 2,
           action_key: "k8s-upgrade",
           action_name: "Upgrade Kubernetes",
-          pack_name: "bundled",
+          pack_name: "labdog-playbooks",
           destructive: true,
         }),
       ],

@@ -39,18 +39,16 @@ logger = logging.getLogger(__name__)
 class Pack:
     name: str
     path: Path
-    pack_id: int | None = None
-    """Database id of the matching ``ActionPack`` row, or ``None`` for
-    the in-image bundled pack. Used as the natural key for the
-    ``action_resolution`` and ``action_registry_snapshot`` tables."""
+    pack_id: int
+    """Database id of the matching ``ActionPack`` row. Used as the
+    natural key for the ``action_resolution`` and
+    ``action_registry_snapshot`` tables."""
 
     trusted: bool = False
     """Whether this pack may ship content that runs on the LabDog host.
 
     Defaults false so a caller that forgets to pass it gets the safe
-    answer. The bundled pack is constructed with ``trusted=True``: it is
-    in-image content shipped with the release, not a repository anyone
-    pointed LabDog at, so it is already as trusted as the application."""
+    answer."""
 
     @property
     def actions_dir(self) -> Path:
@@ -265,17 +263,8 @@ def load_pack(pack: Pack) -> list[ActionDefinition]:
     can't take down the whole pack.
     """
     if not pack.actions_dir.is_dir():
-        # For the bundled pack this typically means the build-time
-        # clone from labdog-playbooks hasn't run yet (production: see
-        # Dockerfile Stage 2b / packaging/Makefile; dev: run
-        # ``./dev/dev.sh bundle``). Built-in pseudo-actions are
-        # registered separately so an empty bundled pack doesn't take
-        # the registry down -- the operator just sees a smaller
-        # action catalog.
         logger.warning(
-            "pack %r has no actions directory at %s; skipping. "
-            "For the bundled pack, run ./dev/dev.sh bundle (dev) or "
-            "rebuild the container image (production).",
+            "pack %r has no actions directory at %s; skipping.",
             pack.name,
             pack.actions_dir,
         )
@@ -335,7 +324,7 @@ class PackContributor:
     """One pack's participation in a particular action key, for the
     contested-keys view."""
 
-    pack_id: int | None
+    pack_id: int
     pack_name: str
 
 
@@ -349,8 +338,8 @@ class ResolutionMergeResult:
     ``winning_pack_id=None``, ``overridden_from=`` every contributor.
     The API surfaces this state; the orchestrator refuses to dispatch.
 
-    ``new_snapshot`` — ``key → pack_id`` (None=bundled) for keys with
-    a resolved winner. The caller persists this into
+    ``new_snapshot`` — ``key → pack_id`` for keys with a resolved
+    winner. The caller persists this into
     ``action_registry_snapshot`` to drive the next rebuild's freeze
     logic. Unresolved keys are deliberately omitted so a later
     rebuild treats them fresh.
@@ -370,8 +359,8 @@ class ResolutionMergeResult:
     """
 
     registry: dict[str, ActionDefinition]
-    new_snapshot: dict[str, int | None]
-    fresh_freezes: dict[str, int | None]
+    new_snapshot: dict[str, int]
+    fresh_freezes: dict[str, int]
     stale_resolution_keys: set[str]
     contributors: dict[str, list[PackContributor]]
 
@@ -402,8 +391,8 @@ def _unresolved_placeholder(
 def load_packs_with_resolutions(
     packs: list[Pack],
     *,
-    resolutions: dict[str, int | None],
-    prior_winners: dict[str, int | None],
+    resolutions: dict[str, int],
+    prior_winners: dict[str, int],
 ) -> ResolutionMergeResult:
     """Merge packs into a registry honouring explicit per-key resolutions
     and freeze-on-fresh-conflict semantics.
@@ -412,7 +401,6 @@ def load_packs_with_resolutions(
 
     1. **Uncontested key** (one contributor) — that pack wins.
     2. **Contested + explicit resolution** — pinned pack wins.
-       ``pack_id=None`` resolves to bundled.
     3. **Contested + no resolution** — *unresolved*. The registry
        entry is a placeholder with no playbook; the orchestrator
        refuses to dispatch and the UI prompts the operator.
@@ -436,8 +424,8 @@ def load_packs_with_resolutions(
             contributors.setdefault(defn.key, []).append((pack, defn))
 
     registry: dict[str, ActionDefinition] = {}
-    new_snapshot: dict[str, int | None] = {}
-    fresh_freezes: dict[str, int | None] = {}
+    new_snapshot: dict[str, int] = {}
+    fresh_freezes: dict[str, int] = {}
     stale: set[str] = set()
 
     for key, candidates in contributors.items():

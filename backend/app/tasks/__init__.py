@@ -163,7 +163,9 @@ def _sync_packs_on_worker_start(sender=None, **_kwargs):
 
         asyncio.run(_do_sync())
     except Exception:
-        logger.exception("action-pack sync on worker_ready failed; bundled pack only")
+        logger.exception(
+            "action-pack sync on worker_ready failed; built-in actions only until the next rebuild"
+        )
 
 
 @beat_init.connect

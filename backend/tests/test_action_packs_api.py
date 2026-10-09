@@ -189,14 +189,6 @@ async def test_create_no_longer_assigns_position(
     assert "position" not in body
 
 
-async def test_create_rejects_bundled_name(superuser_client):
-    resp = await superuser_client.post(
-        "/api/action-packs",
-        json={"name": "bundled", "source_type": "local", "local_path": "/tmp/x"},
-    )
-    assert resp.status_code == 422
-
-
 async def test_create_conflict_on_duplicate_name(
     superuser_client, git_repo_row, monkeypatch, tmp_path
 ):

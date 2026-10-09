@@ -66,14 +66,10 @@ backend/app/_build_info.py
 # the source of truth; this copy is build-only.
 backend/VERSION
 
-# Bundled action pack — fetched at build time from labdog-playbooks at
-# the SHA pinned in LABDOG_PLAYBOOKS_REF. Dev runs ./dev/dev.sh bundle
-# (or auto-fetches on first ./dev/dev.sh start) to populate this dir
-# locally. See CLAUDE.md "Bundled pack" for the full flow.
+# Where the bundled action pack used to be fetched to. Nothing reads it
+# any more and an old checkout can delete it; ignored so it doesn't show
+# up as untracked in the meantime.
 backend/app/ansible/
-
-# Packaging scratch dir for the build-time bundled-pack clone.
-packaging/staging-bundled/
 
 # Maintainer's local working notes — design drafts, exploratory
 # scaffolding, multi-agent plan docs. Public-facing roadmap and bug
