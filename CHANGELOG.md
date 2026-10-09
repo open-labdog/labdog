@@ -9,7 +9,7 @@ The format follows [Keep a Changelog]; LabDog follows
 
 _Nothing yet._
 
-## [0.11.0] — 2026-10-08
+## [0.11.0] — 2026-10-09
 
 ### Added
 
