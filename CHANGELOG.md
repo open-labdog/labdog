@@ -7,41 +7,15 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
-### Changed
+## [1.0.0] — 2026-10-09
 
-- **Picking which pack runs an action happens right under the action.**
-  On **Operations › Actions › Packs**, clicking a contested action key
-  used to open the pack choice below the whole registry table, away from
-  the row. It now opens directly under that row and shows each
-  candidate's source, commit and last sync, with the current winner
-  marked. Keys line up whether or not they expand, the chevron is the
-  only toggle, and every change is confirmed with a toast. A **frozen**
-  key, pinned automatically when a second pack started declaring it, can
-  now be confirmed with **Keep** *pack*. Before, the pin was already the
-  selected choice and clicking it did nothing.
-
-### Removed
-
-- **The bundled action pack.** The image and the `.deb` / `.rpm` /
-  `.tar.gz` packages carried a copy of `labdog-playbooks`, cloned at
-  build time from the SHA in `LABDOG_PLAYBOOKS_REF`, so that a site
-  without GitHub would still have actions. Every install also registers
-  `labdog-playbooks` as a git pack tracking `main`. So every one of its
-  actions was declared twice, and the Packs tab was mostly **pinned** and
-  **frozen** rows choosing between `bundled (bundled)` and
-  `labdog-playbooks`. Actions now come only from packs. The seeded
-  `labdog-playbooks` pack is an ordinary pack that can be edited,
-  disabled or deleted. A site without GitHub points its repository at a
-  mirror or adds a local-directory pack. The upgrade deletes pins that
-  chose **bundled**: a key one pack still declares wins on its own, and
-  a key several packs declare needs a winner again. See
-  [upgrade notes](docs/upgrade.md). `LABDOG_PLAYBOOKS_REF`,
-  `scripts/fetch-bundled-pack.sh`, `./dev/dev.sh bundle`, the
-  playbook-bump workflow and the ansible-lint job (the playbooks repo
-  lints itself) are gone. `LABDOG_PLAYBOOKS_LOCAL` now registers a
-  working copy as a local pack in the dev database.
-
-## [0.11.0] — 2026-10-09
+The first stable release. From here LabDog follows Semantic Versioning:
+configuration keys, the pack and GitOps formats, the webhook endpoints,
+the metrics and the documented REST calls change incompatibly only in a
+new major version. See
+[Versioning](docs/upgrade.md#versioning) for what that covers. Upgrading
+from 0.10.0 needs no action unless the bundled action pack was your only
+source of actions; see [Upgrading to 1.0.0](docs/upgrade.md#upgrading-to-100).
 
 ### Added
 
@@ -196,6 +170,17 @@ The format follows [Keep a Changelog]; LabDog follows
   new host.
 
 ### Changed
+
+- **Picking which pack runs an action happens right under the action.**
+  On **Operations › Actions › Packs**, clicking a contested action key
+  used to open the pack choice below the whole registry table, away from
+  the row. It now opens directly under that row and shows each
+  candidate's source, commit and last sync, with the current winner
+  marked. Keys line up whether or not they expand, the chevron is the
+  only toggle, and every change is confirmed with a toast. A **frozen**
+  key, pinned automatically when a second pack started declaring it, can
+  now be confirmed with **Keep** *pack*. Before, the pin was already the
+  selected choice and clicking it did nothing.
 
 - **The AI assistant is told how its commands run.** `list_hosts` and
   `get_host_facts` now show the user `run_ssh_command` connects as on each
@@ -443,6 +428,25 @@ The format follows [Keep a Changelog]; LabDog follows
   address, so `node 10.0.2` narrows to that subnet's nodes.
 
 ### Removed
+
+- **The bundled action pack.** The image and the `.deb` / `.rpm` /
+  `.tar.gz` packages carried a copy of `labdog-playbooks`, cloned at
+  build time from the SHA in `LABDOG_PLAYBOOKS_REF`, so that a site
+  without GitHub would still have actions. Every install also registers
+  `labdog-playbooks` as a git pack tracking `main`. So every one of its
+  actions was declared twice, and the Packs tab was mostly **pinned** and
+  **frozen** rows choosing between `bundled (bundled)` and
+  `labdog-playbooks`. Actions now come only from packs. The seeded
+  `labdog-playbooks` pack is an ordinary pack that can be edited,
+  disabled or deleted. A site without GitHub points its repository at a
+  mirror or adds a local-directory pack. The upgrade deletes pins that
+  chose **bundled**: a key one pack still declares wins on its own, and
+  a key several packs declare needs a winner again. See
+  [upgrade notes](docs/upgrade.md). `LABDOG_PLAYBOOKS_REF`,
+  `scripts/fetch-bundled-pack.sh`, `./dev/dev.sh bundle`, the
+  playbook-bump workflow and the ansible-lint job (the playbooks repo
+  lints itself) are gone. `LABDOG_PLAYBOOKS_LOCAL` now registers a
+  working copy as a local pack in the dev database.
 
 - The `INTEGRATIONS` nav group, the sometimes-present Pending collapsible,
   the dashboard stat cards, "Discover" as a concept separate from
@@ -3048,8 +3052,8 @@ SSH-pushed Ansible reconciliation, and a per-host detail tab:
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
-[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.11.0...HEAD
-[0.11.0]: https://github.com/open-labdog/labdog/compare/v0.10.0...v0.11.0
+[Unreleased]: https://github.com/open-labdog/labdog/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/open-labdog/labdog/compare/v0.10.0...v1.0.0
 [0.10.0]: https://github.com/open-labdog/labdog/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/open-labdog/labdog/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/open-labdog/labdog/compare/v0.7.0...v0.8.0

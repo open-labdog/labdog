@@ -151,7 +151,7 @@ host at all.
 
 ## Terminal and log windows — follow-ups
 
-Shipped in 0.11.0: resize, maximize, minimize and text size on both
+Shipped in 1.0.0: resize, maximize, minimize and text size on both
 windows, and a coloured, searchable run log with wrap and a jump to the
 first failure (`components/ld/window.tsx`, `lib/ansible-log.ts`). Left:
 

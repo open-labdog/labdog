@@ -10,6 +10,7 @@ and how to back out cleanly when something goes wrong.
 > is "restore from yesterday's snapshot, lose a day of audit log".
 
 - [Compatibility](#compatibility)
+  - [Versioning](#versioning)
 - [Pre-upgrade](#pre-upgrade)
 - [Upgrading](#upgrading)
   - [Docker](#docker)
@@ -37,9 +38,46 @@ Each release notes in `CHANGELOG.md` whether it carries breaking
 schema changes, deprecated config fields, or non-reversible
 migrations. Read that section before upgrading.
 
-### Upgrading to the next release
+### Versioning
 
-**The bundled action pack is gone.** The image and the `.deb` / `.rpm` /
+From 1.0.0, LabDog follows [Semantic Versioning](https://semver.org/).
+A change that breaks existing use of anything below comes only in a new
+major version (2.0.0). A minor release (1.1.0) only adds to them, and a
+patch release (1.0.1) only fixes bugs.
+
+- **Configuration**: the keys in `labdog.toml`, the `LABDOG_*`
+  environment variables, and the setting keys under **Settings**.
+- **The pack format**: the manifest a pack declares its actions in, and
+  the action keys and parameters it can use (see
+  [Actions](ui/actions.md)).
+- **The GitOps file format** (see [the GitOps guide](examples/gitops/README.md)).
+- **The webhook endpoints** under `/api/webhooks/` (`github`, `gitlab`,
+  `gitea`, `grafana-alerts`) and the payloads they accept.
+- **The Prometheus metrics**: names and labels in
+  [Metrics export](metrics-export.md).
+- **The REST calls these docs tell you to make**, such as
+  `POST /api/hosts/{id}/trust-host-key`.
+- **The upgrade path**: every earlier release upgrades to every 1.x
+  release by the procedure on this page.
+
+Not covered, and free to change in a minor release: the web UI's layout,
+the rest of `/api` (it is the UI's backend), the database schema (only
+ever changed by migrations), log messages, and what the AI assistant is
+told and allowed to run.
+
+One exception: a fix that closes a security hole may refuse something
+that used to work, in any release. Its upgrade notes say so.
+
+### Upgrading to 1.0.0
+
+Nothing is required unless you deleted the seeded `labdog-playbooks`
+pack or LabDog cannot reach GitHub (see 1). Every new thing that can
+change a host or send mail is off until you turn it on: alert
+investigations stay read-only, no alert is on the full-auto list, no
+mail server is configured and nobody is subscribed, and schedules keep
+reading their cron expressions in UTC. Five things are worth checking.
+
+**1. The bundled action pack is gone.** The image and the `.deb` / `.rpm` /
 `.tar.gz` packages no longer carry a copy of `labdog-playbooks`. Actions
 come only from the packs under **Operations → Actions → Packs**, so:
 
@@ -56,15 +94,7 @@ come only from the packs under **Operations → Actions → Packs**, so:
   pack on that repository), point the repository at a mirror, or add a
   local-directory pack.
 
-### Upgrading to 0.11.0
-
-Nothing is required. Every new thing that can change a host or send mail
-is off until you turn it on: alert investigations stay read-only, no
-alert is on the full-auto list, no mail server is configured and nobody
-is subscribed, and schedules keep reading their cron expressions in UTC.
-Four things are worth checking.
-
-**1. The AI assistant refuses more at read-only.** A command now counts
+**2. The AI assistant refuses more at read-only.** A command now counts
 as read-only only in a form listed in `backend/app/ai/command_policy.yaml`;
 a subcommand or option the list does not name counts as a change. Before,
 it was the other way round, so most of `qm`, `pct` and `pvesh`, container
@@ -77,7 +107,7 @@ the command, so the assistant usually finds one; if a scheduled check
 keeps failing on one, look at its refused calls in the session. See
 [Autonomy levels](ui/assistant.md#autonomy-levels).
 
-**2. Retention keys in `labdog.toml` now log a warning at startup.**
+**3. Retention keys in `labdog.toml` now log a warning at startup.**
 `audit_retention_days`, `run_retention_days` and `drift_retention_days`
 under `[logging]`, or as `LABDOG_LOGGING__…` variables, never did
 anything: retention is read only from **Settings › System**. Check that
@@ -85,7 +115,7 @@ the values there are what you meant to keep, then delete the keys. The
 packaged `labdog.toml` no longer has them, so a `.deb` or `.rpm` upgrade
 of a modified config may ask which version to keep.
 
-**3. A pack playbook that imports a file next to it is no longer loaded.**
+**4. A pack playbook that imports a file next to it is no longer loaded.**
 Only the playbook's own text and the pack's roles reach a run, so a
 playbook using `import_tasks`, `include_tasks`, `vars_files` or
 `import_playbook` with a relative path never got past its first task. It
@@ -93,7 +123,7 @@ is now refused when the pack loads: the action is missing from the
 library, and the log says `pack '<name>': failed to load manifest …`,
 naming the files. Move them into a role. No `labdog-playbooks` action is affected.
 
-**4. If you rotated the encryption key on 0.10.0 or earlier**, re-enter
+**5. If you rotated the encryption key on 0.10.0 or earlier**, re-enter
 each Git repository's webhook secret. The rotation script skipped that
 column, so signed push webhooks have answered 500 since, and GitOps has
 not imported a push. See
