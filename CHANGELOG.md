@@ -37,9 +37,12 @@ source of actions; see [Upgrading to 1.0.0](docs/upgrade.md#upgrading-to-100).
   **A−**/**A+** for the text size, a button that fills the browser window
   with it, one that folds it to its header, and a strip to drag for the
   height (double-click for the default). The log is docked at the bottom
-  of the run screen and grows upwards, over the host table; the terminal
-  grows downwards and stops at the bottom of the page. The choices are
-  remembered in the browser, separately for the log and the terminal.
+  of the run screen. It opens just under the host table, or at the top for
+  a single-host run, and grows upwards over the table. The terminal grows
+  downwards and stops at the bottom of the page. The choices are
+  remembered in the browser, separately for the log and the terminal,
+  except the log's height, so each run opens with the log under its own
+  hosts.
   Minimizing the terminal keeps its session, and a new text size resizes
   the remote terminal so full-screen programs redraw to fit. **Esc**
   leaves a maximized log but not the terminal, where it belongs to the

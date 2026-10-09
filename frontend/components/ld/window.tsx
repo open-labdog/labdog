@@ -27,15 +27,19 @@ const MIN_HEIGHT = 120
  * title, meta, the caller's actions) plus text size, minimize and maximize,
  * over a body whose height a handle on its free edge drags. Height, text
  * size, minimized and wrap are remembered per browser under
- * `labdog.window.<storageKey>`.
+ * `labdog.window.<storageKey>`. `rememberHeight={false}` keeps a dragged
+ * height for this page only, for a window whose right default depends on
+ * what is on the page (the run log sits under however many hosts the run
+ * has).
  *
  * Minimizing hides the body rather than unmounting it, so a terminal keeps
  * its session. Maximizing fills the browser window, above the shell and
  * below modals. `escRestores` lets Esc leave it — right for a log, wrong
  * for a terminal, where Esc belongs to the program running in it.
  *
- * `defaultHeight="fill"` takes the space the parent's flex column offers
- * until the viewer drags the handle; a number is a height in pixels.
+ * `defaultHeight="fill"` takes the space the parent's flex column offers,
+ * but never less than the minimum height, until the viewer drags the
+ * handle; a number is a height in pixels.
  *
  * `anchor` is the edge that stays put. A top-anchored window (the
  * terminal) has its handle at the bottom and grows downwards; a
@@ -54,6 +58,7 @@ export function Window({
   defaultFontSize,
   fontRange = [9, 18],
   escRestores = false,
+  rememberHeight = true,
   anchor = "top",
   className,
   testId,
@@ -68,6 +73,7 @@ export function Window({
   defaultFontSize: number
   fontRange?: [number, number]
   escRestores?: boolean
+  rememberHeight?: boolean
   anchor?: "top" | "bottom"
   className?: string
   testId?: string
@@ -83,6 +89,9 @@ export function Window({
   // The height while a drag is in progress; written to the pref on release
   // rather than to storage on every pointer move.
   const [dragHeight, setDragHeight] = useState<number | null>(null)
+  const [pageHeight, setPageHeight] = useState<number | null>(null)
+  const savedHeight = rememberHeight ? pref.height : pageHeight
+  const setHeight = (h: number | null) => (rememberHeight ? update({ height: h }) : setPageHeight(h))
   const boxRef = useRef<HTMLDivElement>(null)
   const drag = useRef<{ y: number; h: number; max: number } | null>(null)
 
@@ -127,12 +136,12 @@ export function Window({
     setDragHeight(clampHeight(drag.current.h + (anchor === "bottom" ? -dy : dy), drag.current.max))
   }
   const onPointerUp = () => {
-    if (drag.current && dragHeight !== null) update({ height: dragHeight })
+    if (drag.current && dragHeight !== null) setHeight(dragHeight)
     drag.current = null
     setDragHeight(null)
   }
 
-  const height = dragHeight ?? pref.height
+  const height = dragHeight ?? savedHeight
   const sizing = maximized
     ? "fixed inset-0 z-[80] rounded-none"
     : hidden
@@ -141,7 +150,11 @@ export function Window({
         ? "min-h-0 flex-1"
         : "shrink-0"
   // maxHeight guards a remembered height on a smaller window than it was set on.
-  const style = maximized || hidden ? undefined : { height: height ?? (defaultHeight === "fill" ? undefined : defaultHeight), maxHeight: "100%" }
+  const style = maximized || hidden
+    ? undefined
+    : height === null && defaultHeight === "fill"
+      ? { minHeight: MIN_HEIGHT, maxHeight: "100%" }
+      : { height: height ?? defaultHeight, maxHeight: "100%" }
   const ctl = "btn btn-sm btn-ghost mono"
   const handle = !maximized && !hidden && (
     <div
@@ -155,7 +168,7 @@ export function Window({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
-      onDoubleClick={() => update({ height: null })}
+      onDoubleClick={() => setHeight(null)}
     />
   )
 
