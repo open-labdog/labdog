@@ -292,3 +292,29 @@ class TestTheInsecureCookieWarning:
     def test_the_warning_does_not_stop_startup(self):
         s = _make_settings(cookie_secure=False, allowed_origins=["http://labdog.lan:8000"])
         _validate_required(s)  # must not raise
+
+
+class TestRetentionKeysOutsideTheSettingsPage:
+    """The retention windows are app settings, stored in the database.
+    labdog.toml and the environment used to accept them as well, and
+    nothing read those values, so they now warn instead of being dropped
+    without a word."""
+
+    def test_an_env_retention_key_warns(self, caplog):
+        with (
+            patch.dict(os.environ, _env(LABDOG_LOGGING__AUDIT_RETENTION_DAYS="365"), clear=True),
+            caplog.at_level("WARNING"),
+        ):
+            Settings()
+        assert "logging.audit_retention_days" in caplog.text
+
+    def test_a_toml_retention_key_warns_and_startup_continues(self, caplog):
+        with patch.dict(os.environ, _env(), clear=True), caplog.at_level("WARNING"):
+            s = Settings(logging={"level": "debug", "run_retention_days": 30})
+        assert "logging.run_retention_days" in caplog.text
+        assert s.logging.level == "debug"
+
+    def test_a_logging_section_without_them_is_quiet(self, caplog):
+        with patch.dict(os.environ, _env(), clear=True), caplog.at_level("WARNING"):
+            Settings(logging={"level": "info"})
+        assert "retention" not in caplog.text

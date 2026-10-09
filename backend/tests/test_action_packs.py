@@ -219,7 +219,7 @@ def test_load_pack_threads_metrics_backend(tmp_path: Path):
         "mb",
         actions={"demo": {"manifest.yml": manifest_body, "playbook.yml": SIMPLE_PLAYBOOK}},
     )
-    defns = load_pack(Pack(name="mb", path=tmp_path / "mb"))
+    defns = load_pack(Pack(name="mb", path=tmp_path / "mb", pack_id=1))
     assert len(defns) == 1
     assert defns[0].metrics_backend == {"prometheus_push_var": "alloy_prometheus_url"}
 
@@ -237,7 +237,7 @@ def test_load_pack_includes_action_private_roles(tmp_path: Path):
         },
         roles=["shared-role"],
     )
-    pack = Pack(name="rp", path=tmp_path / "rp")
+    pack = Pack(name="rp", path=tmp_path / "rp", pack_id=1)
     defns = load_pack(pack)
     assert len(defns) == 1
     paths = defns[0].roles_paths
@@ -258,7 +258,7 @@ def test_load_pack_threads_playbook_timeout(tmp_path: Path):
             },
         },
     )
-    pack = Pack(name="pt", path=tmp_path / "pt")
+    pack = Pack(name="pt", path=tmp_path / "pt", pack_id=1)
     defns = load_pack(pack)
     assert len(defns) == 1
     assert defns[0].playbook_timeout_seconds == 5400
@@ -278,7 +278,7 @@ def test_load_pack_threads_ai_verify_fields(tmp_path: Path):
         "av",
         actions={"demo": {"manifest.yml": manifest_body, "playbook.yml": SIMPLE_PLAYBOOK}},
     )
-    defns = load_pack(Pack(name="av", path=tmp_path / "av"))
+    defns = load_pack(Pack(name="av", path=tmp_path / "av", pack_id=1))
     assert len(defns) == 1
     assert defns[0].ai_verify_prompt == "Confirm nginx came back up."
     assert defns[0].ai_verify_fail_closed is True
@@ -297,7 +297,7 @@ def test_load_pack_resolves_verify_playbook(tmp_path: Path):
             },
         },
     )
-    pack = Pack(name="vp", path=tmp_path / "vp")
+    pack = Pack(name="vp", path=tmp_path / "vp", pack_id=1)
     defns = load_pack(pack)
     assert len(defns) == 1
     d = defns[0]
@@ -318,7 +318,7 @@ def test_load_pack_skips_when_verify_playbook_missing(tmp_path: Path, caplog):
             },
         },
     )
-    pack = Pack(name="vp", path=tmp_path / "vp")
+    pack = Pack(name="vp", path=tmp_path / "vp", pack_id=1)
     with caplog.at_level("ERROR"):
         defns = load_pack(pack)
     # The whole manifest is rejected — same treatment as a missing main
@@ -337,7 +337,7 @@ def test_load_pack_returns_action_definition(tmp_path: Path):
         actions={"demo": SIMPLE_ACTION},
         roles=["role-demo"],
     )
-    pack = Pack(name="p1", path=tmp_path / "p1")
+    pack = Pack(name="p1", path=tmp_path / "p1", pack_id=1)
     defns = load_pack(pack)
     assert len(defns) == 1
     d = defns[0]
@@ -353,11 +353,105 @@ def test_load_pack_skips_missing_playbook(tmp_path: Path, caplog):
         "p1",
         actions={"demo": {"manifest.yml": SIMPLE_MANIFEST}},
     )
-    pack = Pack(name="p1", path=tmp_path / "p1")
+    pack = Pack(name="p1", path=tmp_path / "p1", pack_id=1)
     with caplog.at_level("ERROR"):
         defns = load_pack(pack)
     assert defns == []
     assert any("does not exist" in r.message for r in caplog.records)
+
+
+@pytest.mark.parametrize(
+    "playbook",
+    [
+        pytest.param(
+            "- hosts: all\n  tasks:\n    - ansible.builtin.import_tasks: tasks/main.yml\n",
+            id="import_tasks",
+        ),
+        pytest.param(
+            "- hosts: all\n"
+            "  tasks:\n"
+            "    - block:\n"
+            "        - include_tasks:\n"
+            "            file: tasks/main.yml\n",
+            id="include_tasks-in-a-block",
+        ),
+        pytest.param("- hosts: all\n  vars_files: [vars.yml]\n  tasks: []\n", id="vars_files"),
+        pytest.param("- ansible.builtin.import_playbook: other.yml\n", id="import_playbook"),
+    ],
+)
+def test_load_pack_skips_a_playbook_that_imports_files_next_to_it(
+    tmp_path: Path, caplog, playbook: str
+):
+    """BUG-86: run_ansible copies the playbook alone into its run
+    directory, so each of these fails before its first task. Refuse it at
+    load, like a missing playbook, and say what to do instead."""
+    _write_pack(
+        tmp_path,
+        "p1",
+        actions={
+            "demo": {
+                "manifest.yml": SIMPLE_MANIFEST,
+                "playbook.yml": "---\n" + playbook,
+                "tasks/main.yml": "---\n[]\n",
+            }
+        },
+    )
+    with caplog.at_level("ERROR"):
+        defns = load_pack(Pack(name="p1", path=tmp_path / "p1", pack_id=1))
+    assert defns == []
+    assert any("copies only the playbook file" in r.message for r in caplog.records)
+
+
+def test_load_pack_skips_a_verify_playbook_that_imports_files_next_to_it(tmp_path: Path, caplog):
+    _write_pack(
+        tmp_path,
+        "p1",
+        actions={
+            "demo": {
+                "manifest.yml": SIMPLE_MANIFEST + "verify_playbook: verify.yml\n",
+                "playbook.yml": SIMPLE_PLAYBOOK,
+                "verify.yml": "---\n- hosts: all\n  vars_files: [expected.yml]\n  tasks: []\n",
+            }
+        },
+    )
+    with caplog.at_level("ERROR"):
+        defns = load_pack(Pack(name="p1", path=tmp_path / "p1", pack_id=1))
+    assert defns == []
+    assert any("verify_playbook 'verify.yml'" in r.message for r in caplog.records)
+
+
+def test_load_pack_accepts_imports_inside_a_role(tmp_path: Path):
+    """A role's own imports resolve against the role, which a run does
+    have: that is the layout BUG-86 points pack authors at."""
+    _write_pack(
+        tmp_path,
+        "p1",
+        actions={
+            "demo": {
+                "manifest.yml": SIMPLE_MANIFEST,
+                "playbook.yml": (
+                    "---\n- hosts: all\n  tasks:\n"
+                    "    - ansible.builtin.import_role:\n        name: demo_role\n"
+                ),
+                "roles/demo_role/tasks/main.yml": "---\n- ansible.builtin.import_tasks: step.yml\n",
+                "roles/demo_role/tasks/step.yml": "---\n[]\n",
+            }
+        },
+    )
+    defns = load_pack(Pack(name="p1", path=tmp_path / "p1", pack_id=1))
+    assert [d.key for d in defns] == ["demo"]
+
+
+def test_load_pack_leaves_a_templated_import_alone(tmp_path: Path):
+    """What a template renders to is only known at run time."""
+    playbook = '---\n- hosts: all\n  tasks:\n    - include_tasks: "{{ step }}.yml"\n'
+    _write_pack(
+        tmp_path,
+        "p1",
+        actions={"demo": {"manifest.yml": SIMPLE_MANIFEST, "playbook.yml": playbook}},
+    )
+    defns = load_pack(Pack(name="p1", path=tmp_path / "p1", pack_id=1))
+    assert [d.key for d in defns] == ["demo"]
 
 
 def test_load_pack_skips_invalid_yaml(tmp_path: Path, caplog):
@@ -369,7 +463,7 @@ def test_load_pack_skips_invalid_yaml(tmp_path: Path, caplog):
             "bad": {"manifest.yml": "key: [broken", "playbook.yml": SIMPLE_PLAYBOOK},
         },
     )
-    pack = Pack(name="p1", path=tmp_path / "p1")
+    pack = Pack(name="p1", path=tmp_path / "p1", pack_id=1)
     with caplog.at_level("ERROR"):
         defns = load_pack(pack)
     keys = {d.key for d in defns}
@@ -380,24 +474,24 @@ def test_contested_key_with_explicit_resolution_wins(tmp_path: Path):
     """When the operator pins a contested key to a specific pack, that
     pack's manifest is returned and the other pack appears in
     ``overridden_from`` for provenance."""
-    bundled_manifest = SIMPLE_MANIFEST.replace("Demo action", "Bundled demo")
+    other_manifest = SIMPLE_MANIFEST.replace("Demo action", "Other demo")
     user_manifest = SIMPLE_MANIFEST.replace("Demo action", "User demo")
     _write_pack(
         tmp_path,
-        "bundled",
-        actions={"demo": {"manifest.yml": bundled_manifest, "playbook.yml": SIMPLE_PLAYBOOK}},
+        "other",
+        actions={"demo": {"manifest.yml": other_manifest, "playbook.yml": SIMPLE_PLAYBOOK}},
     )
     _write_pack(
         tmp_path,
         "user",
         actions={"demo": {"manifest.yml": user_manifest, "playbook.yml": SIMPLE_PLAYBOOK}},
     )
-    bundled = Pack(name="bundled", path=tmp_path / "bundled", pack_id=None)
+    other = Pack(name="other", path=tmp_path / "other", pack_id=2)
     user = Pack(name="user", path=tmp_path / "user", pack_id=1)
 
     # Operator pinned pack 1 ("user") for the demo key.
     result = load_packs_with_resolutions(
-        [user, bundled],
+        [user, other],
         resolutions={"demo": 1},
         prior_winners={},
     )
@@ -405,7 +499,7 @@ def test_contested_key_with_explicit_resolution_wins(tmp_path: Path):
     assert defn.name == "User demo"
     assert defn.pack_name == "user"
     assert defn.winning_pack_id == 1
-    assert defn.overridden_from == ("bundled",)
+    assert defn.overridden_from == ("other",)
     assert defn.playbook_path is not None
     assert defn.is_unresolved is False
 
@@ -742,28 +836,6 @@ def test_local_path_rejects_empty_string():
         ActionPackCreate(name="p", source_type="local", local_path="")
 
 
-def test_bundled_pack_exposes_expected_actions():
-    """Sanity check — the shipped bundled pack still produces the
-    actions LabDog has always had. Protects against manifest regressions."""
-    from app.actions.registry import ACTION_REGISTRY
-
-    assert {"linux-upgrade", "linux-os-upgrade", "k8s-upgrade"} <= set(ACTION_REGISTRY)
-    linux = ACTION_REGISTRY["linux-upgrade"]
-    assert linux.destructive is True
-    # linux-upgrade is now group-supported — package upgrades fan out
-    # across hosts identically; restricting it to host-only was an
-    # accident.
-    assert linux.supports_group is True
-    assert linux.playbook_path.name == "playbook.yml"
-    assert linux.playbook_path.is_file()
-    # Subset, not exact: the pack ships from labdog-playbooks and may add
-    # params over time (e.g. ignore_failed_units) without it being a
-    # regression. This guards that the long-standing core params survive a
-    # bundled-pack bump; it must not break every time the pack grows a knob.
-    param_keys = {p.key for p in linux.parameters}
-    assert {"auto_reboot", "reboot_timeout", "cleanup"} <= param_keys
-
-
 class TestPackPathsStayInsideThePack:
     """SEC-23: a manifest is content from a git remote, so its paths are
     input rather than configuration.
@@ -790,7 +862,7 @@ class TestPackPathsStayInsideThePack:
             actions={"demo": {"manifest.yml": escaping, "playbook.yml": SIMPLE_PLAYBOOK}},
         )
         with pytest.raises(ValueError, match="escapes the pack directory"):
-            load_pack(Pack(name="esc", path=tmp_path / "esc"))
+            load_pack(Pack(name="esc", path=tmp_path / "esc", pack_id=1))
 
     def test_a_verify_playbook_outside_the_pack_is_refused(self, tmp_path: Path):
         (tmp_path / "outside.yml").write_text(SIMPLE_PLAYBOOK)
@@ -802,7 +874,7 @@ class TestPackPathsStayInsideThePack:
             actions={"demo": {"manifest.yml": escaping, "playbook.yml": SIMPLE_PLAYBOOK}},
         )
         with pytest.raises(ValueError, match="escapes the pack directory"):
-            load_pack(Pack(name="esc2", path=tmp_path / "esc2"))
+            load_pack(Pack(name="esc2", path=tmp_path / "esc2", pack_id=1))
 
     def test_ordinary_relative_paths_still_load(self, tmp_path: Path):
         """The regression half: a verify playbook beside the manifest, and
@@ -819,7 +891,7 @@ class TestPackPathsStayInsideThePack:
                 }
             },
         )
-        defns = load_pack(Pack(name="ok", path=tmp_path / "ok"))
+        defns = load_pack(Pack(name="ok", path=tmp_path / "ok", pack_id=1))
         assert len(defns) == 1
         assert defns[0].verify_playbook_path is not None
         assert defns[0].verify_playbook_path.name == "verify.yml"

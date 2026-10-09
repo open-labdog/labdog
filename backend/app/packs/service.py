@@ -16,7 +16,7 @@ on-disk pack loader (``app.actions.packs``). Responsibilities:
 
 Callers (API endpoints, FastAPI lifespan, Celery worker startup) should
 use the high-level helpers: ``sync_pack``, ``sync_enabled_packs``,
-``load_db_packs``, ``delete_checkout_async``.
+``scan_db_packs``, ``delete_checkout_async``.
 """
 
 from __future__ import annotations
@@ -37,6 +37,7 @@ from app.crypto import decrypt_ssh_key, get_master_key
 from app.models.git_repository import GitAuthType, GitRepository
 from app.models.ssh_key import SSHKey
 from app.packs.clone import clone_to_thread
+from app.packs.locks import lock_pack_checkout
 from app.packs.models import ActionPack, PackSourceType
 from app.packs.redact import redact
 
@@ -153,6 +154,11 @@ async def sync_pack(
     path = checkout_path_for(pack.id)
     path.parent.mkdir(parents=True, exist_ok=True)
 
+    # The API and the ``work`` worker both sync every pack at boot, into
+    # this same directory. Held until this transaction ends: here when
+    # ``commit`` is set, otherwise at ``sync_enabled_packs``'s commit.
+    await lock_pack_checkout(db, pack.id)
+
     try:
         ssh_key, token = await _decrypt_repo_credentials(db, repo)
     except Exception as exc:
@@ -242,21 +248,25 @@ async def sync_enabled_packs(db: AsyncSession) -> list[tuple[ActionPack, bool]]:
     return outcomes
 
 
-async def load_db_packs(db: AsyncSession) -> list[Pack]:
-    """Return ``Pack`` objects for every enabled pack with a readable path.
+async def scan_db_packs(db: AsyncSession) -> tuple[list[Pack], dict[int, str]]:
+    """Every enabled pack with a readable path, and the ones without one.
 
-    For git packs that's a successful checkout under ``packs_root_dir``
-    (possibly narrowed by the pack's subpath); for local packs that's
-    the admin-supplied filesystem path. Missing or empty paths are
-    skipped — the registry is built best-effort.
+    For git packs the path is a checkout under ``packs_root_dir``
+    (possibly narrowed by the pack's subpath); for local packs it is the
+    admin-supplied filesystem path. A pack whose path is not a directory
+    is left out of the list, so the registry is built best-effort, and
+    returned in the map (id → name), so the rebuild knows its view is
+    short of that pack.
     """
     result = await db.execute(
         select(ActionPack).where(ActionPack.enabled.is_(True)).order_by(ActionPack.id)
     )
     packs: list[Pack] = []
+    missing: dict[int, str] = {}
     for row in result.scalars().all():
         path = effective_path_for(row)
         if not path.is_dir():
+            missing[row.id] = row.name
             continue
         packs.append(
             Pack(
@@ -266,7 +276,7 @@ async def load_db_packs(db: AsyncSession) -> list[Pack]:
                 trusted=row.trusted,
             )
         )
-    return packs
+    return packs, missing
 
 
 def delete_checkout(pack_id: int) -> None:

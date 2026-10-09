@@ -30,6 +30,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.gate import target_host
 from app.ai.models import AIApprovalRequest, AISession, AIToolCall
 from app.ai.safety import Verdict
 from app.ai.snapshots import SnapshotFailed, snapshot_before_change
@@ -86,13 +87,12 @@ async def park(
     command twice.
     """
     hours = int(await get_setting_typed("ai.approval_expiry_hours", db))
-    host_id = arguments.get("host_id")
 
     approval = AIApprovalRequest(
         session_id=session.id,
         tool_name=tool_name,
         arguments=dict(arguments),
-        target_host_id=host_id if isinstance(host_id, int) else None,
+        target_host_id=target_host(arguments, session.target_host_ids),
         summary=str(arguments.get("purpose") or "").strip(),
         command_preview=command_preview(tool_name, arguments),
         classification=verdict.classification,
@@ -124,6 +124,12 @@ async def park(
 
     session.status = "waiting_approval"
     await db.flush()
+
+    # A parked session is waiting on a person, and nothing else tells them.
+    # Queued in this transaction, so a park that rolls back sends nothing.
+    from app.notifications.service import notify_approval_requested
+
+    await notify_approval_requested(db, approval)
     return approval
 
 

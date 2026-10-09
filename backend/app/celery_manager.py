@@ -4,9 +4,9 @@ Three of them: two workers and the beat scheduler. Beat is separate for
 the reason given at :data:`BEAT`. The workers are two for the reason
 below.
 
-Two workers, not one. ``action_orchestrator.run_action`` blocks in
-``result.join()`` waiting for per-host children it published itself, so
-sharing a pool with those children is a self-deadlock: with the default
+Two workers, not one. ``action_orchestrator.run_action`` blocks waiting
+for per-host children it published itself, so sharing a pool with those
+children is a self-deadlock: with the default
 ``concurrency=4``, four schedules landing on the same cron minute — and
 ``0 3 * * *`` is the obvious default — take all four slots, leaving none
 for any child. Nothing progresses until the orchestrator's 12h soft limit
@@ -15,8 +15,9 @@ fires, and then four runs finalise ``partial`` having touched zero hosts.
 Giving the orchestrator its own queue and its own worker makes the
 starvation impossible by construction rather than by sizing: the pool an
 orchestrator waits on is never the pool it occupies. A chord would also
-remove the join, but the join is what carries the mid-run cancel poll and
-the batched parallelism, both of which a chord drops.
+remove the wait, but the wait is what carries the mid-run cancel poll, the
+batched parallelism and the heartbeat a dead orchestrator is noticed by,
+all of which a chord drops.
 """
 
 from __future__ import annotations

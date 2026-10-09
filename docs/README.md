@@ -35,7 +35,8 @@ summary see the [top-level README](https://github.com/open-labdog/labdog/blob/ma
 | Section | What it covers |
 |---|---|
 | [ui/](./ui/README.md) | Overview of every page in the LabDog web interface |
-| [ui/dashboard.md](./ui/dashboard.md) | Fleet overview — metric cards, host table, Collect State |
+| [ui/dashboard.md](./ui/dashboard.md) | Overview — the landing page: status bar, Pending queue, activity, drift trend, stale hosts |
+| [ui/operations.md](./ui/operations.md) | Operations — Plans (preview → apply), Drift findings, Actions library, Runs stream, Audit |
 | [ui/hosts.md](./ui/hosts.md) | Host management, discovery scanning, SSH terminal |
 | [ui/groups.md](./ui/groups.md) | Groups, all module tabs (firewall, services, packages, /etc/hosts, cron, users, DNS, CA certs) and preview-then-apply syncing |
 | [ui/gitops-ui.md](./ui/gitops-ui.md) | Git repo connections, enabling GitOps on a group, webhook setup, import flow |
@@ -43,6 +44,7 @@ summary see the [top-level README](https://github.com/open-labdog/labdog/blob/ma
 | [ui/actions.md](./ui/actions.md) | Actions and Action Packs — ad-hoc playbook runs, bring-your-own playbooks, and AI verification of destructive runs |
 | [ui/assistant.md](./ui/assistant.md) | The AI assistant — connecting a provider, autonomy levels, approving a change, snapshots, spend limits |
 | [ui/alerts.md](./ui/alerts.md) | Alert intake from Grafana and Alertmanager, deduplication, and the auto-investigation policy |
+| [ui/notifications.md](./ui/notifications.md) | Email notifications — the mail server, LabDog's address for links, per-user subscriptions, coalescing and retries, the delivery log |
 | [ui/admin.md](./ui/admin.md) | SSH Keys, Audit Log, User management |
 | [ui/settings.md](./ui/settings.md) | All settings configurable in the UI (log level, drift interval, timeouts, discovery tuning, AI kill switch and budgets) |
 
@@ -153,8 +155,8 @@ requests for the same host queue (`SyncJob.status="pending"`) and
 are dispatched in `created_at` order; only one ansible-runner
 invocation against a given host at a time. The new
 `POST /api/sync/hosts/{id}/bulk` endpoint exposes multi-module
-syncs to API callers; per-tab Sync buttons are unchanged externally
-but internally delegate to the same orchestrator.
+syncs to API callers; the UI's per-module and sync-all buttons, and
+the Plans screen, delegate to the same orchestrator.
 
 ### Automatic Safety Rules
 
@@ -167,7 +169,7 @@ but internally delegate to the same orchestrator.
 
 | Component | Technology | Port |
 |-----------|-----------|------|
-| Frontend | Next.js 16 + shadcn/ui + TanStack Query | 3000 |
+| Frontend | Next.js 16 + the LabDog kit + TanStack Query | 3000 |
 | Backend API | FastAPI + SQLAlchemy (async) | 8000 |
 | Database | PostgreSQL 18 | 5432 |
 | Task Queue | Celery + Redis (RedBeat scheduler) | -- |
@@ -414,8 +416,8 @@ Tests use testcontainers to spin up a throwaway PostgreSQL instance automaticall
 
 ```bash
 cd backend && source .venv/bin/activate
-pytest tests/ --ignore=tests/integration -v           # unit/module tests
-pytest tests/integration/ -v -m integration           # integration tests (requires Docker)
+pytest tests/ -v                                      # everything, integration included
+pytest tests/ -v -m "not integration"                 # skip the git round-trip tests
 ```
 
 The test suite covers: audit, auth, cron, crypto, diff, discovery, drift, gitops (converter, importer, lockdown, pipeline, serializer, webhooks), groups, hosts, merge, packages, parsers, renderers, resolver, rules, service commands, services, SSH terminal, sync, and user management.
@@ -429,7 +431,7 @@ npx playwright test          # requires running Docker stack
 npx playwright test --ui     # interactive test runner
 ```
 
-E2E spec files cover auth, dashboard, groups, hosts, rules, SSH terminal, sync, audit, and UX patterns (breadcrumbs, command palette, confirm dialogs, host grouping, mobile, search, toasts).
+E2E spec files cover auth and session expiry, the overview, groups, hosts, rules, scheduled actions, the Git repository wizard, SSH terminal, sync, audit, and UX patterns (breadcrumbs, command palette, confirm dialogs, host grouping, mobile, search, toasts).
 
 ## API Endpoints
 
@@ -589,7 +591,7 @@ See [ui/alerts.md](./ui/alerts.md) for the intake paths, deduplication, and the 
 | `POST` | `/api/grafana/instances/{id}/test` · `/api/grafana/instances/test` | Connection test (saved instance / pre-save draft) |
 | `GET` | `/api/grafana/hosts/{id}/metrics` | Instant CPU/memory/disk for a host (queried from the default Mimir instance by the `labdog_host_id` label) |
 
-See [ui/host-metrics.md](./ui/host-metrics.md) for the end-to-end loop with the bundled Alloy install action.
+See [ui/host-metrics.md](./ui/host-metrics.md) for the end-to-end loop with the Alloy install action from `labdog-playbooks`.
 
 ### Metrics export (outbound — Prometheus scrapes LabDog)
 | Method | Path | Description |
@@ -606,7 +608,6 @@ labdog/
 ├── backend/
 │   ├── app/
 │   │   ├── actions/         # Pack loader, registry, manifest schema, git sync
-│   │   ├── ansible/         # Bundled action pack (gitignored; fetched at build time from labdog-playbooks)
 │   │   ├── ansible_runtime/ # Playbook composer + ansible-runner wrapper
 │   │   ├── api/             # FastAPI route handlers (incl. /api/version)
 │   │   ├── audit/           # Audit logging
@@ -634,13 +635,13 @@ labdog/
 │   │   └── workflows/       # Proxmox snapshot / verify / rollback steps
 │   ├── alembic/             # Database migrations
 │   ├── tests/               # pytest suite
-│   │   ├── integration/     # Integration tests (require full stack)
+│   │   ├── integration/     # GitOps round trips through a local git repo
 │   │   └── test_*.py        # Unit/module tests
 │   ├── Dockerfile
 │   └── pyproject.toml
 ├── frontend/
 │   ├── app/                 # Next.js App Router pages
-│   ├── components/          # React components (shadcn/ui)
+│   ├── components/          # React components — ld/ is the UI kit, shell/ the rail and pane
 │   ├── e2e/                 # Playwright E2E tests
 │   ├── hooks/               # Custom React hooks
 │   ├── lib/                 # API client, utilities

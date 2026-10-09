@@ -19,9 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import service
 from app.ai.models import (
+    TERMINAL_SESSION_STATUSES,
     AIApprovalRequest,
     AIMessage,
     AIProvider,
+    AIRollback,
     AISession,
     AIToolCall,
     AIUsageDay,
@@ -40,6 +42,9 @@ from app.ai.schemas import (
     AIProviderResponse,
     AIProviderTestResponse,
     AIProviderUpdate,
+    AIRollbackRequest,
+    AIRollbackResponse,
+    AIRollbackTarget,
     AISessionCreate,
     AISessionDetail,
     AISessionMessageRequest,
@@ -63,7 +68,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 SESSION_CHANNEL = "ai.session.{id}"
-TERMINAL_STATES = {"succeeded", "failed", "cancelled"}
+TERMINAL_STATES = frozenset(TERMINAL_SESSION_STATUSES)
 
 
 # ---------------------------------------------------------------------------
@@ -428,7 +433,147 @@ async def get_session(
     detail.messages = [m for m in messages if m.role != "system"]
     detail.tool_calls = list(tool_calls)
     detail.approvals = await _with_snapshot_expectation(db, list(requests))
+    rollbacks = (
+        (
+            await db.execute(
+                select(AIRollback)
+                .where(AIRollback.session_id == session_id)
+                .order_by(AIRollback.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    detail.rollbacks = [AIRollbackResponse.model_validate(r) for r in rollbacks]
+    detail.rollback_targets = await _rollback_targets(db, session, list(tool_calls))
     return detail
+
+
+async def _rollback_targets(
+    db: AsyncSession, session: AISession, tool_calls: list[AIToolCall]
+) -> list[AIRollbackTarget]:
+    """Each host the session changed, with what a rollback would restore.
+
+    The same rules as the endpoint (``remediation.check_rollback``), but
+    answered from the database alone — a page load opens no SSH
+    connections — so pressing the button checks everything again, live.
+    """
+    from app.ai import remediation
+    from app.ai.alert_autonomy import REACHED_HOST
+    from app.models.host import Host
+
+    firsts: dict[int, AIToolCall] = {}
+    for call in tool_calls:
+        if (
+            call.classification == "mutating"
+            and call.status in REACHED_HOST
+            and call.target_host_id is not None
+        ):
+            firsts.setdefault(call.target_host_id, call)
+    if not firsts:
+        return []
+
+    hosts = {
+        h.id: h for h in (await db.execute(select(Host).where(Host.id.in_(list(firsts))))).scalars()
+    }
+    out: list[AIRollbackTarget] = []
+    for host_id, first in firsts.items():
+        host = hosts.get(host_id)
+        if host is None:
+            continue
+        reason = None
+        try:
+            await remediation.check_rollback(db, session=session, host=host, ask=False)
+        except remediation.RollbackRefused as exc:
+            reason = str(exc)
+        out.append(
+            AIRollbackTarget(
+                host_id=host_id,
+                hostname=host.hostname,
+                snapshot_name=first.snapshot_name,
+                snapshot_taken_at=first.started_at if first.snapshot_name else None,
+                unavailable_reason=reason,
+            )
+        )
+    return out
+
+
+@router.post("/sessions/{session_id}/rollback", response_model=AIRollbackResponse, status_code=202)
+async def roll_back_session(
+    session_id: int,
+    payload: AIRollbackRequest,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Restore a host to the snapshot taken before this session changed it.
+
+    Accepted, then carried out by a worker: Proxmox restores the disk, the
+    machine restarts, and LabDog waits for SSH to answer, which takes
+    minutes. Everything that would refuse it is checked here first, so a
+    refusal comes back at once rather than as a failed row later.
+
+    Open to any signed-in user, like approving the change was. The undo
+    is no more privileged than the change it undoes.
+    """
+    from app.ai import remediation
+    from app.ai.alert_autonomy import REACHED_HOST
+    from app.tasks import celery_app
+
+    session = await db.get(AISession, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    host_id = payload.host_id
+    if host_id is None:
+        changed = (
+            (
+                await db.execute(
+                    select(AIToolCall.target_host_id)
+                    .where(
+                        AIToolCall.session_id == session_id,
+                        AIToolCall.classification == "mutating",
+                        AIToolCall.status.in_(REACHED_HOST),
+                        AIToolCall.target_host_id.is_not(None),
+                    )
+                    .distinct()
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not changed:
+            raise HTTPException(status_code=409, detail="This session did not change any host.")
+        if len(changed) > 1:
+            raise HTTPException(
+                status_code=400,
+                detail=f"This session changed {len(changed)} hosts. Say which to roll back.",
+            )
+        host_id = changed[0]
+
+    try:
+        rollback, _plan = await remediation.prepare_rollback(
+            db,
+            session=session,
+            host_id=host_id,
+            trigger="manual",
+            user_id=user.id,
+            alert_event_id=session.alert_event_id,
+        )
+    except remediation.HostBusy as exc:
+        raise HTTPException(
+            status_code=409, detail=f"{exc}. Try again when it has finished."
+        ) from exc
+    except remediation.RollbackRefused as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    # Also the host's claim: from here its running row keeps syncs and
+    # action runs off the host until the worker has finished.
+    await db.commit()
+    await db.refresh(rollback)
+
+    celery_app.send_task(
+        "app.tasks.ai_remediation.run_rollback", kwargs={"rollback_id": rollback.id}
+    )
+    return AIRollbackResponse.model_validate(rollback)
 
 
 @router.post("/sessions/{session_id}/messages", response_model=AISessionResponse)
@@ -893,6 +1038,19 @@ async def _with_investigation(db: AsyncSession, rows: list[AlertEvent]) -> list[
         found = await db.execute(select(AISession).where(AISession.id.in_(session_ids)))
         sessions = {s.id: s for s in found.scalars().all()}
 
+    # The latest rollback per alert, automatic or not: a refused automatic
+    # one followed by someone's successful one should read as rolled back.
+    latest_rollback: dict[int, AIRollback] = {}
+    event_ids = [r.id for r in rows]
+    if event_ids:
+        found = await db.execute(
+            select(AIRollback)
+            .where(AIRollback.alert_event_id.in_(event_ids))
+            .order_by(AIRollback.id)
+        )
+        for rollback in found.scalars().all():
+            latest_rollback[rollback.alert_event_id] = rollback
+
     out = []
     for row in rows:
         response = AlertEventResponse.model_validate(row)
@@ -900,6 +1058,10 @@ async def _with_investigation(db: AsyncSession, rows: list[AlertEvent]) -> list[
         if session is not None:
             response.investigation_status = session.status
             response.investigation_summary = _conclusion(session.report_markdown)
+        rollback = latest_rollback.get(row.id)
+        if rollback is not None:
+            response.rollback_status = rollback.status
+            response.rollback_detail = rollback.detail
         out.append(response)
     return out
 
@@ -937,7 +1099,8 @@ async def investigate_alert_now(
     operator asking for this has already made the judgement the threshold
     exists to automate — but not the kill switch, the provider check, or
     the budget. Those are about whether LabDog *may* spend, which a
-    button press does not change.
+    button press does not change. Nor does it change the autonomy level,
+    which comes from the same remediation policy as an automatic start.
     """
     alert = await db.get(AlertEvent, alert_id)
     if alert is None:
@@ -960,32 +1123,13 @@ async def investigate_alert_now(
     except BudgetExceededError as exc:
         raise HTTPException(status_code=402, detail=str(exc)) from exc
 
-    from app.ai.loop import build_system_prompt
     from app.tasks import celery_app
-    from app.tasks.ai_alerts import build_mission
+    from app.tasks.ai_alerts import start_investigation
 
-    mission = await build_mission(db, alert)
-    session = AISession(
-        provider_id=provider.id,
-        mode="alert_investigation",
-        title=f"Alert: {alert.alertname}"[:200],
-        mission=mission,
-        autonomy_level="read_only",
-        status="queued",
-        target_host_ids=[alert.host_id] if alert.host_id else [],
-        alert_event_id=alert.id,
-        created_by_user_id=user.id,
-    )
-    db.add(session)
-    await db.flush()
-    await service.append_message(
-        db, session.id, role="system", content=build_system_prompt("read_only")
-    )
-    await service.append_message(db, session.id, role="user", content=mission)
-
-    alert.investigation_session_id = session.id
-    alert.investigation_outcome = "started"
-    alert.investigation_detail = f"started by {user.email}"
+    # The same policy as the automatic path, full auto included: pressing
+    # the button decides that the alert is worth a look, not what the
+    # session may change. That stays with the remediation settings.
+    session = await start_investigation(db, alert, provider, user=user)
     await db.commit()
     await db.refresh(alert)
 

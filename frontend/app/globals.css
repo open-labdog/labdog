@@ -1,133 +1,354 @@
 @import "tailwindcss";
-@import "tw-animate-css";
-@import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+/* ---------------------------------------------------------------------------
+   Tailwind theme mapping: the LabDog design tokens below, exposed as
+   Tailwind colours (`bg-surface-2`, `text-text-3`, `border-line` …) so a
+   class and a `var(--…)` in an inline style always mean the same thing.
 
+   The blue is `ld-accent` (`text-ld-accent`, `bg-ld-accent-soft`): the
+   prefix dates from when shadcn/ui's own `accent` colour shared this
+   namespace, and dropping it now would touch every screen for no visual
+   change. Radii stay on Tailwind's scale; the design's two are
+   `rounded-r` (5px) and `rounded-r-lg` (8px).
+   ------------------------------------------------------------------------- */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
   --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-mono), ui-monospace, monospace;
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+
+  --color-bg: var(--bg);
+  --color-bg-grad: var(--bg-grad);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-rail: var(--rail);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-line-faint: var(--border-faint);
+  --color-text: var(--text);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-text-faint: var(--text-faint);
+  --color-ld-accent: var(--accent);
+  --color-ld-accent-fg: var(--accent-fg);
+  --color-ld-accent-soft: var(--accent-soft);
+  --color-ld-accent-line: var(--accent-line);
+  --color-ld-accent-ink: var(--accent-ink);
+  --color-ld-accent-fill: var(--accent-fill);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-ok-ink: var(--ok-ink);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-warn-ink: var(--warn-ink);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-ink: var(--danger-ink);
+  --color-sync: var(--sync);
+  --color-sync-soft: var(--sync-soft);
+  --color-sync-ink: var(--sync-ink);
+  --color-idle: var(--idle);
+  --color-idle-soft: var(--idle-soft);
+  --color-idle-ink: var(--idle-ink);
+  --color-hold: var(--hold);
+  --color-hold-soft: var(--hold-soft);
+  --color-hold-ink: var(--hold-ink);
+  --color-add: var(--add);
+  --color-add-soft: var(--add-soft);
+  --color-add-ink: var(--add-ink);
+  --color-del: var(--del);
+  --color-del-soft: var(--del-soft);
+  --color-del-ink: var(--del-ink);
+  --color-on-tint-2: var(--on-tint-2);
+  --radius-r: var(--r);
+  --radius-r-lg: var(--r-lg);
+  --shadow-ld: var(--shadow);
 }
 
+/* ---------------------------------------------------------------------------
+   LabDog theme tokens. Dark is primary; light is a real second theme, not
+   an inversion. Both are neutral-cool with one blue accent; status hues
+   share chroma so nothing shouts louder than its severity.
+
+   The -soft tints are backgrounds. Text painted on them needs its own
+   grade — the tone itself is tuned for the page surface, not for its own
+   tint — so every tone also carries an -ink, solved per tone against its
+   own -soft at ≥5:1. Paint a tint and its ink together; never a raw tone
+   on its own tint.
+   ------------------------------------------------------------------------- */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.809 0.105 251.813);
-  --chart-2: oklch(0.623 0.214 259.815);
-  --chart-3: oklch(0.546 0.245 262.881);
-  --chart-4: oklch(0.488 0.243 264.376);
-  --chart-5: oklch(0.424 0.199 265.638);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --font-sans-fallback: system-ui, -apple-system, sans-serif;
+  --r: 5px;
+  --r-lg: 8px;
+  --dur: 130ms;
 }
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.809 0.105 251.813);
-  --chart-2: oklch(0.623 0.214 259.815);
-  --chart-3: oklch(0.546 0.245 262.881);
-  --chart-4: oklch(0.488 0.243 264.376);
-  --chart-5: oklch(0.424 0.199 265.638);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+:root,
+html[data-theme="dark"] {
+  --bg: #0b0d10; --bg-grad: #0d1014;
+  --surface: #12151a; --surface-2: #171b21; --surface-3: #1d222a;
+  --rail: #0e1115;
+  --border: #232931; --border-strong: #323a45; --border-faint: #1a1f26;
+  --text: #e9edf1; --text-2: #a6afba; --text-3: #8b95a1; --text-faint: #7d8794;
+  --accent: oklch(0.64 0.13 250); --accent-fg: #fff; --accent-soft: oklch(0.30 0.06 250); --accent-line: oklch(0.45 0.10 250);
+  --ok: oklch(0.72 0.14 152); --ok-soft: oklch(0.28 0.06 152);
+  --warn: oklch(0.78 0.13 78); --warn-soft: oklch(0.30 0.06 78);
+  --danger: oklch(0.66 0.17 25); --danger-soft: oklch(0.30 0.08 25);
+  --sync: oklch(0.70 0.12 230); --sync-soft: oklch(0.29 0.06 230);
+  --idle: oklch(0.70 0.02 255); --idle-soft: oklch(0.26 0.01 255);
+  --hold: oklch(0.68 0.12 305); --hold-soft: oklch(0.29 0.06 305);
+  --add: oklch(0.78 0.15 152); --add-bg: oklch(0.26 0.05 152); --add-soft: oklch(0.26 0.05 152);
+  --del: oklch(0.72 0.17 25); --del-bg: oklch(0.26 0.06 25); --del-soft: oklch(0.26 0.06 25);
+  --accent-fill: oklch(0.52 0.15 250);
+  --ok-ink: oklch(0.67 0.14 152); --warn-ink: oklch(0.70 0.13 78); --danger-ink: oklch(0.71 0.17 25);
+  --sync-ink: oklch(0.69 0.13 230); --idle-ink: oklch(0.66 0.02 255); --hold-ink: oklch(0.70 0.14 305);
+  --accent-ink: oklch(0.70 0.14 250); --add-ink: oklch(0.65 0.14 152); --del-ink: oklch(0.68 0.17 25);
+  --on-tint-2: oklch(0.70 0.02 250);
+  --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 30px rgba(0, 0, 0, .35);
+  --scrim: rgba(4, 6, 8, .62);
+  color-scheme: dark;
+}
+
+html[data-theme="light"] {
+  --bg: #f4f6f8; --bg-grad: #eef1f4;
+  --surface: #ffffff; --surface-2: #f7f9fa; --surface-3: #eef1f4;
+  --rail: #ffffff;
+  --border: #dde2e8; --border-strong: #c3ccd6; --border-faint: #e9edf1;
+  --text: #101418; --text-2: #485261; --text-3: #616b78; --text-faint: #5a6370;
+  --accent: oklch(0.52 0.14 250); --accent-fg: #fff; --accent-soft: oklch(0.95 0.02 250); --accent-line: oklch(0.80 0.06 250);
+  --ok: oklch(0.52 0.14 152); --ok-soft: oklch(0.95 0.03 152);
+  --warn: oklch(0.52 0.13 70); --warn-soft: oklch(0.95 0.04 78);
+  --danger: oklch(0.52 0.18 25); --danger-soft: oklch(0.95 0.03 25);
+  --sync: oklch(0.52 0.13 230); --sync-soft: oklch(0.95 0.03 230);
+  --idle: oklch(0.48 0.02 255); --idle-soft: oklch(0.95 0.01 255);
+  --hold: oklch(0.52 0.14 305); --hold-soft: oklch(0.95 0.03 305);
+  --add: oklch(0.46 0.13 152); --add-bg: oklch(0.95 0.04 152); --add-soft: oklch(0.95 0.04 152);
+  --del: oklch(0.48 0.17 25); --del-bg: oklch(0.96 0.03 25); --del-soft: oklch(0.96 0.03 25);
+  --accent-fill: oklch(0.50 0.15 250);
+  --ok-ink: oklch(0.49 0.14 152); --warn-ink: oklch(0.51 0.13 78); --danger-ink: oklch(0.52 0.17 25);
+  --sync-ink: oklch(0.49 0.13 230); --idle-ink: oklch(0.50 0.02 255); --hold-ink: oklch(0.52 0.14 305);
+  --accent-ink: oklch(0.51 0.14 250); --add-ink: oklch(0.49 0.14 152); --del-ink: oklch(0.52 0.17 25);
+  --on-tint-2: oklch(0.50 0.02 250);
+  --shadow: 0 1px 2px rgba(16, 20, 24, .06), 0 10px 28px rgba(16, 20, 24, .08);
+  --scrim: rgba(16, 20, 24, .32);
+  color-scheme: light;
 }
 
 @layer base {
+  /* A bare `border` class draws in the border tone, and a focus outline in
+     half the accent line, in both themes. */
   * {
-    @apply border-border outline-ring/50;
+    border-color: var(--border);
+    outline-color: color-mix(in oklab, var(--accent-line) 50%, transparent);
+  }
+  html,
+  body {
+    height: 100%;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-bg text-text font-sans;
+    font-size: 13px;
+    /* The shell owns scrolling: rail and pane are fixed height, only the
+       content column scrolls. */
+    overflow: hidden;
   }
   html {
     @apply font-sans;
   }
-  .dark option {
-    background-color: #0f172a;
-    color: #e2e8f0;
+  button,
+  input,
+  select,
+  textarea {
+    font-family: inherit;
   }
+  button {
+    cursor: pointer;
+  }
+  option {
+    background-color: var(--surface);
+    color: var(--text);
+  }
+  /* Native checkboxes, radios and ranges take the one accent — the design
+     styles nothing else about them. */
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="range"] {
+    accent-color: var(--accent);
+  }
+  ::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   LabDog utility vocabulary — the small set of classes the design reads
+   with. `.tt` is the uppercase section label; `.mono`/`.num` mark
+   copyable values; `.btn` is the dense button; `.inp` is every text
+   control — input, select and textarea alike — inside a `Field`.
+   ------------------------------------------------------------------------- */
+@layer components {
+  .mono {
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-variant-ligatures: none;
+  }
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+  .tt {
+    text-transform: uppercase;
+    letter-spacing: 0.11em;
+    font-size: 9.5px;
+    font-weight: 600;
+    font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+    color: var(--text-3);
+  }
+  .trunc {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .scroll {
+    overflow: auto;
+    scrollbar-gutter: stable;
+  }
+  .row-hover:hover {
+    background: var(--surface-2);
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    padding: 5px 10px;
+    border-radius: var(--r);
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text-2);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.35;
+    transition: background var(--dur), border-color var(--dur), color var(--dur);
+  }
+  .btn:hover {
+    background: var(--surface-3);
+    color: var(--text);
+    border-color: var(--border-strong);
+  }
+  .btn-primary {
+    background: var(--accent-fill);
+    border-color: var(--accent-fill);
+    color: #fff;
+    font-weight: 600;
+  }
+  .btn-primary:hover {
+    background: var(--accent-fill);
+    filter: brightness(1.12);
+    color: #fff;
+    border-color: var(--accent-fill);
+  }
+  .btn-danger {
+    background: var(--danger-soft);
+    border-color: var(--danger);
+    color: var(--danger-ink);
+    font-weight: 600;
+  }
+  .btn-danger:hover {
+    background: var(--danger-soft);
+    border-color: var(--danger);
+    color: var(--danger-ink);
+    filter: brightness(1.08);
+  }
+  .btn-ghost {
+    background: transparent;
+    border-color: transparent;
+  }
+  .btn-ghost:hover {
+    background: var(--surface-2);
+    border-color: transparent;
+  }
+  .btn[disabled],
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .btn-sm {
+    padding: 3px 8px;
+    font-size: 11px;
+  }
+  .inp {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: 5px 8px;
+    color: var(--text);
+    font-size: 12px;
+    width: 100%;
+  }
+  .inp:focus {
+    outline: none;
+    border-color: var(--accent-line);
+    background: var(--surface);
+  }
+  .inp::placeholder {
+    color: var(--text-faint);
+  }
+  .inp:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  textarea.inp {
+    line-height: 1.5;
+    min-height: 64px;
+    resize: vertical;
+  }
+  /* A Field with an error paints its control's border, not a red label —
+     and so does a control marked invalid on its own (the sign-in form,
+     whose error is one banner over both fields). */
+  .field[data-invalid="true"] .inp,
+  .inp[aria-invalid="true"] {
+    border-color: var(--danger);
+  }
+  .pane-enter {
+    animation: ld-slide var(--dur) ease;
+  }
+  .fade {
+    animation: ld-fade 160ms ease;
+  }
+  .pulse {
+    animation: ld-pulse 1.4s ease-in-out infinite;
+  }
+  .spin {
+    animation: ld-spin 900ms linear infinite;
+  }
+}
+
+@keyframes ld-slide {
+  from { opacity: 0; transform: translateX(-6px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes ld-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes ld-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@keyframes ld-spin {
+  to { transform: rotate(360deg); }
 }

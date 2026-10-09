@@ -12,20 +12,24 @@ import { AppShell } from '@/components/app-shell'
 // neither the network nor the font. CI hit it, and a build that fails for
 // reasons unrelated to the diff teaches you to re-run without reading.
 //
-// Both files are the *variable* latin-subset builds, so one file covers
-// the whole weight range instead of one per weight — 68 kB for both.
-// See app/fonts/README.md for licensing and how to update them.
-const dmSans = localFont({
-  src: './fonts/dm-sans.woff2',
+// Atkinson Hyperlegible is the typeface: Next for UI text and the
+// uppercase section labels, Mono for every value an operator might copy
+// (hostnames, ports, CIDRs, cron lines). Both are drawn so that easily
+// confused shapes — l/I/1, O/0, rn/m — stay distinct, which is most of
+// what reading a hostname or an address needs. Each is one variable file
+// covering 200–800. See app/fonts/README.md for licensing and how to
+// update them.
+const atkinsonSans = localFont({
+  src: './fonts/atkinson-hyperlegible-next.woff2',
   variable: '--font-sans',
-  weight: '400 700',
+  weight: '200 800',
   display: 'swap',
 })
 
-const jetbrainsMono = localFont({
-  src: './fonts/jetbrains-mono.woff2',
+const atkinsonMono = localFont({
+  src: './fonts/atkinson-hyperlegible-mono.woff2',
   variable: '--font-mono',
-  weight: '400 500',
+  weight: '200 800',
   display: 'swap',
 })
 
@@ -39,10 +43,14 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  // No hardcoded theme class here: next-themes (see providers.tsx) writes
+  // both `class` and `data-theme` on <html> before hydration, from the
+  // `labdog:theme` key in localStorage. Dark is the default; light is a
+  // real second theme, not an inversion — see globals.css.
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <body
-        className={`${dmSans.variable} ${jetbrainsMono.variable} font-sans antialiased bg-slate-950 text-slate-50`}
+        className={`${atkinsonSans.variable} ${atkinsonMono.variable} font-sans antialiased bg-bg text-text`}
       >
         <Providers>
           <AppShell>{children}</AppShell>

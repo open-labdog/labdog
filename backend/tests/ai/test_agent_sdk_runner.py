@@ -18,6 +18,7 @@ from app.ai.models import AIMessage, AISession, AIToolCall
 
 pytest.importorskip("claude_agent_sdk", reason="optional [agent] extra not installed")
 
+from app.ai.agent_sdk.runner import _INTERRUPTED_CALL as _INTERRUPTED  # noqa: E402
 from app.ai.agent_sdk.runner import AgentSDKRunner  # noqa: E402
 from app.ai.loop import LoopCaps  # noqa: E402
 from tests.ai.fake_sdk_client import (  # noqa: E402
@@ -26,6 +27,7 @@ from tests.ai.fake_sdk_client import (  # noqa: E402
     rate_limit,
     result,
 )
+from tests.conftest import create_host  # noqa: E402
 
 
 async def _run(db, session, provider_row, messages, *, caps=None, events=None, on_query=None):
@@ -275,6 +277,56 @@ class TestRefusalsAreRecorded:
         assert rows[0].status == "blocked"
         assert rows[0].tool_name == "run_ssh_command"
         assert rows[0].classification == "mutating"
+
+    async def test_a_refused_call_records_its_host(self, db, ai_provider, make_session) -> None:
+        """BUG-109: the API path's refusal carries the host and this one
+        did not, so the audit trail said a command was refused but not
+        where."""
+        host = await create_host(db)
+        session = await make_session(autonomy_level="read_only", target_host_ids=[host.id])
+        runner = AgentSDKRunner(db, session, ai_provider, LoopCaps())
+
+        await runner._can_use_tool(
+            "mcp__labdog__run_ssh_command",
+            {"host_id": host.id, "command": "systemctl restart nginx"},
+            _FakeContext(),
+        )
+
+        [row] = (
+            (await db.execute(select(AIToolCall).where(AIToolCall.session_id == session.id)))
+            .scalars()
+            .all()
+        )
+        assert row.status == "blocked"
+        assert row.target_host_id == host.id
+
+    @pytest.mark.parametrize("named", [987_654, "other", "1", None])
+    async def test_a_host_it_may_not_touch_is_left_unset(
+        self, db, ai_provider, make_session, named
+    ) -> None:
+        """The id comes from the model and the column is a foreign key: a
+        made-up one would fail the insert and lose the record."""
+        host = await create_host(db)
+        other = await create_host(db, ip="10.0.0.2")
+        session = await make_session(autonomy_level="read_only", target_host_ids=[host.id])
+        runner = AgentSDKRunner(db, session, ai_provider, LoopCaps())
+
+        await runner._can_use_tool(
+            "mcp__labdog__run_ssh_command",
+            {
+                "host_id": other.id if named == "other" else named,
+                "command": "systemctl restart nginx",
+            },
+            _FakeContext(),
+        )
+
+        [row] = (
+            (await db.execute(select(AIToolCall).where(AIToolCall.session_id == session.id)))
+            .scalars()
+            .all()
+        )
+        assert row.status == "blocked"
+        assert row.target_host_id is None
 
     async def test_a_permitted_call_is_allowed_and_not_pre_recorded(
         self, db, ai_provider, make_session
@@ -794,3 +846,301 @@ class TestTheQuotaWarning:
         assert not [1 for name, _ in events if name == "rate_limit_warning"]
         assert outcome.status == "succeeded"
         assert outcome.stopped_by == ""
+
+
+class TestAnInterruptedCallbackLeavesTheSessionUsable:
+    """BUG-94: interrupting the SDK cancels whichever tool callback is in
+    flight, and a cancellation inside a flush left the shared session
+    needing a rollback nothing issued. The next query, ``_cancelled()`` in
+    ``run``, raised ``PendingRollbackError``, and the session failed with
+    that instead of stopping for its cap. Session 17 on lin-manager: token
+    cap hit while ``run_ssh_command`` was being recorded."""
+
+    OVER_THE_CAP = {"input_tokens": 500, "output_tokens": 10}
+
+    @staticmethod
+    def _handler(runner, run):
+        import dataclasses
+
+        return dataclasses.replace(runner._permitted["list_hosts"], run=run)
+
+    @staticmethod
+    async def _slow_inserts(db) -> None:
+        """Make every insert into ai_tool_calls take long enough to be
+        cancelled in the middle of it. Rolled back with the test."""
+        from sqlalchemy import text
+
+        await db.execute(
+            text(
+                "CREATE FUNCTION bug94_slow() RETURNS trigger AS $$ "
+                "BEGIN PERFORM pg_sleep(0.5); RETURN NEW; END $$ LANGUAGE plpgsql"
+            )
+        )
+        await db.execute(
+            text(
+                "CREATE TRIGGER bug94_slow BEFORE INSERT ON ai_tool_calls "
+                "FOR EACH ROW EXECUTE FUNCTION bug94_slow()"
+            )
+        )
+
+    @staticmethod
+    async def _cancel_midway(coro, after: float = 0.2) -> None:
+        import asyncio
+
+        task = asyncio.ensure_future(coro)
+        await asyncio.sleep(after)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    async def _run_with(self, db, session, provider_row, on_query_for, messages, fake=None):
+        from app.ai.loop import LoopCaps
+
+        fake = fake or FakeSDKClient(messages)
+        runner = AgentSDKRunner(
+            db,
+            session,
+            provider_row,
+            LoopCaps(max_tokens_total=100),
+            client_factory=fake.factory,
+        )
+        on_query = on_query_for(runner)
+        if on_query is not None:
+            # Once: the wrap-up turn after a cap asks the same fake again.
+            done = []
+
+            async def once():
+                if not done:
+                    done.append(True)
+                    await on_query()
+
+            fake._on_query = once
+        return await runner.run(), runner
+
+    async def _calls(self, db, session):
+        return (
+            (await db.execute(select(AIToolCall).where(AIToolCall.session_id == session.id)))
+            .scalars()
+            .all()
+        )
+
+    async def test_a_cancel_mid_flush_stops_the_run_for_its_reason(
+        self, db, ai_provider, make_session
+    ) -> None:
+        session = await make_session()
+        await self._slow_inserts(db)
+        ran = []
+
+        async def run_tool(ctx, arguments):  # noqa: ANN001
+            ran.append(arguments)
+            raise AssertionError("an interrupted call must not go on to run")
+
+        def on_query_for(runner):
+            async def on_query():
+                await self._cancel_midway(runner._execute_tool(self._handler(runner, run_tool), {}))
+
+            return on_query
+
+        outcome, _ = await self._run_with(
+            db,
+            session,
+            ai_provider,
+            on_query_for,
+            [assistant("checking chronyd", self.OVER_THE_CAP), result()],
+        )
+
+        assert outcome.status == "succeeded", outcome
+        assert "token budget" in (outcome.stopped_by or "")
+        await db.refresh(session)
+        assert session.stopped_reason and "token budget" in session.stopped_reason
+        assert ran == []
+        [call] = await self._calls(db, session)
+        assert call.status == "error"
+        assert call.result_summary.startswith("Interrupted")
+        assert call.finished_at is not None
+
+    async def test_a_call_cancelled_while_running_is_closed_as_interrupted(
+        self, db, ai_provider, make_session
+    ) -> None:
+        import asyncio
+
+        session = await make_session()
+        finished = []
+
+        async def run_tool(ctx, arguments):  # noqa: ANN001
+            await asyncio.sleep(5)
+            finished.append(True)
+
+        def on_query_for(runner):
+            async def on_query():
+                await self._cancel_midway(runner._execute_tool(self._handler(runner, run_tool), {}))
+
+            return on_query
+
+        outcome, _ = await self._run_with(
+            db, session, ai_provider, on_query_for, [assistant("done"), result()]
+        )
+
+        assert outcome.status == "succeeded", outcome
+        assert finished == []
+        [call] = await self._calls(db, session)
+        assert (call.status, call.result_summary) == ("error", _INTERRUPTED)
+
+    async def test_a_broken_session_is_rolled_back_before_it_is_used(
+        self, db, ai_provider, make_session
+    ) -> None:
+        """Covers what the shielding cannot: a tool's own queries, and the
+        driver loop on a wall-clock timeout, can still be cancelled
+        mid-operation. Broken here with a failed flush as the interrupt
+        goes out, which is when the real one broke it and leaves the
+        session in the same state."""
+        from sqlalchemy.exc import IntegrityError
+
+        class BreaksTheSessionOnInterrupt(FakeSDKClient):
+            async def interrupt(self) -> None:
+                self.interrupted = True
+                db.add(AIToolCall(session_id=2_000_000_000, tool_name="x"))
+                with pytest.raises(IntegrityError):
+                    await db.flush()
+
+        session = await make_session()
+        fake = BreaksTheSessionOnInterrupt(
+            [assistant("one", self.OVER_THE_CAP), assistant("two"), result()]
+        )
+
+        outcome, _ = await self._run_with(
+            db, session, ai_provider, lambda runner: None, [], fake=fake
+        )
+
+        assert outcome.status == "succeeded", outcome
+        assert "token budget" in (outcome.stopped_by or "")
+        await db.refresh(session)
+        assert session.status == "succeeded"
+        assert session.stopped_reason and "token budget" in session.stopped_reason
+
+    async def test_an_error_while_stopping_keeps_the_stop_reason(
+        self, db, ai_provider, make_session
+    ) -> None:
+        class FailsOnInterrupt(FakeSDKClient):
+            async def interrupt(self) -> None:
+                raise RuntimeError("control request failed")
+
+        session = await make_session()
+        fake = FailsOnInterrupt([assistant("one", self.OVER_THE_CAP), result()])
+
+        outcome, _ = await self._run_with(
+            db, session, ai_provider, lambda runner: None, [], fake=fake
+        )
+
+        assert outcome.status == "succeeded", outcome
+        assert "token budget" in (outcome.stopped_by or "")
+
+
+class TestUninterruptible:
+    async def test_the_work_finishes_and_the_caller_is_still_cancelled(self) -> None:
+        import asyncio
+
+        from app.ai.agent_sdk.runner import _uninterruptible
+
+        steps = []
+
+        async def work():
+            steps.append("start")
+            await asyncio.sleep(0.2)
+            steps.append("end")
+            return "done"
+
+        caller = asyncio.ensure_future(_uninterruptible(work()))
+        await asyncio.sleep(0.05)
+        caller.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await caller
+        assert steps == ["start", "end"]
+
+    async def test_without_a_cancel_it_returns_the_result(self) -> None:
+        from app.ai.agent_sdk.runner import _uninterruptible
+
+        async def work():
+            return 42
+
+        assert await _uninterruptible(work()) == 42
+
+
+class TestOneResponseIsCountedOnce:
+    """BUG-95: the CLI sends one ``AssistantMessage`` per content block, and
+    each carries the whole response's usage. Session 17 on lin-manager: two
+    responses, each a thinking block and a tool call, about 5,400 tokens,
+    counted as 10,712 and stopped at a 10,000 cap."""
+
+    # lin-manager session 17, response by response.
+    FIRST = {"input_tokens": 2, "cache_creation_input_tokens": 2582, "output_tokens": 66}
+    SECOND = {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 114,
+        "cache_read_input_tokens": 2582,
+        "output_tokens": 8,
+    }
+
+    def _session_17(self):
+        return [
+            assistant("", self.FIRST, message_id="msg_1"),
+            assistant("", self.FIRST, message_id="msg_1"),
+            assistant("", self.SECOND, message_id="msg_2"),
+            assistant("the clock is fine", self.SECOND, message_id="msg_2"),
+            result(),
+        ]
+
+    async def test_session_17_stays_under_its_cap(self, db, ai_provider, make_session) -> None:
+        session = await make_session()
+        outcome, fake, runner = await _run(
+            db, session, ai_provider, self._session_17(), caps=LoopCaps(max_tokens_total=10_000)
+        )
+
+        assert not fake.interrupted, f"stopped at {outcome.stopped_by!r}"
+        assert runner._live_prompt + runner._live_completion == 2650 + 2706
+
+    async def test_distinct_responses_still_add_up(self, db, ai_provider, make_session) -> None:
+        session = await make_session()
+        turn = {"input_tokens": 50, "output_tokens": 10}
+        outcome, fake, _ = await _run(
+            db,
+            session,
+            ai_provider,
+            [
+                assistant("one", turn, message_id="msg_1"),
+                assistant("two", turn, message_id="msg_2"),
+                result(),
+            ],
+            caps=LoopCaps(max_tokens_total=100),
+        )
+
+        assert fake.interrupted
+        assert "token budget" in (outcome.stopped_by or "")
+
+    async def test_an_unfinished_run_books_each_response_once(
+        self, db, ai_provider, make_session
+    ) -> None:
+        """Session 16 booked twice its input tokens: interrupted runs book
+        the live estimate, and the estimate was doubled."""
+        session = await make_session()
+        turn = {"input_tokens": 3000, "output_tokens": 100}
+        await _run(
+            db,
+            session,
+            ai_provider,
+            [
+                assistant("", turn, message_id="msg_1"),
+                assistant("", turn, message_id="msg_1"),
+                assistant("", turn, message_id="msg_2"),
+                assistant("", turn, message_id="msg_2"),
+            ],
+        )
+
+        await db.refresh(session)
+        assert session.prompt_tokens == 6000
+        assert session.completion_tokens == 200
+
+    async def test_turns_are_counted_per_response(self, db, ai_provider, make_session) -> None:
+        session = await make_session()
+        _, _, runner = await _run(db, session, ai_provider, self._session_17()[:-1])
+        assert session.iterations == 2

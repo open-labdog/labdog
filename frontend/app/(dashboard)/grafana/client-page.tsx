@@ -4,24 +4,15 @@ import { useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
-import { useDelayedLoading } from "@/lib/utils"
 import { showSuccess, showError } from "@/lib/toast"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Breadcrumb } from "@/components/ui/breadcrumb"
-import { TableSkeleton } from "@/components/ui/skeleton"
-import { ConfirmDialog } from "@/components/ui/confirm-dialog"
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { DataTable } from "@/components/ui/data-table"
+import { Banner, Confirm, Field, Modal, PageHead, Panel, Table, Tag } from "@/components/ld"
 import { MetricsScrapeCard } from "@/components/metrics-scrape-card"
 import type { GrafanaInstance, GrafanaKind, GrafanaAuthType } from "@/lib/types"
+
+const CRUMBS = [
+  { label: "settings", href: "/settings" },
+  { label: "integrations", href: "/settings" },
+]
 
 interface FormState {
   name: string
@@ -58,6 +49,11 @@ const URL_PLACEHOLDER: Record<GrafanaKind, string> = {
 
 type TestResult = { success: boolean; message: string }
 
+/**
+ * Grafana — the Mimir (metrics) and Loki (logs) endpoints LabDog reads
+ * host state from and hands to the Alloy install action, plus the
+ * scrape endpoint LabDog itself exposes.
+ */
 export default function GrafanaPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<GrafanaInstance | null>(null)
@@ -67,13 +63,7 @@ export default function GrafanaPage() {
   const [draftTesting, setDraftTesting] = useState(false)
   const [draftTestResult, setDraftTestResult] = useState<TestResult | null>(null)
   const [testingId, setTestingId] = useState<number | null>(null)
-  const [confirmState, setConfirmState] = useState<{
-    open: boolean
-    title: string
-    description: string
-    action: () => void | Promise<void>
-    loading?: boolean
-  } | null>(null)
+  const [confirmState, setConfirmState] = useState<{ title: string; description: string; action: () => void | Promise<void>; loading?: boolean } | null>(null)
 
   const queryClient = useQueryClient()
 
@@ -81,7 +71,6 @@ export default function GrafanaPage() {
     queryKey: ["grafana-instances"],
     queryFn: () => apiFetch<GrafanaInstance[]>("/api/grafana/instances"),
   })
-  const showLoading = useDelayedLoading(isLoading)
 
   const deleteMutation = useApiMutation<unknown, number, GrafanaInstance>({
     mutationFn: (id) => apiFetch(`/api/grafana/instances/${id}`, { method: "DELETE" }),
@@ -92,6 +81,8 @@ export default function GrafanaPage() {
       updater: (old, id) => old.filter((n) => n.id !== id),
     },
   })
+
+  const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm((p) => ({ ...p, [k]: v }))
 
   function openCreate() {
     setEditing(null)
@@ -119,6 +110,11 @@ export default function GrafanaPage() {
     setFormError(null)
     setDraftTestResult(null)
     setDialogOpen(true)
+  }
+
+  function closeDialog() {
+    setDialogOpen(false)
+    setFormError(null)
   }
 
   async function handleDraftTest() {
@@ -194,9 +190,8 @@ export default function GrafanaPage() {
 
   function handleDelete(inst: GrafanaInstance) {
     setConfirmState({
-      open: true,
-      title: "Delete Grafana Instance",
-      description: `Are you sure you want to delete "${inst.name}"? This action cannot be undone.`,
+      title: "Delete Grafana instance",
+      description: `${inst.name} stops serving host ${inst.kind === "loki" ? "logs" : "metrics"}; actions that pushed to it keep their configuration on the hosts. This cannot be undone.`,
       action: async () => {
         setConfirmState((prev) => (prev ? { ...prev, loading: true } : null))
         try {
@@ -211,9 +206,7 @@ export default function GrafanaPage() {
   async function handleTestConnection(inst: GrafanaInstance) {
     setTestingId(inst.id)
     try {
-      const result = await apiFetch<TestResult>(`/api/grafana/instances/${inst.id}/test`, {
-        method: "POST",
-      })
+      const result = await apiFetch<TestResult>(`/api/grafana/instances/${inst.id}/test`, { method: "POST" })
       if (result.success) showSuccess(result.message)
       else showError(`Connection failed: ${result.message}`)
     } catch (err) {
@@ -223,338 +216,196 @@ export default function GrafanaPage() {
     }
   }
 
+  const all = instances ?? []
+
   return (
-    <div className="space-y-6">
-      <Breadcrumb items={[{ label: "Grafana" }]} />
-
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Grafana Metrics &amp; Logs</h1>
-          <p className="text-slate-400 text-sm mt-1">
-            Register your <strong>Mimir</strong> (metrics) and <strong>Loki</strong> (logs)
-            endpoints separately. Enter one ingest URL per endpoint — LabDog hands it to the Alloy
-            install action and derives the query URL from it.
-          </p>
-        </div>
-        <Button onClick={openCreate}>Add Instance</Button>
-      </div>
-
-      <div>
-        <h2 className="text-sm font-semibold text-white">Metrics in — query backends</h2>
-        <p className="text-slate-400 text-xs mt-1">
-          LabDog reads host CPU/mem/disk from the Mimir and Loki instances registered below.
-        </p>
-      </div>
-
-      {showLoading && <TableSkeleton rows={3} columns={5} />}
+    <>
+      <PageHead
+        crumbs={CRUMBS}
+        title={
+          <>
+            Grafana <span className="mono num text-[12.5px] font-normal text-text-faint">{all.length}</span>
+          </>
+        }
+        sub="Register Mimir (metrics) and Loki (logs) endpoints separately: one ingest URL each. LabDog hands it to the Alloy install action and derives the query URL from it."
+        actions={
+          <button type="button" className="btn btn-sm btn-primary" onClick={openCreate}>
+            Add instance…
+          </button>
+        }
+      />
 
       {error && (
-        <div className="text-red-400 py-8 text-center">Failed to load Grafana instances</div>
+        <Banner tone="danger" flush>
+          Could not load Grafana instances: {error.message}
+        </Banner>
       )}
 
-      {!isLoading && !error && (
-        <DataTable<GrafanaInstance>
-          tableId="grafana-instances"
-          data={instances}
-          emptyMessage={<>No Grafana instances configured. Click <strong>Add Instance</strong> to get started.</>}
-          getRowKey={(n) => n.id}
-          columns={[
-            {
-              key: "name",
-              label: "Name",
-              accessor: (n) => n.name,
-              cell: (n) => (
-                <span className="font-medium text-white">
-                  {n.name}
-                  {n.is_default && (
-                    <span className="ml-2 rounded bg-sky-500/15 px-1.5 py-0.5 text-xs text-sky-300">
-                      default
-                    </span>
-                  )}
-                </span>
-              ),
-              defaultWidth: 180,
-              filter: { type: "text" },
-            },
-            {
-              key: "kind",
-              label: "Kind",
-              accessor: (n) => n.kind,
-              cell: (n) => (
-                <span className="text-slate-300 text-sm capitalize">{n.kind}</span>
-              ),
-              defaultWidth: 90,
-              filter: { type: "text" },
-            },
-            {
-              key: "url",
-              label: "URL",
-              accessor: (n) => n.url,
-              cell: (n) => <span className="font-mono text-slate-300 text-sm">{n.url}</span>,
-              defaultWidth: 300,
-              filter: { type: "text" },
-            },
-            {
-              key: "org_id",
-              label: "Tenant",
-              accessor: (n) => n.org_id ?? "",
-              cell: (n) => n.org_id
-                ? <span className="font-mono text-slate-300 text-sm">{n.org_id}</span>
-                : <span className="text-slate-500 text-sm">—</span>,
-              defaultWidth: 120,
-              filter: { type: "text" },
-            },
-            {
-              key: "verify_ssl",
-              label: "TLS Verify",
-              accessor: (n) => n.verify_ssl,
-              cell: (n) => n.verify_ssl
-                ? <span className="text-green-400 text-sm">Yes</span>
-                : <span className="text-yellow-400 text-sm">No</span>,
-              defaultWidth: 110,
-              filter: { type: "boolean" },
-            },
-            {
-              key: "actions",
-              label: "Actions",
-              cell: (inst) => (
-                <div className="flex gap-1">
-                  <Button size="sm" variant="ghost" disabled={testingId === inst.id} onClick={() => handleTestConnection(inst)}>
-                    {testingId === inst.id ? "Testing..." : "Test"}
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => openEdit(inst)}>Edit</Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                    onClick={() => handleDelete(inst)}
-                    disabled={deleteMutation.isPending}
-                  >
-                    Delete
-                  </Button>
-                </div>
-              ),
-              defaultWidth: 220,
-              resizable: false,
-              sortable: false,
-            },
-          ]}
-        />
-      )}
+      <div className="scroll flex flex-1 flex-col gap-3 p-3.5">
+        <Panel title="metrics in" meta="query backends · host cpu, memory, disk and logs">
+          <Table<GrafanaInstance>
+            cols={[
+              {
+                k: "name",
+                label: "name",
+                w: "minmax(140px,1fr)",
+                sortable: false,
+                cell: (n) => (
+                  <span className="flex items-center gap-1.5">
+                    <span className="mono trunc font-medium text-text">{n.name}</span>
+                    {n.is_default && <Tag tone="accent">default</Tag>}
+                  </span>
+                ),
+              },
+              { k: "kind", label: "kind", w: "80px", sortable: false, cell: (n) => <Tag tone={n.kind === "loki" ? "hold" : "sync"}>{n.kind}</Tag> },
+              { k: "url", label: "ingest url", w: "minmax(220px,1.8fr)", sortable: false, cell: (n) => <span className="mono text-[11px]" title={n.url}>{n.url}</span> },
+              { k: "org", label: "tenant", w: "110px", sortable: false, cell: (n) => (n.org_id ? <span className="mono text-[11px]">{n.org_id}</span> : <span className="text-text-faint">—</span>) },
+              { k: "auth", label: "auth", w: "80px", sortable: false, cell: (n) => <span className="mono text-[11px]">{n.auth_type}</span> },
+              { k: "tls", label: "tls", w: "90px", sortable: false, cell: (n) => (n.verify_ssl ? <Tag tone="ok">verified</Tag> : <Tag tone="warn">unverified</Tag>) },
+              {
+                k: "actions",
+                label: "",
+                w: "170px",
+                right: true,
+                sortable: false,
+                cell: (inst) => (
+                  <span className="flex gap-0.5">
+                    <button type="button" className="btn btn-sm btn-ghost" disabled={testingId === inst.id} onClick={() => handleTestConnection(inst)}>
+                      {testingId === inst.id ? "testing…" : "test"}
+                    </button>
+                    <button type="button" className="btn btn-sm btn-ghost" onClick={() => openEdit(inst)}>
+                      edit
+                    </button>
+                    <button type="button" className="btn btn-sm btn-ghost text-danger" disabled={deleteMutation.isPending} onClick={() => handleDelete(inst)}>
+                      delete
+                    </button>
+                  </span>
+                ),
+              },
+            ]}
+            rows={all}
+            keyOf={(n) => n.id}
+            loading={isLoading}
+            empty="No Grafana instances. Add a Mimir instance to see host metrics on the host page; add Loki for logs."
+          />
+        </Panel>
 
-      <div>
-        <h2 className="text-sm font-semibold text-white">Metrics out — scrape endpoint</h2>
-        <p className="text-slate-400 text-xs mt-1">
-          An opt-in, unauthenticated <code className="font-mono">/metrics</code>{" "}
-          endpoint that lets Alloy (or any Prometheus-compatible scraper) collect
-          LabDog&apos;s fleet state and self-health directly.
-        </p>
+        <Panel title="metrics out" meta="scrape endpoint · LabDog's own fleet state and health">
+          <div className="p-[11px]">
+            <MetricsScrapeCard />
+          </div>
+        </Panel>
       </div>
 
-      <MetricsScrapeCard />
-
-      <Dialog
-        open={dialogOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            setDialogOpen(false)
-            setFormError(null)
+      {dialogOpen && (
+        <Modal
+          title={editing ? "Edit Grafana instance" : "Add Grafana instance"}
+          meta={editing?.name}
+          w={560}
+          onClose={closeDialog}
+          onSubmit={(e) => {
+            e.preventDefault()
+            void handleSave()
+          }}
+          footer={
+            <>
+              <button type="button" className="btn btn-sm mr-auto" onClick={() => void handleDraftTest()} disabled={draftTesting || !form.url}>
+                {draftTesting ? "Testing…" : "Test connection"}
+              </button>
+              <button type="button" className="btn" onClick={closeDialog}>
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={formSaving}>
+                {formSaving ? "Saving…" : editing ? "Save changes" : "Add instance"}
+              </button>
+            </>
           }
-        }}
-      >
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{editing ? "Edit Grafana Instance" : "Add Grafana Instance"}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 max-h-[60vh] overflow-y-auto overflow-x-hidden px-0.5">
-            <div className="space-y-2">
-              <Label htmlFor="g-name">Name</Label>
-              <Input
-                id="g-name"
-                placeholder="e.g. homelab"
-                value={form.name}
-                onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="g-kind">Kind</Label>
-              <select
-                id="g-kind"
-                className="bg-slate-800 border border-slate-700 rounded-md px-3 py-1.5 text-sm text-white w-full"
-                value={form.kind}
-                onChange={(e) => setForm((p) => ({ ...p, kind: e.target.value as GrafanaKind }))}
-              >
+        >
+          <div className="grid gap-[11px]" style={{ gridTemplateColumns: "1fr 200px" }}>
+            <Field label="name" htmlFor="g-name">
+              <input id="g-name" className="inp mono" placeholder="e.g. homelab" value={form.name} onChange={(e) => set("name", e.target.value)} />
+            </Field>
+            <Field label="kind" htmlFor="g-kind">
+              <select id="g-kind" className="inp" value={form.kind} onChange={(e) => set("kind", e.target.value as GrafanaKind)}>
                 <option value="mimir">Mimir / Prometheus (metrics)</option>
                 <option value="loki">Loki (logs)</option>
               </select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="g-url">Ingest URL</Label>
-              <Input
-                id="g-url"
-                placeholder={URL_PLACEHOLDER[form.kind]}
-                value={form.url}
-                onChange={(e) => setForm((p) => ({ ...p, url: e.target.value }))}
-                className="font-mono"
-              />
-              <p className="text-xs text-slate-500">
-                The remote-write / push URL (add the path your setup needs). Handed to the Alloy
-                install action as-is; LabDog strips the path and queries the{" "}
-                {form.kind === "loki" ? "Loki" : "Mimir"} API automatically.
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="g-org">Tenant / Org ID (optional)</Label>
-              <Input
-                id="g-org"
-                placeholder="anonymous"
-                value={form.org_id}
-                onChange={(e) => setForm((p) => ({ ...p, org_id: e.target.value }))}
-                className="font-mono"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="g-auth">Authentication</Label>
-              <select
-                id="g-auth"
-                className="bg-slate-800 border border-slate-700 rounded-md px-3 py-1.5 text-sm text-white w-full"
-                value={form.auth_type}
-                onChange={(e) => setForm((p) => ({ ...p, auth_type: e.target.value as GrafanaAuthType }))}
-              >
+            </Field>
+          </div>
+          <Field label="ingest url" htmlFor="g-url" hint={`the remote-write / push URL — LabDog strips the path and queries the ${form.kind === "loki" ? "Loki" : "Mimir"} API from it`}>
+            <input id="g-url" className="inp mono" placeholder={URL_PLACEHOLDER[form.kind]} value={form.url} onChange={(e) => set("url", e.target.value)} />
+          </Field>
+          <div className="grid gap-[11px]" style={{ gridTemplateColumns: "1fr 1fr" }}>
+            <Field label="tenant / org id" htmlFor="g-org" hint="optional">
+              <input id="g-org" className="inp mono" placeholder="anonymous" value={form.org_id} onChange={(e) => set("org_id", e.target.value)} />
+            </Field>
+            <Field label="authentication" htmlFor="g-auth">
+              <select id="g-auth" className="inp" value={form.auth_type} onChange={(e) => set("auth_type", e.target.value as GrafanaAuthType)}>
                 <option value="none">None</option>
                 <option value="bearer">Bearer token</option>
                 <option value="basic">Basic (username / password)</option>
               </select>
+            </Field>
+          </div>
+          {form.auth_type !== "none" && (
+            <div className="grid gap-[11px]" style={{ gridTemplateColumns: form.auth_type === "basic" ? "1fr 1fr" : "1fr" }}>
+              {form.auth_type === "basic" && (
+                <Field label="username" htmlFor="g-username">
+                  <input id="g-username" className="inp mono" value={form.username} onChange={(e) => set("username", e.target.value)} />
+                </Field>
+              )}
+              <Field label={form.auth_type === "basic" ? "password" : "bearer token"} htmlFor="g-token" hint={editing ? "blank keeps the current one" : undefined}>
+                <input id="g-token" type="password" className="inp mono" autoComplete="off" placeholder={editing?.has_token ? "leave blank to keep current" : ""} value={form.token} onChange={(e) => set("token", e.target.value)} />
+              </Field>
             </div>
-
-            {form.auth_type === "basic" && (
-              <div className="space-y-2">
-                <Label htmlFor="g-username">Username</Label>
-                <Input
-                  id="g-username"
-                  value={form.username}
-                  onChange={(e) => setForm((p) => ({ ...p, username: e.target.value }))}
-                  className="font-mono"
-                />
-              </div>
-            )}
-
-            {form.auth_type !== "none" && (
-              <div className="space-y-2">
-                <Label htmlFor="g-token">
-                  {form.auth_type === "basic" ? "Password" : "Bearer token"}
-                  {editing && " (leave blank to keep current)"}
-                </Label>
-                <Input
-                  id="g-token"
-                  type="password"
-                  placeholder={editing?.has_token ? "Leave blank to keep current" : ""}
-                  value={form.token}
-                  onChange={(e) => setForm((p) => ({ ...p, token: e.target.value }))}
-                  className="font-mono"
-                />
-              </div>
-            )}
-
-            <div className="flex items-center gap-2">
-              <input
-                id="g-default"
-                type="checkbox"
-                checked={form.is_default}
-                onChange={(e) => setForm((p) => ({ ...p, is_default: e.target.checked }))}
-                className="rounded border-input"
-              />
-              <Label htmlFor="g-default">Default {form.kind} instance</Label>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <input
-                id="g-verify-ssl"
-                type="checkbox"
-                checked={form.verify_ssl}
-                onChange={(e) => setForm((p) => ({ ...p, verify_ssl: e.target.checked }))}
-                className="rounded border-input"
-              />
-              <Label htmlFor="g-verify-ssl">Verify TLS certificate</Label>
-            </div>
-
-            {form.verify_ssl && (
-              <div className="space-y-2">
-                <Label htmlFor="g-ca">CA certificate (PEM, optional)</Label>
-                {editing?.has_ca_cert && !form.ca_cert_clear && (
-                  <p className="text-sm text-slate-400">
-                    CA configured — paste a new PEM to replace, or{" "}
-                    <button
-                      type="button"
-                      className="text-red-400 hover:text-red-300 underline"
-                      onClick={() => setForm((p) => ({ ...p, ca_cert_pem: "", ca_cert_clear: true }))}
-                    >
-                      Clear CA
-                    </button>{" "}
-                    to remove.
-                  </p>
-                )}
-                {editing?.has_ca_cert && form.ca_cert_clear && (
-                  <p className="text-sm text-yellow-400">
-                    CA will be cleared on save.{" "}
-                    <button
-                      type="button"
-                      className="text-slate-300 hover:text-white underline"
-                      onClick={() => setForm((p) => ({ ...p, ca_cert_clear: false }))}
-                    >
-                      Undo
-                    </button>
-                  </p>
-                )}
-                <textarea
-                  id="g-ca"
-                  rows={5}
-                  placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"}
-                  value={form.ca_cert_pem}
-                  onChange={(e) =>
-                    setForm((p) => ({
-                      ...p,
-                      ca_cert_pem: e.target.value,
-                      ca_cert_clear: e.target.value.trim() ? false : p.ca_cert_clear,
-                    }))
-                  }
-                  className="w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1.5 font-mono text-sm transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
-                />
-              </div>
-            )}
-
-            <div className="flex items-center gap-3">
-              <Button variant="outline" onClick={handleDraftTest} disabled={draftTesting || !form.url}>
-                {draftTesting ? "Testing..." : "Test connection"}
-              </Button>
-              {draftTestResult && (
-                <span className={draftTestResult.success ? "text-sm text-green-400" : "text-sm text-red-400"}>
-                  {draftTestResult.message}
+          )}
+          <div className="flex flex-wrap gap-4">
+            <label className="flex items-center gap-2 text-xs text-text">
+              <input id="g-default" type="checkbox" checked={form.is_default} onChange={(e) => set("is_default", e.target.checked)} />
+              default {form.kind} instance
+            </label>
+            <label className="flex items-center gap-2 text-xs text-text">
+              <input id="g-verify-ssl" type="checkbox" checked={form.verify_ssl} onChange={(e) => set("verify_ssl", e.target.checked)} />
+              verify TLS certificate
+            </label>
+          </div>
+          {form.verify_ssl && (
+            <Field label="ca certificate" htmlFor="g-ca" hint="PEM, optional — for a private CA">
+              {editing?.has_ca_cert && !form.ca_cert_clear && (
+                <span className="text-[11.5px] text-text-3">
+                  A CA is configured — paste a new PEM to replace it, or{" "}
+                  <button type="button" className="text-danger underline" onClick={() => setForm((p) => ({ ...p, ca_cert_pem: "", ca_cert_clear: true }))}>
+                    clear it
+                  </button>
+                  .
                 </span>
               )}
-            </div>
-
-            {formError && <p className="text-sm text-red-400">{formError}</p>}
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setDialogOpen(false); setFormError(null) }}>
-              Cancel
-            </Button>
-            <Button onClick={handleSave} disabled={formSaving}>
-              {formSaving ? "Saving..." : editing ? "Save Changes" : "Add Instance"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+              {editing?.has_ca_cert && form.ca_cert_clear && (
+                <span className="text-[11.5px] text-warn">
+                  The CA will be cleared on save.{" "}
+                  <button type="button" className="text-text-2 underline" onClick={() => set("ca_cert_clear", false)}>
+                    undo
+                  </button>
+                </span>
+              )}
+              <textarea
+                id="g-ca"
+                className="inp mono"
+                rows={5}
+                placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"}
+                value={form.ca_cert_pem}
+                onChange={(e) => setForm((p) => ({ ...p, ca_cert_pem: e.target.value, ca_cert_clear: e.target.value.trim() ? false : p.ca_cert_clear }))}
+              />
+            </Field>
+          )}
+          {draftTestResult && <Banner tone={draftTestResult.success ? "ok" : "danger"}>{draftTestResult.message}</Banner>}
+          {formError && <Banner tone="danger">{formError}</Banner>}
+        </Modal>
+      )}
 
       {confirmState && (
-        <ConfirmDialog
-          open={confirmState.open}
+        <Confirm
+          open
           onOpenChange={(open) => !open && setConfirmState(null)}
           title={confirmState.title}
           description={confirmState.description}
@@ -564,6 +415,6 @@ export default function GrafanaPage() {
           onConfirm={confirmState.action}
         />
       )}
-    </div>
+    </>
   )
 }

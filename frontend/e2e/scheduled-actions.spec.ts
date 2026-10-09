@@ -72,7 +72,7 @@ const FAKE_ACTIONS: Action[] = [
     supports_host: true,
     supports_fleet: true,
     parameters: [],
-    pack_name: "bundled",
+    pack_name: "labdog-playbooks",
     overridden_from: [],
   },
   {
@@ -87,7 +87,7 @@ const FAKE_ACTIONS: Action[] = [
     supports_host: true,
     supports_fleet: false,
     parameters: [],
-    pack_name: "bundled",
+    pack_name: "labdog-playbooks",
     overridden_from: [],
   },
 ]
@@ -258,14 +258,17 @@ async function setupCommonMocks(
 }
 
 test.describe("Schedules", () => {
-  test("sidebar label and /schedules page render", async ({ page }) => {
+  test("/schedules lands on the Schedules tab of Actions", async ({ page }) => {
     await setupCommonMocks(page)
+    // The old route redirects: a schedule is an action with a cron, so it
+    // lives as a tab of Operations · Actions.
     await page.goto("/schedules")
+    await expect(page).toHaveURL(/\/actions\/?\?tab=schedules/)
     await expect(
-      page.getByRole("heading", { name: "Schedules" }),
+      page.getByRole("heading", { name: "Actions" }),
     ).toBeVisible()
     await expect(
-      page.getByRole("link", { name: "Schedules" }),
+      page.getByRole("tab", { name: "Schedules", selected: true }),
     ).toBeVisible()
   })
 
@@ -283,7 +286,9 @@ test.describe("Schedules", () => {
 
     await page.getByTestId("action-picker").selectOption("fleet-report")
     await page.getByTestId("target-group").click()
-    await page.locator('select').nth(1).selectOption(String(FAKE_GROUP_ID))
+    await page.getByTestId("target-group-picker").fill("e2e-test")
+    await page.getByRole("option", { name: "e2e-test-group" }).click()
+    await expect(page.getByTestId("target-group-picker")).toHaveValue("e2e-test-group")
     await page.getByRole("button", { name: "Continue" }).click()
 
     // Parameters step — collect_state has no params.
@@ -354,7 +359,7 @@ test.describe("Schedules", () => {
           id: 2,
           action_key: "k8s-upgrade",
           action_name: "Upgrade Kubernetes",
-          pack_name: "bundled",
+          pack_name: "labdog-playbooks",
           destructive: true,
         }),
       ],

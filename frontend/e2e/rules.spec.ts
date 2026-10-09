@@ -2,7 +2,7 @@ import { test, expect } from "./fixtures"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
-test.describe("Rules page", () => {
+test.describe("Firewall rules editor", () => {
   test.describe.configure({ mode: "serial" })
   let groupId: number
 
@@ -14,14 +14,21 @@ test.describe("Rules page", () => {
     groupId = group.id
   })
 
-  test("rules page loads for a group", async ({ page }) => {
-    await page.goto(`/groups/${groupId}/rules`)
-    await expect(page.getByRole("heading", { name: "Firewall Rules" })).toBeVisible()
+  test("the firewall editor opens on the group's Config tab", async ({ page }) => {
+    await page.goto(`/groups/${groupId}?tab=config&module=firewall`)
+    await expect(page.getByRole("button", { name: "Firewall", pressed: true })).toBeVisible()
+    await expect(page.getByText(/rules declared here/)).toBeVisible()
     await expect(page.getByRole("button", { name: "Add Rule" })).toBeVisible()
   })
 
-  test("clicking Add Rule opens dialog", async ({ page }) => {
+  test("the old standalone editor URL lands on the Config tab", async ({ page }) => {
     await page.goto(`/groups/${groupId}/rules`)
+    await expect(page).toHaveURL(new RegExp(`/groups/${groupId}/?\\?tab=config&module=firewall`))
+    await expect(page.getByRole("button", { name: "Firewall", pressed: true })).toBeVisible()
+  })
+
+  test("clicking Add Rule opens dialog", async ({ page }) => {
+    await page.goto(`/groups/${groupId}?tab=config&module=firewall`)
     await page.getByRole("button", { name: "Add Rule" }).click()
 
     await expect(page.getByRole("dialog")).toBeVisible()
@@ -32,7 +39,7 @@ test.describe("Rules page", () => {
   })
 
   test("create a TCP allow rule via dialog", async ({ page }) => {
-    await page.goto(`/groups/${groupId}/rules`)
+    await page.goto(`/groups/${groupId}?tab=config&module=firewall`)
     await page.getByRole("button", { name: "Add Rule" }).click()
 
     const dialog = page.getByRole("dialog")
@@ -54,7 +61,7 @@ test.describe("Rules page", () => {
   })
 
   test("create a deny rule and see it in table", async ({ page }) => {
-    await page.goto(`/groups/${groupId}/rules`)
+    await page.goto(`/groups/${groupId}?tab=config&module=firewall`)
     await page.getByRole("button", { name: "Add Rule" }).click()
 
     const dialog = page.getByRole("dialog")
@@ -75,7 +82,7 @@ test.describe("Rules page", () => {
   })
 
   test("cancel button closes dialog without saving", async ({ page }) => {
-    await page.goto(`/groups/${groupId}/rules`)
+    await page.goto(`/groups/${groupId}?tab=config&module=firewall`)
     await page.getByRole("button", { name: "Add Rule" }).click()
 
     const dialog = page.getByRole("dialog")
@@ -112,11 +119,11 @@ test.describe("Rules page", () => {
     })
     await ruleRes.json()
 
-    await page.goto(`/groups/${groupId}/rules`)
+    await page.goto(`/groups/${groupId}?tab=config&module=firewall`)
 
-    // SortableRow renders <tr> with role="button" via dnd-kit — use tr locator
-    const ruleRow = page.locator("tr").filter({ hasText: "original-comment" })
-    await ruleRow.locator("button", { hasText: "Edit" }).click()
+    // The kit table is a CSS grid with table roles, so rows are found by role.
+    const ruleRow = page.getByRole("row").filter({ hasText: "original-comment" })
+    await ruleRow.getByRole("button", { name: "edit" }).click()
 
     await expect(page.getByRole("dialog")).toBeVisible()
     await expect(page.getByRole("heading", { name: "Edit Rule" })).toBeVisible()

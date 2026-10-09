@@ -7,7 +7,786 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
-_Nothing yet._
+## [1.0.0] — 2026-10-09
+
+The first stable release. From here LabDog follows Semantic Versioning:
+configuration keys, the pack and GitOps formats, the webhook endpoints,
+the metrics and the documented REST calls change incompatibly only in a
+new major version. See
+[Versioning](docs/upgrade.md#versioning) for what that covers. Upgrading
+from 0.10.0 needs no action unless the bundled action pack was your only
+source of actions; see [Upgrading to 1.0.0](docs/upgrade.md#upgrading-to-100).
+
+### Added
+
+- **The run log is coloured, and can be searched.** Ansible's output is
+  stored as plain text, so a `fatal:` line looked like an `ok:` line and a
+  failure had to be read for. The log now colours each line by what it
+  says: results in the status colours, `[ERROR]` and `fatal:` with the
+  explanation and the result under them in red, `[WARNING]` in amber, task
+  and play headers set apart, LabDog's own step lines in blue, and each
+  non-zero count in a `PLAY RECAP` row in its colour. Older runs are
+  coloured too. A search box highlights matches and steps through them, a
+  **first failure** button scrolls to the first failure, and **wrap**
+  switches between wrapping and scrolling sideways. Copying still gives
+  the plain text.
+
+- **The run log and the SSH terminal can be resized, maximized and
+  minimized.** Both had a fixed size: the log 60% of the window, the
+  terminal its panel, at a text size nobody could change. Each now has
+  **A−**/**A+** for the text size, a button that fills the browser window
+  with it, one that folds it to its header, and a strip to drag for the
+  height (double-click for the default). The log is docked at the bottom
+  of the run screen. It opens just under the host table, or at the top for
+  a single-host run, and grows upwards over the table. The terminal grows
+  downwards and stops at the bottom of the page. The choices are
+  remembered in the browser, separately for the log and the terminal,
+  except the log's height, so each run opens with the log under its own
+  hosts.
+  Minimizing the terminal keeps its session, and a new text size resizes
+  the remote terminal so full-screen programs redraw to fit. **Esc**
+  leaves a maximized log but not the terminal, where it belongs to the
+  shell. A multi-host run's host table is paged, ten hosts at a time by
+  default, with 25, 50 or all a choice away and remembered.
+
+- **LabDog checks an automatic fix afterwards, and rolls back one that
+  made the host worse.** `ai.alert_remediation_check_minutes` (default
+  10) after a full-auto alert session that changed its host ends, LabDog
+  asks three things: can it still reach the host over SSH (three tries,
+  twenty seconds apart), has a new critical alert fired on the host since
+  the first change, and has the alert itself resolved. A host LabDog
+  cannot reach only counts against the fix if LabDog can still reach
+  Proxmox; otherwise the fault may be LabDog's own and the fix is reported
+  as not checked. A session someone cancelled is not checked: they have
+  most likely taken the host over. The alert's row
+  says **fixed**, **fix did not work** or **fix made it worse**, with
+  what was found on hover. A fix that made the host worse is rolled back
+  while `ai.alert_auto_rollback` is on (the default): LabDog restores the
+  snapshot taken before the session's first change, starts the machine,
+  waits for SSH and marks the host out of sync, and full auto stays off
+  that host for 24 hours. If a sync or action run is working on the host,
+  LabDog waits for it and then checks the host again before restoring
+  anything. The machine restarts and loses everything
+  written since the snapshot, so a fix that only failed to clear the
+  alert is never rolled back automatically. A check that falls due while
+  LabDog is down runs up to 30 minutes late, and is reported as not
+  checked after that rather than made on stale evidence. The **Automatic
+  fix made** email is now **Automatic fixes** and sends the outcome too;
+  existing subscriptions carry over. Grafana's contact point must send
+  resolved notifications, or every fix reads as not working.
+
+- **Roll back from the session.** A session that changed a host has a
+  **Roll back** button for it, which restores the snapshot taken before
+  the session's first change there and says first that the machine
+  restarts and loses what was written since. It is refused, with the
+  reason, while the session is still running, while LabDog's own sync or
+  action run is working on the host, after the host was already rolled
+  back for that session, when the snapshot is gone, when another rollback
+  of the host has since gone back past it (restoring it would bring back
+  what that rollback undid), and on the machine LabDog runs on. A
+  rollback holds the host in the same queue as syncs and action runs:
+  they wait for it, and run after it. On ZFS, where only the newest
+  snapshot can be restored, LabDog deletes the session's own later
+  snapshots first, and refuses — deleting nothing — when a newer one is
+  someone else's. Every attempt, refused ones included, is listed on the
+  session and written to the audit log.
+
+- **Full auto is refused on the machine LabDog runs on.** A fix there
+  could take LabDog down, and a rollback would stop LabDog with nothing
+  left to start the machine again. LabDog recognises the machine from
+  the address other hosts see it connect from, or by asking the host
+  for its interfaces over SSH. A container on a macvlan network is not
+  recognised; keep that host's alerts off the full-auto list.
+
+- **LabDog can send email.** Configure a mail server on the new Email
+  page (Settings › Integrations › Email, or **Email notifications…** in
+  the account menu) — host, port, STARTTLS / TLS / none, login, From
+  address — and **Send test** shows the server's own answer. The SMTP
+  password is encrypted at rest, rotated with the other secrets, and
+  never returned by the API. Each person then opts in to what they want:
+  an alert fired; the assistant is waiting for an approval; that request
+  is about to expire (`notifications.approval_expiry_warning_hours`,
+  default 2) or has expired; a full-auto alert investigation changed a
+  host, with each command, whether it worked and the snapshot taken
+  before it.
+
+  Messages are queued in the same transaction as what caused them and
+  sent by a background task once a minute, never inline, so a slow mail
+  server cannot hold up an alert or an approval. Everything due for one
+  person in that minute is one email, so an alert storm is one message a
+  minute rather than one per alert. Failures are retried after 1, 2, 4, 8
+  and 16 minutes, and the page lists what was sent, to whom, and what the
+  server said. Links point at `notifications.public_url`, which must be
+  set — LabDog will not build links from a request's `Host` header — and
+  no email can approve anything. Alert and command text is redacted
+  before it is mailed.
+
+- **Alert investigations can fix what they find.** They were read-only
+  with no way to raise them. `ai.alert_autonomy_level` now sets what every
+  alert's session may change — `read_only` (the default, so nothing
+  changes on upgrade) or `approval` — and `ai.alert_full_auto_alertnames`
+  names alerts, one per line, whose session may change the host without
+  asking. There is no instance-wide full auto for alerts: you name each
+  one whose fix you trust to run unattended.
+
+  A named alert runs at full auto only while every safeguard holds: it is
+  firing and names a LabDog host, which is the only host it may touch; a
+  webhook-delivered alert needs a webhook token of at least 32
+  characters; the host can be snapshotted first
+  (`ai.alert_full_auto_requires_snapshot`, on by default); no other
+  automatic fix is running on the host; no full-auto session for that
+  alert changed the host within `ai.alert_remediation_cooldown_minutes`
+  (60); and fewer than `ai.alert_remediation_daily_cap` (3) changed it in
+  the last 24 hours. Otherwise it is still investigated, at the base
+  level, and the Alerts page says which safeguard held it back. Full-auto
+  alert sessions run under lower caps (`ai.alert_max_commands`,
+  `ai.alert_wall_clock_seconds`), are told what a fix may and may not be,
+  and refuse a change while a sync or action run is working on the host.
+  The Alerts page tags each investigation that could change something
+  with its level.
+
+- **Schedules can run on local time.** A new setting,
+  `scheduling.timezone` under Settings › Fleet › Scheduling, names the
+  timezone every scheduled action's and cron-scheduled discovery scan's
+  expression is read in, picked from a searchable list of the IANA names
+  the server knows. It defaults to `UTC`, so nothing moves on upgrade. Set it to `Europe/Stockholm` and `1 4 * * 0` runs at 04:01
+  Stockholm time all year; on UTC it ran at 06:01 in summer and 05:01 in
+  winter. Across a daylight-saving change, a time the clock skips runs
+  once at the jump and a time it repeats runs once, as in Vixie cron.
+  Changing the setting keeps each schedule's clock time in the new zone,
+  so check existing schedules afterwards.
+
+  The schedule dialog used to preview the next runs in the browser's
+  timezone with nothing to say so, beside presets labelled UTC, so
+  `1 4 * * 0` previewed as 6:01 AM. The preview now uses the scheduling
+  timezone and names it, the cron field says which timezone it is read
+  in, and the presets no longer claim UTC. The plain-English line under
+  the field is hidden when it would only repeat the expression.
+
+- **Run now on a scan schedule reports its result.** The run is queued
+  and the page used to say only "Run triggered", so you had to watch the
+  last-run column to learn whether anything was found. A toast now says
+  how many hosts the run added, how many are waiting for review, that it
+  found nothing new, or why it failed, and offers **View hosts** and
+  **Review**. The hosts list, the pending counters and the Discovery
+  header's last run refresh at the same time instead of lagging behind a
+  new host.
+
+### Changed
+
+- **Picking which pack runs an action happens right under the action.**
+  On **Operations › Actions › Packs**, clicking a contested action key
+  used to open the pack choice below the whole registry table, away from
+  the row. It now opens directly under that row and shows each
+  candidate's source, commit and last sync, with the current winner
+  marked. Keys line up whether or not they expand, the chevron is the
+  only toggle, and every change is confirmed with a toast. A **frozen**
+  key, pinned automatically when a second pack started declaring it, can
+  now be confirmed with **Keep** *pack*. Before, the pin was already the
+  selected choice and clicking it did nothing.
+
+- **The AI assistant is told how its commands run.** `list_hosts` and
+  `get_host_facts` now show the user `run_ssh_command` connects as on each
+  host, and the instructions say what follows from it: when that user is
+  not root, anything that needs root takes `sudo` from the first attempt
+  and admin tools in `/usr/sbin` are called by full path; when it is root,
+  neither. Sessions that may change a host are also told that restarts
+  and edits under `/etc` need the same `sudo`. An alert's start time now
+  reads `2026-08-23 19:00:00 UTC` rather than a bare ISO offset, and the
+  instructions say a host's logs use its own timezone. In a live test of
+  a full-auto fix, four of twelve commands were spent finding the user
+  out, and each of those failed attempts also took a snapshot.
+
+- **Full-auto alert sessions get room to finish a fix.** 15 commands by
+  default (`ai.alert_max_commands`, was 10; the same fix did not finish
+  inside 10), 900 seconds (`ai.alert_wall_clock_seconds`, was 600, since
+  each change waits for a snapshot), and at least five model turns more
+  than their command cap, even above `ai.max_iterations`; with turns and
+  commands both at 15, the turn limit would have ended a fix before its
+  last command. Values an instance has saved are kept.
+
+- **What the AI assistant may run without approval moved, in both
+  directions.** These now count as reads: `apt list`, `dmesg` and `sysctl`
+  without their write options, `findmnt`, `mount` on its own,
+  `lsb_release`, `hexdump`, `sleep`, `command -v`, `kubelet --version`,
+  `kubeadm version`, `kubeadm upgrade plan`, `kubeadm certs
+  check-expiration`, `containerd --version`, `ctr`'s list commands, the
+  read-only `docker compose` subcommands, and commands run under `timeout`,
+  `nice`, `sudo -u` or with `LC_ALL=C` in front. These now need approval:
+  `wget`, `man`, `xxd`, `initctl` and `at`. `curl` covers what `wget`
+  was used for, and `od` or `hexdump` what `xxd` was. A refused command's
+  reason now lists the forms of that command that would have been allowed.
+
+- **The navigation is a four-zone icon rail with a contextual pane, replacing
+  the 256px sidebar.** The old sidebar held thirteen links in three labelled
+  groups plus a collapsible child that appeared only sometimes, and a third
+  of it was integrations that are configured once a quarter. The rail now
+  holds a fixed set of zones — Overview, Fleet, Operations, Assistant —
+  drawn as line icons (a gauge, server rows, a terminal, a chat bubble),
+  with Settings, the palette, the theme toggle and the account at its foot
+  in the same line style (a cog, a magnifier, a half-filled circle); each
+  zone's destinations live in a 208px pane beside it. Below 1180px the pane
+  overlays the content; below 640px the rail becomes a bottom tab bar. `[`
+  toggles the pane, `t` toggles the theme, `⌘K` opens the palette.
+
+  The command palette indexes everything now — every destination, every
+  host, every group, every module × group pair, and verbs (plan a sync,
+  check for drift, approve pending hosts, start a scan) — which is what lets
+  the rail stay at four entries: the rail is the cold path, the palette the
+  fast path. It used to index nine of ~34 destinations and no objects.
+
+- **Overview replaces the dashboard.** `/overview` is the landing route:
+  fleet state and what is waiting weighted evenly. The four single-number
+  stat cards are gone in favour of a status bar whose every segment is a
+  filter into the hosts list; **Pending** is one queue with typed lanes —
+  assistant approval gates, discovered hosts, firing alerts, drift — sorted
+  soonest-to-expire, with a rail badge that counts only what blocks or
+  expires. Stale hosts (not verified by a collection, drift check or
+  sync in 30+ days — the failure mode nobody notices), a 14-day drift trend, the last 24h of activity failures-first,
+  upcoming schedules with their blast radius, and integration health round
+  it out. `/dashboard` redirects.
+
+- **A group has its own page, on the host detail pattern.** `/groups/<id>`
+  is Overview · Config · Members · Activity, and it is where a group is
+  edited — inline, with no dialog: name, category, description and
+  priority on Overview (a priority move shows the tie warning and every
+  winner/loser flip it causes before Save), the eight module editors behind
+  Config with the module list beside them, membership on Members (an
+  inline picker to add, remove per row), the group's runs and schedules on
+  Activity, GitOps and delete on Overview. Configuration is not a zone of
+  its own: a module's desired state belongs to the group that declares it,
+  so the palette's *Firewall — group: web* lands on that editor, and a
+  host's effective state stays on the host's page. `?tab=rules` and the
+  other legacy tab links still open the right module.
+
+- **Run action… from a host or a group.** Both heads gain the button; it
+  opens the same run dialog an action's own button does — the action as
+  the title, **Preview (dry-run)** and **Run** in the footer, parallelism
+  for a group — with an action picker, since here the target is known
+  first. The Actions library's rows open the same flow against a chosen
+  target, and its head gets **Run action…** too.
+
+- **Plan → apply is a screen with a URL, not a dialog.** `/plans` computes a
+  dry run on every host in scope, lays the per-host diffs side by side with
+  a checkbox per host, derives the blast radius and acknowledgements from
+  the *selection* (so a partial run is never described with the whole plan's
+  numbers), arms Apply behind typing the host count, then runs one coalesced
+  playbook per selected host and polls the jobs to a per-host result.
+  `?scope=group:3&modules=firewall` recomputes the same plan, so a second
+  pair of eyes can review before anyone clicks Apply. Every "Plan sync"
+  button in the app lands here.
+
+- **Operations gains Drift and Runs as destinations.** `/drift` is the
+  fleet-wide findings list — one (host, module) per row from the per-module
+  status rows, remediate writes a plan, re-check reads the host again.
+  `/runs` is one stream of sync jobs and action runs (scheduled runs
+  included), replacing three lists that rendered the same object.
+  `/actions` holds Library · Packs · Schedules; `/schedules` and
+  `/action-packs` redirect to its tabs.
+
+- **Discovery is one route with three tabs** — pending approval, scan
+  schedules, scan now — promoted out from under Hosts. `/hosts/discovery`,
+  `/hosts/discover`, `/hosts/pending` and `/hosts/scans` redirect, including
+  the per-scan queues.
+
+- **Settings has five sections** — Integrations (a registry of cards:
+  Proxmox, Grafana, Git remotes, AI providers, Prometheus export, webhooks),
+  AI, Access, Fleet defaults, System (logging, scrape export, about). The
+  key-value editor is unchanged underneath; each section shows its
+  categories, and the uncategorised-keys safety net lives in Fleet defaults.
+
+- **Host detail presents five tabs instead of twelve.** Overview · Config ·
+  Metrics · Terminal · Activity; the eight module tabs sit behind Config with
+  a module sub-nav that shows each module's drift dot, group membership is
+  Overview content, actions and schedules are Activity. The header's
+  Terminal button is gone (the tab is the terminal) and **Run action…**
+  takes its place. `?tab=rules` and the other legacy tab links still open
+  the right module.
+
+- **Groups list is in priority order.** Priority is the merge order, so it
+  is the first column; each row shows what the group declares as chips into
+  that module's editor, and the row opens the group's page. **New group**
+  opens an editor dialog that shows the merge ladder — where the new
+  priority lands — before creating.
+
+- **Two themes.** Dark stays primary; light is a real second theme rather
+  than an inversion, with one blue accent and status hues at a shared chroma.
+  Both are tokens in `globals.css`, and every screen paints with them. The
+  typeface is Atkinson Hyperlegible Next / Mono, vendored like the fonts
+  before it: it is drawn to keep l/I/1 and O/0 apart, which is most of
+  what reading a hostname or an address needs. Mono is kept for values
+  you might copy — hostnames, module and group names, CIDRs, diff counts;
+  section labels, page titles and word-chips (states, kinds) are sans.
+
+- **The shared dialogs are on the theme.** Run action…, the confirmation
+  modal every delete goes through, Change password and the sync tray are
+  the design's modal and panel now — a title with the target as its meta,
+  `esc` in the header, Cancel and the action in the footer, a danger button
+  where the action destroys something. The kit gains the pieces the
+  remaining screens need (`Field`, `Help`, `Banner`, `Toolbar`, `BulkBar`,
+  `Facts`, `Stat`, `CodeBlock`, `Copy`, `Confirm`, `Steps`, `RunStatus`) and
+  one status vocabulary (`lib/status.ts`) for run, GitOps, item, package,
+  service, audit, alert and assistant states, so an enum is painted the
+  same wherever it appears.
+
+- **The Settings sub-pages are screens on the shell.** Users, SSH keys,
+  Git repositories (list, repository page, connect wizard), Grafana,
+  Proxmox (at `/hypervisors`) and AI providers get the page head with
+  crumbs, the kit table with filters in the head, modals for their forms
+  and a confirmation for every delete — AI providers had none. The
+  settings editor under Settings › AI / Fleet defaults / System is the
+  design's key/value rows, and the Actions › Packs tab is two panels:
+  the registry and the sources.
+
+- **The eight module editors are on the theme.** Firewall rules, services,
+  hosts file, packages, users & groups, cron jobs, the DNS resolver and CA
+  certificates — embedded in the group page's Config tab — are the kit
+  table and modal now, each with the GitOps banner where Git owns the
+  module (CA certificates gains the banner it never had). The firewall
+  editor's row order is ▲/▼ only; the drag handle is gone. Their standalone
+  URLs (`/groups/{id}/rules` and the rest, plus `/groups/{id}/actions`)
+  redirect into the group page instead of rendering their own page.
+
+- **The host page is on the theme, and its one 5,500-line file is now eight
+  tabs and three dialogs.** Firewall, services, hosts file, users & groups,
+  cron jobs, packages, CA certificates and the DNS resolver each get the
+  same effective/override pattern as the group editors — a kit table with a
+  `Provenance` chip for group vs. host vs. system, a modal for the host's
+  own override — as their own file under a private `_tabs/config/` folder;
+  the live service inventory, the `/etc/hosts` preview and the current-state
+  collector panel move with the tabs that use them. Terminal is a fifth
+  primary tab that renders `SshTerminal` in place; the fixed bottom drawer
+  is gone, and the standalone `/hosts/{id}/terminal` page renders the same
+  panel. Group membership drops its add-dialog and two confirmation dialogs
+  for the always-visible add/remove picker the group page already draws for
+  its own host list, so adding or removing a membership reads the same from
+  either side of it.
+
+- **Run detail, schedules, the Actions tab, Discovery and Audit are on the
+  theme.** A run's page (from a host, a group, or the generic fleet route)
+  is a screen now: crumbs to the host or group it ran against (or
+  `operations / runs` for a fleet run — derived from the run itself, so it
+  is correct regardless of which route opened it), the per-host grid and
+  the Ansible output are a kit `Table` and `CodeBlock`. The schedule wizard
+  is a `Modal` with `Steps` for its four stages; the schedule list's row
+  actions are inline `edit · runs · delete`, and "Run history" is a modal
+  with a table of runs and Run now in the footer, not a slide-in panel.
+  Audit's per-column filter popovers become a search box (user, entity, IP
+  address), from/to dates and `action`/`entity` chips in the page head, all
+  applied to what has loaded — `entity`'s options come from the loaded
+  entries, having no fixed vocabulary; `action`'s are the fixed list, every
+  one always offered. Alerts is a list screen (a firing/all switch, one row
+  per alert) instead of a stack of cards, and moves under the Assistant
+  zone's crumb, matching where it already lived in the rail. Discovery's
+  three tabs — the pending queue (fleet-wide and per-scan-config), the
+  recurring scan-schedule list, and the manual scan-now form — are
+  `Toolbar` + `Table` throughout; the schedule list drops its
+  `createPortal` kebab menu for inline actions, and the pending queues
+  select rows with the kit table's own checkbox column instead of a bespoke
+  table component that existed only to duplicate it.
+
+- **The Assistant, sign-in and error pages are on the theme, and with them
+  every route is a screen.** The Assistant is the design's three columns:
+  sessions on the left, the transcript and composer in the middle, and a
+  right-hand column that holds a new session's choices — provider,
+  autonomy, snapshots, hosts in scope — and, once one runs, what it is and
+  what it has done: its autonomy and scope, turns, commands, tokens and
+  cost, tool calls by verdict and the snapshots taken, above the fleet-wide
+  budget meters. Each command reads as the design's command block and a
+  pending change as its approval gate; deleting a session asks in a dialog
+  instead of a browser prompt. The sign-in and first-run cards, the error
+  screen and the last-resort error page (in the dark theme's values, since
+  it cannot rely on the stylesheet) use the tokens, and a host's sync
+  preview draws its diff the way the Plan screen does. No page is left in
+  the old layout, so the shell's padded fallback column is gone.
+
+- **The user guide describes the new UI, with new screenshots.** Every page
+  under `docs/ui/` was checked against the screen it documents and
+  rewritten where the redesign moved or renamed things — the host page's
+  tabs, the group module editors, Discovery's three tabs, the five
+  Settings sections, the Git repository wizard, the audit log's filters.
+  The screenshots, which still showed the old sidebar (and in places the
+  project's old name), are retaken on the current UI, with new ones of a
+  host's Config tab, the Plan screen and an Assistant session.
+  `frontend/FRONTEND.md` documents the LabDog kit instead of shadcn/ui.
+  Things the old guide had wrong are corrected along the way: GitOps
+  imports only on a webhook push (there is no manual import); a host's
+  firewall backend can be pinned only through the API; group priority is
+  1–1000; and the settings reference gains `ssh.command_timeout`,
+  `logging.run_retention_days` and `logging.drift_retention_days`.
+
+- **An action pack's playbook may not import files that sit next to it.**
+  Only the playbook's own text and the pack's roles reach a run, so a
+  playbook that pulled in a relative path with `import_tasks`,
+  `include_tasks`, `vars_files` or `import_playbook` failed before its first
+  task; the private pack's `docker-compose-update` did. Such a playbook is
+  now refused when the pack loads, with a log line naming the files, rather
+  than when someone runs it. Move the imported files into a role. Imports
+  inside roles, and paths that are only resolved at run time, are not
+  affected, and no bundled action does this.
+
+- **The schedule dialog's host and group pickers can be searched.** They
+  were native selects, which only jump to the first option starting with
+  what you type. Every word typed must now appear in a host's name or
+  address, so `node 10.0.2` narrows to that subnet's nodes.
+
+### Removed
+
+- **The bundled action pack.** The image and the `.deb` / `.rpm` /
+  `.tar.gz` packages carried a copy of `labdog-playbooks`, cloned at
+  build time from the SHA in `LABDOG_PLAYBOOKS_REF`, so that a site
+  without GitHub would still have actions. Every install also registers
+  `labdog-playbooks` as a git pack tracking `main`. So every one of its
+  actions was declared twice, and the Packs tab was mostly **pinned** and
+  **frozen** rows choosing between `bundled (bundled)` and
+  `labdog-playbooks`. Actions now come only from packs. The seeded
+  `labdog-playbooks` pack is an ordinary pack that can be edited,
+  disabled or deleted. A site without GitHub points its repository at a
+  mirror or adds a local-directory pack. The upgrade deletes pins that
+  chose **bundled**: a key one pack still declares wins on its own, and
+  a key several packs declare needs a winner again. See
+  [upgrade notes](docs/upgrade.md). `LABDOG_PLAYBOOKS_REF`,
+  `scripts/fetch-bundled-pack.sh`, `./dev/dev.sh bundle`, the
+  playbook-bump workflow and the ansible-lint job (the playbooks repo
+  lints itself) are gone. `LABDOG_PLAYBOOKS_LOCAL` now registers a
+  working copy as a local pack in the dev database.
+
+- The `INTEGRATIONS` nav group, the sometimes-present Pending collapsible,
+  the dashboard stat cards, "Discover" as a concept separate from
+  "Discovery", the category rename/remove affordance on the groups list
+  (category is edited on the group's page), the group **Edit** dialog and
+  the group **Sync all modules** dialog (`components/group-sync-dialog.tsx`;
+  Plan sync opens the Plans screen instead), the hosts list's bulk
+  **Plan sync** button (plans start from a host, a group or Operations ›
+  Plans), and Change Password as a sidebar button — it lives in the account
+  menu with Log out.
+- The dashboard's chart and feed panels (`components/dashboard/*`) and the
+  `recharts` dependency: nothing rendered them once `/dashboard` became a
+  redirect to Overview.
+- Per-column filter popovers and drag-to-resize columns on the Settings
+  tables; filtering is a search box and filter chips in the page head, as
+  on Hosts and Groups.
+- The `@dnd-kit/*` dependencies: their only caller was the firewall
+  editor's drag handle, and rules reorder with ▲/▼ now.
+- `GroupMultiSelect`'s dropdown trigger and search popover — it is an
+  always-visible checkbox box now, since no popover sits above a modal's
+  own layer; the New host form and the Edit host dialog are its only
+  callers. `hooks/use-host-detail.ts` (folded into the tabs that use each
+  query) and `components/usage-bar.tsx` (its one caller moved onto the kit
+  `Meter`).
+- `HostCombobox` (host-scoped CIDR/host and schedule-target pickers are
+  native `<select>`s now) and `components/scans/pending-hosts-table.tsx`
+  (the kit `Table`'s own `selected`/`onSelect` replaced it). `action-card.tsx`
+  and `pack-badge.tsx` — the Actions tab is two `Table`s now, not a card
+  list. `components/ui/confirm-dialog.tsx`, the shim PR A left for its
+  seventeen callers to migrate through — the last of them now imports
+  `Confirm` directly — and, with it, `data-table.tsx`, `table-filter-cell.tsx`,
+  `table.tsx`, `dialog.tsx`, `tooltip.tsx`, `card.tsx`, `breadcrumb.tsx` and
+  `skeleton.tsx` from `components/ui/`, plus `hooks/use-table-state.ts` and
+  `hooks/use-column-resize.ts` — every remaining caller of each was
+  converted in this PR or the three before it.
+- The legacy look and the shadcn/ui layer under it: the light theme's remap
+  of Tailwind's slate scale, shadcn's variable block and stylesheet, the last
+  `components/ui/` primitives (`badge`, `button`, `input`, `label`,
+  `select`, `textarea`; the markdown renderer moved to
+  `components/ai/markdown.tsx`) and the directory itself, `components.json`,
+  and the `shadcn`, `tw-animate-css`, `lucide-react`,
+  `class-variance-authority`, `clsx` and `tailwind-merge` packages — none
+  had an importer left. Also the schedule wizard's old step indicator, which
+  had no caller since the wizard moved onto `Steps`.
+
+### Fixed
+
+- **Settings › Git repositories shows when a repository last synced.** A
+  repository that only feeds action packs read *never synced*, though its
+  packs synced at every start and on every pack sync: only a GitOps import
+  recorded the time. The list and the repository's page now show the
+  newer of the last GitOps import and the last successful pack sync, with
+  that sync's commit.
+
+- **A command the assistant was refused records which host it was for.**
+  On a Claude subscription (the Agent SDK provider), a refused
+  `run_ssh_command` was listed in the session and the audit trail without
+  its host; the other providers already recorded it. And in a session
+  that asks for approval, a change on a host the session was not given, or
+  on a host id the model made up, failed the whole session with a database
+  error. It is now held for approval like any other, without a host, and
+  refused as out of scope if approved.
+
+- **Overview › Upcoming tags "snap" only on a schedule that takes a
+  snapshot.** A schedule of a non-destructive action, such as Update Docker
+  Compose images, showed the tag although LabDog never snapshots before
+  one, under a footer saying snapshot-backed runs are reversible.
+
+- **The Overview pane highlights the view that is open.** Pending, Fleet
+  state, Activity and Upcoming changed the page, but the highlight stayed
+  on Summary.
+
+- **Discovery › Scan now says which addresses it left out.** A scan skips
+  the addresses that are already hosts in LabDog and never said so, so a
+  range whose only SSH host had just been added by a scan schedule came
+  back "No new SSH hosts found on this network" and read as a miss. The
+  result now names them: "2 addresses are already in LabDog and were not
+  scanned: tester (10.10.10.164), …", or counts them beside the table when
+  the scan found new hosts too.
+
+- **The "Automatic fixes" email shows each command's exit status.** Every
+  line of "What ran" repeated the command inside its status brackets, and
+  a command of about 110 characters or more pushed the exit status out of
+  them: `sed -i … && cat …  [failed: sed -i 's/…/' /etc/ngi]`. The
+  brackets now hold only the outcome and the status, `[failed: exit 4]`.
+  The assistant's transcript shows the same shorter line under each
+  command.
+
+- **Run now on a scan schedule is a manual run again.** The endpoint was
+  defined twice and the older copy answered, so a run now still hid the
+  hosts you had dismissed from review, and on a disabled schedule it said
+  "Run triggered" and then did nothing. Run now brings dismissed hosts
+  back, as documented, and is unavailable while the schedule is disabled.
+
+- **Cancelling a run cancels the hosts it has not started.** The cancel
+  left them to the run's orchestrator, so when that had died, or had
+  already handed every host out and stopped watching, they stayed
+  "queued" or "pending" for good and the run never got an end time. A
+  run waiting for a busy host was not cancelled at all, and could start
+  an hour later. Now every host that has not started is cancelled
+  straight away, a queued sync behind a cancelled built-in sync is
+  cancelled with it, and a host that is already running finishes, with
+  the run closing when it does.
+
+- **An action that waits for a busy host runs when the host frees up.**
+  Run an action on a host while a sync was running on it, and it
+  waited, as it should — then failed the moment the sync finished, with
+  a duplicate-key error, and its host stayed "pending" for good. The
+  host queue re-sent the whole run instead of the host's own task. A
+  built-in run on a group had the same trouble in another form: a
+  member that had to wait was handed to the playbook runner, which has
+  nothing to run for a drift check or a state collection, so it failed.
+  Both now resume exactly as they would have started, with the
+  action's own task and time limits, and a resumed run holds its host
+  again, so a sync cannot start alongside it.
+
+- **Rotating the encryption key no longer breaks Git push webhooks.** The
+  rotation script re-encrypted every stored secret except the Git
+  webhook secret, so after a rotation every signed push webhook got a
+  500 and GitOps stopped syncing on push, while the script reported
+  success. It now rotates that secret too, and reports each encrypted
+  column on its own line (`git_repositories.encrypted_https_token: 1
+  value(s) rotated`) instead of one line per table. A test now fails if
+  a model gains an encrypted column the script does not rotate. If you
+  rotated the key on an earlier version, re-enter each repository's
+  webhook secret.
+
+- **`curl -s -o /dev/null -w '%{http_code}'` no longer needs approval.** The
+  AI assistant's usual way to check that a web service answers was refused
+  as a file write, because `-o` names a file and the check did not know
+  that `/dev/null` writes nothing. `-o /dev/null` is now a read, and so is
+  feeding a command `< /dev/null`, as in `openssl s_client … </dev/null`.
+
+- **The AI assistant can filter with `grep -E 'a|b'`.** The command
+  classifier cut a command at every `|`, `;` and `&`, including the ones
+  inside quotes, so `dpkg -l | grep -E 'kubelet|kubeadm'` was read as
+  three commands, the last one `kubeadm'`, and refused as a change. A
+  quoted `>` or `<` was read as a redirect, so `grep '->'` and
+  `grep '<title>'` were refused too. A read-only session has no approval
+  to fall back on, so the assistant simply could not use the commonest
+  filter there is: five of the six commands refused on one install were
+  this. Operators and redirects inside quotes are now data, and an escaped
+  one is a literal. Anything the classifier cannot follow with certainty,
+  an unterminated quote, `$'…'` or an unquoted `#`, is read as before, and
+  the denylist and the check for `$(…)` still look inside quotes. The
+  classifier's tests now run what it calls read-only in bash, and fail if
+  a line runs anything it did not allow or creates a file.
+
+- **Workers see the same actions as the UI.** Celery's worker processes
+  started with the bundled actions only, and picked up a git pack's actions
+  only if a task happened to ask for one they lacked. The scheduler never
+  asked: it skipped a git-pack schedule as "unknown action" on every tick
+  that landed on such a process, so on lin-manager a nightly
+  `labdog-private` schedule ran 16 minutes to two hours late after each
+  restart. An action the bundled pack also ships ran the bundled copy even
+  where a git pack was pinned, a long-running git-pack action could be
+  failed by the sweeper on the default timeout instead of its own, and a
+  pin or pack sync made in the UI never reached the workers at all. Worker
+  code now checks the packs and pins in the database before it relies on
+  the registry and rebuilds when they have changed.
+
+- **A restart no longer leaves the API with only the bundled actions.**
+  The API and the Celery worker rebuild the action registry at the same
+  moment at boot, and the rebuild replaced its snapshot table with a
+  DELETE and an INSERT that failed when the two interleaved. The API
+  only took the registry it had merged once that write succeeded, so it
+  was left serving the bundled pack: every git pack's actions vanished
+  from the UI and the API while both packs said they were synced, until
+  someone happened to sync a pack. Rebuilds now take turns across
+  processes, and a process installs what it merged whether or not the
+  write succeeds. Two processes no longer run git in the same pack
+  checkout at once either. An enabled pack with nothing on disk yet, as
+  on a container without a volume for the packs before its first sync,
+  no longer gets its pins dropped as stale or its keys recorded under
+  another pack. `POST /api/actions/refresh` did the same damage on every
+  call: it used a rebuild that needs a database driver LabDog doesn't
+  install, fell back to the bundled pack, and installed that. It now
+  syncs and rebuilds like the startup job.
+
+- **A multi-host run carries on when LabDog restarts under it.** The task
+  that hands a run's hosts out, a batch at a time, died with the
+  container, and nothing took over: the hosts it had not reached stayed
+  queued, and the run stayed "running" for hours, until its overall
+  deadline failed it. On lin-manager the nightly `linux-upgrade` did this
+  to itself by upgrading Docker on LabDog's own host. That task now
+  records a heartbeat while it works; when the heartbeat stops, LabDog
+  hands the run to a new one within about ten minutes, and it carries on
+  with the hosts not yet run, at the same parallelism. A host that was
+  mid-action at the time is marked failed at its deadline. Two smaller
+  fixes come with it: a cancel now holds however long the host in
+  progress takes (it was seen only through a token that expired after an
+  hour), and when LabDog fails a run for running too long, operations
+  queued behind it on its hosts start instead of waiting on.
+
+- **Switching a schedule on, or changing its cron expression, no longer
+  runs it within a minute.** The scheduler looked for the next run after
+  the schedule's last dispatch, so a schedule re-enabled after a week
+  off, or moved from Sundays to daily, found a run time in the past and
+  fired on the next tick, while the dialog had just previewed a time in
+  the future. Both changes now restart the schedule from the moment of
+  the edit (new column `scheduled_actions.schedule_changed_at`), in the
+  UI and through GitOps alike. Other edits leave its timing alone, so a
+  run missed while the scheduler was down still fires when it returns.
+- **A host's Metrics tab says why it has nothing to show.** With no Mimir
+  instance registered it was an empty panel, and it was also blank while
+  loading or when the request failed. It now names what is missing and
+  links to the fix: **Add a Mimir instance…** when there is none; a prompt
+  to mark one as default when there are several and none is (the API now
+  reports which of the two it is, as `unconfigured_reason`); and, when
+  Mimir is set up but this host sends nothing, a button that runs the
+  metrics agent action on it — whichever action's manifest maps a
+  Prometheus push URL, so **Install Alloy agent** with the default pack. A
+  failed query shows the backend's error, a stale sample says how old it
+  is, and the absolute figures (cores, bytes) are printed under each meter
+  rather than hidden in a tooltip. The Overview strip still shows nothing
+  until metrics work.
+- **Audit retention can be set to `0`, keep forever, as its label says.**
+  The Settings page refused it with "minimum is 1", so the longest you
+  could keep the audit log and terminal transcripts was the 3650-day
+  maximum. The daily pruner already treated `0` as "keep everything"; only
+  the validator was in the way. A test now checks that every setting whose
+  label documents a `0` value accepts it.
+- **`audit_retention_days` in `labdog.toml` never did anything, and LabDog
+  now says so at startup.** The sample config and the production deploy
+  guide both set it, but the retention jobs read only the Settings page's
+  value, so an install with `audit_retention_days = 365` in the file kept
+  whatever the page showed — 90 days by default. Set it under Settings ›
+  System instead. The key, and `run_retention_days` and
+  `drift_retention_days`, which the file also accepted, now log a warning
+  when present in `[logging]` or as `LABDOG_LOGGING__…` variables, and can
+  be removed.
+- **Refresh on a host's page reloads again**, and so do the reloads after
+  a sync finishes and after trusting a new host key. They asked for the
+  host's queries under a string id (`["host", "5"]`) while every one of
+  them is stored under a number, and React Query compares key parts
+  strictly, so none of them ever matched.
+- **The sign-in and first-run pages scroll** when the card is taller than
+  the window. The page body's `overflow: hidden` — there so the shell owns
+  scrolling — applied to them too, so on a phone held sideways the setup
+  form's button was out of reach.
+- **Opening a session by link can no longer start a different one.** While
+  `/assistant?session=<id>` was loading, or if that session no longer
+  existed, the page showed the new-session form, and a message typed there
+  started a new session. It now says it is loading, or that the session
+  could not be loaded, with the composer locked until one is open.
+- **An assistant turn that runs the same tool twice shows both calls.** The
+  transcript paired a turn's requested calls with the recorded ones by tool
+  name but marked them used only after pairing them all, so two
+  `run_ssh_command`s in one turn both showed the first — and the second, with
+  its result or the approval it was waiting on, never appeared in its place.
+
+- **The web terminal works behind a reverse proxy again.** 0.10.0 started
+  checking the terminal's origin against `security.allowed_origins`, which
+  a deployment serving the UI and the API from one host had no reason to
+  set, so every terminal ended at once with "Connection failed: Closed
+  (1006)". The terminal now accepts its own origin; the setting is only
+  needed for a frontend served from elsewhere. A refused handshake is
+  logged with the origin and the host it came to.
+- **Enabled services no longer show as permanent drift.** A state
+  collection looked for enablement in a column `systemctl list-units`
+  does not have, so every service with `enabled: true` sat out of sync
+  (`enabled_mismatch`) on hosts without drift checks, and a sync could not
+  clear it. Collection now reads `systemctl list-unit-files`, and a host
+  whose enablement is unknown is not reported as drifted.
+- **Two runs on overlapping groups no longer wait on each other for
+  good.** A group run held every member host for as long as it ran,
+  including hosts it had finished and hosts it had not reached, so a
+  nightly `linux-upgrade` on one group and `docker-compose-update` on a
+  group inside it each waited for the other until one was failed six
+  hours later. A group run now holds a host only while its own run on
+  that host is working: hosts take one run at a time, groups do not.
+- **"Collect all" no longer ends with a warning that reads `''`.** A host
+  run that wrote no output kept a column default of two quote characters,
+  which the host page showed as a warning after every collection.
+  Migration 0040 fixes the default and empties the rows written with it.
+- **A host's last sync time is recorded.** A sync stamped only the
+  per-module rows, so the host itself always read "never". It is now
+  stamped when a sync finishes, and migration 0041 fills it in from the
+  sync history already there.
+- **The first Git repository and the first action pack added to an older
+  install no longer fail.** On an install from before May 2026 the first
+  new row in each table collided with the seeded one and answered 500;
+  the retry worked. Migration 0039 repairs every id sequence left in that
+  state.
+- **Conflicts answer 4xx, not 500.** A Git repository or action pack name
+  that is already taken, by a create or a rename, is a 409; switching a
+  pack's source without the field the new source needs is a 400 naming
+  it; and an action parameter refused for its content (template
+  delimiters) is a 422 with the reason, not an opaque 500.
+- **An assistant session that reaches its token budget stops for that
+  reason instead of failing.** On a Claude subscription each API response
+  arrives as one message per content block, all carrying the whole
+  response's usage, and each was counted, so a run reached
+  `ai.max_tokens_total` at about half what it had used. The interrupt at
+  the cap could also land inside a database write and fail the session
+  with "This Session's transaction has been rolled back", hiding the real
+  reason. Usage is counted once per response, a call cut off by the
+  interrupt is closed as interrupted and never runs, and the session
+  reports the cap.
+- **Settings › Fleet no longer shows two "uncategorised" cards.**
+  `ssh.command_timeout` and `logging.drift_retention_days` are filed under
+  SSH and Logging, and a test now fails when a setting is left out of the
+  page's categories.
+
+### Security
+
+- **A read-only AI session could write a file.** The command classifier
+  skipped any redirect with a number in front of it, so that `2>/dev/null`
+  would pass, and with it `2>file`, `1>file`, `2>>file` and `word9>file`,
+  which bash opens and truncates like any other. It also judged an inline
+  shell by its payload alone, so `bash -c true > file` got the verdict on
+  `true`. Either let a session at any autonomy level, with no approval,
+  create or overwrite a file the SSH user can write. A redirect to a file
+  now counts as a write whatever is in front of it, and an inline shell's
+  own redirects are weighed with its payload's. `/dev/null` is the one file
+  that is not a write, so `> /dev/null` no longer needs approval either, and
+  a numbered input redirect (`0<file`) is read as an input redirect like any
+  other. The classifier's bash test now covers every spelling of a redirect,
+  and inline shells.
+
+- **The AI assistant's read-only check lists what reads, not what writes.**
+  For many commands the classifier said "read-only unless one of these
+  known write subcommands appears", so every subcommand nobody had listed
+  ran in a read-only session without approval: most of Proxmox's `qm`,
+  `pct` and `pvesh`, container runtimes, systemd tools, `ip` and its
+  abbreviations, package managers and storage tools, along with options
+  that write a file, change a setting or send data. Options given to
+  `sudo`, `env` and similar wrappers could hide the command they ran, and
+  an environment variable could change what a command executed. A command
+  is now read-only only in a form listed in
+  `backend/app/ai/command_policy.yaml`; a subcommand or option the list
+  does not name counts as a change. `curl` is read-only for GET and HEAD
+  requests that neither upload nor save a file. Wrapper options are read
+  for what they mean, and only a short list of environment variables
+  (`LC_*`, `TZ`, `KUBECONFIG` and a few more) is accepted. In a full-auto
+  session the commands this used to misread now also get the snapshot and
+  the busy-host check that every change gets.
 
 ## [0.10.0] — 2026-09-18
 
@@ -2283,7 +3062,8 @@ SSH-pushed Ansible reconciliation, and a per-host detail tab:
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
-[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/open-labdog/labdog/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/open-labdog/labdog/compare/v0.10.0...v1.0.0
 [0.10.0]: https://github.com/open-labdog/labdog/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/open-labdog/labdog/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/open-labdog/labdog/compare/v0.7.0...v0.8.0

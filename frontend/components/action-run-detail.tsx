@@ -1,21 +1,19 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
-import Link from "next/link"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Button } from "@/components/ui/button"
-import { RunStatusBadge } from "@/components/status-badge"
 import { API_BASE, apiFetch } from "@/lib/api"
 import { toast } from "sonner"
-import type { ActionRun, ActionHostRun } from "@/lib/types"
-
-interface ActionRunDetailProps {
-  runId: number
-  backHref: string       // e.g. "/hosts/5?tab=actions" or "/groups/3?tab=actions"
-  backLabel: string      // e.g. "Back to Actions"
-}
+import { Banner, PageHead, Pager, RunStatus, Table, Window, lastPage, pageSlice } from "@/components/ld"
+import { useLocalPref } from "@/lib/local-pref"
+import type { ActionHostRun, ActionRun } from "@/lib/types"
+import { AnsibleLog, findMatches } from "@/components/ansible-log"
+import { FAILURE_KINDS, parseAnsibleLog } from "@/lib/ansible-log"
 
 const TERMINAL = new Set(["succeeded", "failed", "partial", "cancelled"])
+
+// The log's height under a multi-host run's table, until the viewer drags
+// it; a single-host run has no table, so its log fills the page.
 
 // Strip terminal control sequences from Ansible output.
 //
@@ -41,15 +39,14 @@ function stripAnsi(text: string): string {
   return text.replace(ANSI_OSC, "").replace(ANSI_CSI, "").replace(BARE_CR, "")
 }
 
-// The name to show for one host run. `hostname` is the live host's name
-// when it still exists and the dispatch-time snapshot when it does not,
-// so it is set on every row; the fallback is for rows written before
-// that column existed.
+// `hostname` is the live host's name when it still exists and the
+// dispatch-time snapshot when it does not, so it is set on every row;
+// the fallback is for rows written before that column existed.
 function hostLabel(hr: ActionHostRun): string {
   return hr.hostname ?? (hr.host_id !== null ? `Host ${hr.host_id}` : "Deleted host")
 }
 
-export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailProps) {
+export function ActionRunDetail({ runId }: { runId: number }) {
   const queryClient = useQueryClient()
   const [output, setOutput] = useState("")
   // Per-host output, keyed by ActionHostRun.id, for the click-to-filter
@@ -61,13 +58,16 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
   // Which host's log to show, by ActionHostRun.id. null = combined view.
   const [selectedHostRunId, setSelectedHostRunId] = useState<number | null>(null)
   const [pinToBottom, setPinToBottom] = useState(true)
+  const [hostPage, setHostPage] = useState(0)
+  const [hostsPref, setHostsPref] = useLocalPref("labdog.run-hosts", { pageSize: 10 })
+  const [query, setQuery] = useState("")
+  const [current, setCurrent] = useState(0)
   const outputRef = useRef<HTMLPreElement>(null)
   // Tracks the runId we've already loaded persisted output for, so the
   // terminal fetch runs exactly once per run (see the effect below).
   const terminalFetchedForRef = useRef<number | null>(null)
   const [cancelling, setCancelling] = useState(false)
 
-  // Fetch initial run state
   const { data: run, isLoading } = useQuery<ActionRun>({
     queryKey: ["action-run", runId],
     queryFn: () => apiFetch<ActionRun>(`/api/actions/runs/${runId}`),
@@ -80,13 +80,12 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
   })
 
   // Once a run reaches a terminal state, load the authoritative, complete
-  // output from the DB. Do this even when SSE already streamed partial output
-  // (e.g. the pre-run step-log): the live stream only carries what was
-  // published while this tab was connected and is never replayed, so the
-  // persisted per-host output is the source of truth. Gate on a ref keyed by
-  // runId (NOT on `output` being empty) so a live-watched run still loads its
-  // full log on completion — previously a partial SSE payload made this skip,
-  // leaving the pane stuck on the step-log. Fetches exactly once per run.
+  // output from the DB. Do this even when SSE already streamed partial
+  // output (e.g. the pre-run step-log): the live stream only carries what
+  // was published while this tab was connected and is never replayed, so
+  // the persisted per-host output is the source of truth. Gate on a ref
+  // keyed by runId (NOT on `output` being empty) so a live-watched run
+  // still loads its full log on completion. Fetches exactly once per run.
   useEffect(() => {
     if (!run || !TERMINAL.has(run.status)) return
     if (terminalFetchedForRef.current === runId) return
@@ -97,36 +96,20 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
       const entries = await Promise.all(
         run.host_runs.map(async (hr) => {
           try {
-            const res = await fetch(
-              `${API_BASE}/api/actions/runs/${runId}/host-runs/${hr.id}/output`,
-              { credentials: "include" },
-            )
+            const res = await fetch(`${API_BASE}/api/actions/runs/${runId}/host-runs/${hr.id}/output`, { credentials: "include" })
             return { hr, text: res.ok ? stripAnsi(await res.text()) : "" }
           } catch {
             return { hr, text: "" }
           }
         }),
       )
-      // Drop the result only if we've since navigated to a different run. We
-      // deliberately do NOT cancel on every `run`-object change: the SSE
-      // status handler invalidates (and thus re-creates) the run object right
-      // at terminal, and cancelling on that churn would race this fetch and
-      // leave the pane empty. Keying on runId is sufficient.
       if (terminalFetchedForRef.current !== runId) return
-      // Cache each host's log so clicking a host card switches instantly.
       const map: Record<number, string> = {}
       for (const { hr, text } of entries) map[hr.id] = text
       setHostOutputs(map)
-      // Combined "All hosts" view: prefix per-host sections only for group runs.
-      const combined =
-        run.host_runs.length > 1
-          ? entries
-              .map(
-                ({ hr, text }) =>
-                  `===== ${hostLabel(hr)} (${hr.status}) =====\n${text}\n`,
-              )
-              .join("\n")
-          : entries.map((e) => e.text).join("\n")
+      const combined = run.host_runs.length > 1
+        ? entries.map(({ hr, text }) => `===== ${hostLabel(hr)} (${hr.status}) =====\n${text}\n`).join("\n")
+        : entries.map((e) => e.text).join("\n")
       setOutput(combined)
     })()
   }, [run, runId])
@@ -134,57 +117,39 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
   // SSE subscription for live output
   useEffect(() => {
     if (!runId) return
-    if (run && TERMINAL.has(run.status)) return  // already done, no need for SSE
+    if (run && TERMINAL.has(run.status)) return
 
-    const es = new EventSource(`${API_BASE}/api/actions/runs/${runId}/stream`, {
-      withCredentials: true,
-    })
+    const es = new EventSource(`${API_BASE}/api/actions/runs/${runId}/stream`, { withCredentials: true })
 
     es.addEventListener("output", (e) => {
       try {
         const data = JSON.parse(e.data) as { text?: string }
-        if (data.text) {
-          const clean = stripAnsi(data.text)
-          setOutput((prev) => prev + clean)
-        }
+        if (data.text) setOutput((prev) => prev + stripAnsi(data.text!))
       } catch {}
     })
-
     es.addEventListener("status", (e) => {
       try {
         const data = JSON.parse(e.data) as { status?: string }
-        if (data.status) {
-          // Invalidate the run query so it refetches updated status
-          queryClient.invalidateQueries({ queryKey: ["action-run", runId] })
-        }
-        if (data.status && TERMINAL.has(data.status)) {
-          es.close()
-        }
+        if (data.status) queryClient.invalidateQueries({ queryKey: ["action-run", runId] })
+        if (data.status && TERMINAL.has(data.status)) es.close()
       } catch {}
     })
-
-    es.onerror = () => {
-      // SSE errors happen when the stream closes; just close
-      es.close()
-    }
+    es.onerror = () => es.close()
 
     return () => es.close()
-  // run?.status is intentional — we only want to re-subscribe when status changes,
-  // not on every re-render of the full run object
+  // run?.status is intentional — we only want to re-subscribe when status
+  // changes, not on every re-render of the full run object.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId, run?.status, queryClient])
 
-  // Auto-scroll output (also when switching the selected host)
+  // A search holds the view on its match, so it suspends the pin.
   useEffect(() => {
-    if (pinToBottom && outputRef.current) {
-      outputRef.current.scrollTop = outputRef.current.scrollHeight
-    }
-  }, [output, hostOutputs, selectedHostRunId, pinToBottom])
+    if (pinToBottom && !query && outputRef.current) outputRef.current.scrollTop = outputRef.current.scrollHeight
+  }, [output, hostOutputs, selectedHostRunId, pinToBottom, query])
 
-  // Toggle the per-host log filter. Clicking the active host clears back to
-  // the combined view. Fetches the host's log on demand if it isn't cached
-  // yet (e.g. a still-running run, where the terminal-fetch effect hasn't
-  // populated the map).
+  // Toggle the per-host log filter. Clicking the active host clears back
+  // to the combined view. Fetches the host's log on demand if it isn't
+  // cached yet (e.g. a still-running run).
   async function selectHostRun(hostRunId: number) {
     if (selectedHostRunId === hostRunId) {
       setSelectedHostRunId(null)
@@ -193,10 +158,7 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
     setSelectedHostRunId(hostRunId)
     if (hostOutputs[hostRunId] !== undefined) return
     try {
-      const res = await fetch(
-        `${API_BASE}/api/actions/runs/${runId}/host-runs/${hostRunId}/output`,
-        { credentials: "include" },
-      )
+      const res = await fetch(`${API_BASE}/api/actions/runs/${runId}/host-runs/${hostRunId}/output`, { credentials: "include" })
       const text = res.ok ? stripAnsi(await res.text()) : ""
       setHostOutputs((prev) => ({ ...prev, [hostRunId]: text }))
     } catch {
@@ -218,187 +180,173 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
   }
 
   const isTerminal = run && TERMINAL.has(run.status)
-  // Show the per-host grid for any multi-host run — group-, fleet-, or
-  // scheduled-dispatched. A single-host run has nothing to filter.
   const isMultiHost = (run?.host_runs.length ?? 0) > 1
-
-  // Resolve the currently-selected host + what the output pane should show.
-  const selectedHost =
-    selectedHostRunId !== null
-      ? run?.host_runs.find((hr) => hr.id === selectedHostRunId) ?? null
-      : null
+  const selectedHost = selectedHostRunId !== null ? run?.host_runs.find((hr) => hr.id === selectedHostRunId) ?? null : null
   const selectedLabel = selectedHost ? hostLabel(selectedHost) : null
   const paneText = selectedHostRunId !== null ? hostOutputs[selectedHostRunId] ?? "" : output
-  const paneFallback =
-    selectedHostRunId !== null
-      ? hostOutputs[selectedHostRunId] === undefined
-        ? "Loading…"
-        : "(no output captured for this host)"
-      : isLoading
-        ? "Loading…"
-        : isTerminal
-          ? "(no output captured)"
-          : "Waiting for output…"
+  const lines = useMemo(() => parseAnsibleLog(paneText), [paneText])
+  const matches = useMemo(() => findMatches(lines, query), [lines, query])
+  const firstFailure = useMemo(() => lines.findIndex((l) => FAILURE_KINDS.has(l.kind) && !l.cont), [lines])
+  const failureCount = useMemo(() => lines.filter((l) => FAILURE_KINDS.has(l.kind) && !l.cont).length, [lines])
 
-  // Derive the back link from the fetched run so it is always correct
-  // regardless of which URL the user navigated from.
-  const effectiveBackHref = run?.host_id
-    ? `/hosts/${run.host_id}?tab=actions`
-    : run?.group_id
-      ? `/groups/${run.group_id}?tab=actions`
-      : backHref
+  /** Centre `el` in the log without scrolling the page around it. */
+  const reveal = (el: Element | null | undefined) => {
+    const pre = outputRef.current
+    if (!pre || !(el instanceof HTMLElement)) return
+    pre.scrollTop = el.offsetTop - pre.clientHeight / 2
+  }
+  const goToMatch = (i: number) => {
+    if (matches.length === 0) return
+    const next = (i + matches.length) % matches.length
+    setCurrent(next)
+    // After the re-render that moves the "current" highlight.
+    requestAnimationFrame(() => reveal(outputRef.current?.querySelector(`[data-match="${next}"]`)))
+  }
+  const jumpToFailure = () => {
+    setPinToBottom(false)
+    reveal(outputRef.current?.querySelector(`[data-line="${firstFailure}"]`))
+  }
+  const paneFallback = selectedHostRunId !== null
+    ? hostOutputs[selectedHostRunId] === undefined ? "Loading…" : "(no output captured for this host)"
+    : isLoading ? "Loading…" : isTerminal ? "(no output captured)" : "Waiting for output…"
 
   // A fleet run legitimately has neither id; only host/group targets go
   // null because the row was removed.
-  const targetDeleted =
-    !!run && run.target_kind !== "fleet" && run.host_id === null && run.group_id === null
+  const targetDeleted = !!run && run.target_kind !== "fleet" && run.host_id === null && run.group_id === null
+  const cleanTargetLabel = (run?.target_label ?? "").replace(/^group:\s*/i, "")
+
+  const crumbs = run?.host_id
+    ? [{ label: "fleet", href: "/hosts" }, { label: "hosts", href: "/hosts" }, { label: cleanTargetLabel, href: `/hosts/${run.host_id}?tab=actions` }]
+    : run?.group_id
+      ? [{ label: "fleet", href: "/hosts" }, { label: "groups", href: "/groups" }, { label: cleanTargetLabel, href: `/groups/${run.group_id}?tab=activity` }]
+      : [{ label: "operations", href: "/plans" }, { label: "runs", href: "/runs" }]
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <Link href={effectiveBackHref} className="text-sm text-slate-400 hover:text-white">
-            ← {backLabel}
-          </Link>
-          {run && <RunStatusBadge status={run.status} reason={run.pending_reason} />}
-          {run && (
-            // The run carries its own target description, so history stays
-            // readable after the host or group it ran against is deleted —
-            // which is when the FK above goes null and the back-link above
-            // falls back to the generic route.
-            <span className="text-sm text-slate-400" title={`${run.target_kind} target`}>
-              {run.target_label}
-              {targetDeleted && <span className="ml-1 text-slate-500">(deleted)</span>}
-            </span>
-          )}
-        </div>
-        {run && !isTerminal && (
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={handleCancel}
-            disabled={cancelling}
-          >
-            {cancelling ? "Cancelling…" : "Cancel run"}
-          </Button>
+    <>
+      <PageHead
+        crumbs={crumbs}
+        title={<><span>{run?.action_key ?? (isLoading ? "Loading…" : `run #${runId}`)}</span> {run && <RunStatus s={run.status} reason={run.pending_reason} />}</>}
+        sub={run && (
+          <>
+            v{run.action_version} · {run.started_at ? `started ${new Date(run.started_at).toLocaleString()}` : `created ${new Date(run.created_at).toLocaleString()}`}
+            {targetDeleted && <> · {run.target_label} (deleted)</>}
+          </>
         )}
-      </div>
+        actions={run && !isTerminal && (
+          <button type="button" className="btn btn-sm btn-danger" disabled={cancelling} onClick={handleCancel}>
+            {cancelling ? "Cancelling…" : "Cancel run"}
+          </button>
+        )}
+      />
 
-      {/* Run summary */}
-      {run && (
-        <div className="rounded-lg border border-slate-700 bg-slate-800/50 p-4 space-y-1">
-          <div className="text-sm text-slate-200 font-medium">{run.action_key}</div>
-          <div className="text-xs text-slate-500">
-            Version {run.action_version} ·{" "}
-            {run.started_at
-              ? `Started ${new Date(run.started_at).toLocaleString()}`
-              : `Created ${new Date(run.created_at).toLocaleString()}`}
-          </div>
-          {run.error_message && (
-            <div className="mt-2 text-xs text-red-400">{run.error_message}</div>
-          )}
-        </div>
-      )}
+      {/* No page scroll. The host table takes its own height and the log
+          the rest, so it starts just under the hosts (or at the top, with no
+          table). Dragging the log up shrinks the table, which then scrolls. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-3 p-3.5">
+        {run?.error_message && <Banner tone="danger">{run.error_message}</Banner>}
+        {run?.status === "pending" && run.pending_reason && <Banner tone="warn">Waiting: {run.pending_reason}</Banner>}
 
-      {/* Pending-reason callout: when the run is deferred by another op
-          on the target host, surface the blocker as an amber banner so
-          the operator doesn't have to hover the badge to see what's
-          ahead of them in the queue. */}
-      {run && run.status === "pending" && run.pending_reason && (
-        <div className="flex items-start gap-2 rounded-lg border border-amber-600/40 bg-amber-600/10 px-4 py-3 text-sm text-amber-200">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-            className="mt-0.5 h-4 w-4 shrink-0"
-            aria-hidden="true"
-          >
-            <path
-              fillRule="evenodd"
-              d="M10 18a8 8 0 100-16 8 8 0 000 16zm0-12a1 1 0 011 1v4a1 1 0 11-2 0V7a1 1 0 011-1zm0 9a1 1 0 100-2 1 1 0 000 2z"
-              clipRule="evenodd"
+        {isMultiHost && run && (
+          <div className="flex min-h-0 shrink flex-col">
+            <Table<ActionHostRun>
+              cols={[
+                { k: "host", label: "host", w: "minmax(140px,1fr)", sortable: false, cell: (hr) => <span className="mono trunc">{hostLabel(hr)}{hr.host_id === null && <span className="text-text-faint"> (deleted)</span>}</span> },
+                { k: "status", label: "status", w: "120px", right: true, sortable: false, cell: (hr) => <RunStatus s={hr.status} reason={hr.pending_reason} /> },
+              ]}
+              rows={pageSlice(run.host_runs, Math.min(hostPage, lastPage(run.host_runs.length, hostsPref.pageSize)), hostsPref.pageSize)}
+              keyOf={(hr) => hr.id}
+              onRowClick={(hr) => selectHostRun(hr.id)}
+              activeKey={selectedHostRunId ?? undefined}
+              footer={
+                (selectedHostRunId !== null || run.host_runs.length > 10) && (
+                  <div className="flex items-center gap-2">
+                    {selectedHostRunId !== null && <button type="button" className="btn btn-sm btn-ghost" onClick={() => setSelectedHostRunId(null)}>show all hosts</button>}
+                    <div className="ml-auto">
+                      <Pager
+                        noun="hosts"
+                        total={run.host_runs.length}
+                        page={Math.min(hostPage, lastPage(run.host_runs.length, hostsPref.pageSize))}
+                        size={hostsPref.pageSize}
+                        onPage={setHostPage}
+                        onSize={(pageSize) => {
+                          setHostsPref({ pageSize })
+                          setHostPage(0)
+                        }}
+                      />
+                    </div>
+                  </div>
+                )
+              }
             />
-          </svg>
-          <span>Waiting: {run.pending_reason}</span>
-        </div>
-      )}
-
-      {/* Per-host status grid for any multi-host run (group, fleet, or
-          scheduled). Single-host runs have nothing to filter, so it's
-          hidden there. Each card is clickable to filter the output pane
-          to that host. */}
-      {isMultiHost && run && (
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-slate-200">Host Status</h3>
-            {selectedHostRunId !== null && (
-              <button
-                type="button"
-                onClick={() => setSelectedHostRunId(null)}
-                className="text-xs text-slate-400 hover:text-white"
-              >
-                Show all hosts
-              </button>
-            )}
           </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-            {run.host_runs.map((hr: ActionHostRun) => {
-              const selected = selectedHostRunId === hr.id
-              return (
-                <button
-                  key={hr.id}
-                  type="button"
-                  onClick={() => selectHostRun(hr.id)}
-                  aria-pressed={selected}
-                  title={
-                    hr.host_id === null
-                      ? `Show ${hostLabel(hr)} log (host has been deleted)`
-                      : `Show ${hostLabel(hr)} log`
-                  }
-                  className={`flex items-center justify-between rounded border px-3 py-2 text-left transition-colors ${
-                    selected
-                      ? "border-sky-500 bg-sky-500/10"
-                      : "border-slate-700 bg-slate-800/50 hover:border-slate-500"
-                  }`}
-                >
-                  <span className="text-xs text-slate-400 truncate">
-                    {hostLabel(hr)}
-                    {hr.host_id === null && (
-                      <span className="text-slate-500"> (deleted)</span>
-                    )}
+        )}
+
+        <Window
+          key={runId}
+          storageKey="log"
+          title={selectedLabel ? `ansible output — ${selectedLabel}` : "ansible output"}
+          defaultHeight="fill"
+          defaultFontSize={11}
+          escRestores
+          rememberHeight={false}
+          anchor="bottom"
+          testId="log-window"
+          actions={({ pref, update }) => (
+            <>
+              <div className="flex items-center gap-1">
+                <input
+                  type="search"
+                  className="inp mono"
+                  style={{ width: 150, height: 22, padding: "0 6px", fontSize: 11 }}
+                  placeholder="search the log"
+                  aria-label="Search the log"
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value)
+                    setCurrent(0)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault()
+                      goToMatch(current + (e.shiftKey ? -1 : 1))
+                    } else if (e.key === "Escape" && query) {
+                      // Clears the search first; a second Esc can leave a maximized log.
+                      e.preventDefault()
+                      setQuery("")
+                    }
+                  }}
+                />
+                {query && (
+                  <span className="mono num text-[10.5px] text-text-3" data-testid="search-count">
+                    {matches.length ? `${current + 1}/${matches.length}` : "0/0"}
                   </span>
-                  <RunStatusBadge status={hr.status} reason={hr.pending_reason} />
+                )}
+              </div>
+              {firstFailure >= 0 && (
+                <button type="button" className="btn btn-sm" style={{ color: "var(--danger)" }} onClick={jumpToFailure}>
+                  {failureCount > 1 ? `first of ${failureCount} failures ↓` : "first failure ↓"}
                 </button>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Output pane */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-semibold text-slate-200">
-            Ansible Output{selectedLabel ? ` — ${selectedLabel}` : ""}
-          </h3>
-          <label className="flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={pinToBottom}
-              onChange={(e) => setPinToBottom(e.target.checked)}
-              className="h-3.5 w-3.5"
-            />
-            Pin to bottom
-          </label>
-        </div>
-        <pre
-          ref={outputRef}
-          className="max-h-[60vh] overflow-y-auto rounded-lg bg-slate-950 p-4 text-xs font-mono text-slate-300 whitespace-pre-wrap"
+              )}
+              <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-text-3">
+                <input type="checkbox" checked={pref.wrap} onChange={(e) => update({ wrap: e.target.checked })} /> wrap
+              </label>
+              <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-text-3">
+                <input type="checkbox" checked={pinToBottom} onChange={(e) => setPinToBottom(e.target.checked)} /> pin to bottom
+              </label>
+            </>
+          )}
         >
-          {paneText || paneFallback}
-        </pre>
+          {({ fontSize, pref }) =>
+            paneText ? (
+              <AnsibleLog lines={lines} fontSize={fontSize} wrap={pref.wrap} query={query} current={current} preRef={outputRef} />
+            ) : (
+              <pre ref={outputRef} data-testid="run-log" className="mono scroll m-0 min-h-0 flex-1 px-2.5 py-2 leading-[1.75] text-text-3" style={{ fontSize }}>
+                {paneFallback}
+              </pre>
+            )
+          }
+        </Window>
       </div>
-    </div>
+    </>
   )
 }

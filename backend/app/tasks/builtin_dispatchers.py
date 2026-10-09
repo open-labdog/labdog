@@ -92,11 +92,18 @@ async def _begin_host_run(host_run_id: int, *, with_lock: bool = True) -> int | 
     from app.models.action_run import ActionHostRun
 
     async with task_session() as db:
-        host_run = (
-            await db.execute(select(ActionHostRun).where(ActionHostRun.id == host_run_id))
-        ).scalar_one_or_none()
+        stmt = select(ActionHostRun).where(ActionHostRun.id == host_run_id)
+        if not with_lock:
+            # No host lock to serialise two copies of this task on, so the
+            # row's own lock does it.
+            stmt = stmt.with_for_update()
+        host_run = (await db.execute(stmt)).scalar_one_or_none()
         if host_run is None:
             logger.warning("builtin_dispatchers: ActionHostRun %d not found", host_run_id)
+            return None
+        from app.tasks.host_lock import is_claimable
+
+        if not is_claimable(host_run):
             return None
         host_id = host_run.host_id
         if host_id is None:
@@ -121,6 +128,9 @@ async def _begin_host_run(host_run_id: int, *, with_lock: bool = True) -> int | 
             )
 
             await acquire_host_lock(db, host_id)
+            await db.refresh(host_run)
+            if not is_claimable(host_run):
+                return None
             # The exclusion is not optional here. The orchestrator marks the
             # parent ActionRun ``running`` in its init phase, *before*
             # dispatching this task, so without it every built-in finds its
@@ -145,6 +155,12 @@ async def _begin_host_run(host_run_id: int, *, with_lock: bool = True) -> int | 
 
         host_run.status = "running"
         host_run.started_at = datetime.now(UTC)
+        # The parent of a deferred single-host row went ``pending`` with it
+        # (``_mark_deferred``); see ``resume_deferred_parent`` for why it
+        # must read ``running`` again before the claim commits.
+        from app.tasks.host_lock import resume_deferred_parent
+
+        await resume_deferred_parent(db, host_run.action_run_id)
         await db.commit()
         return host_id
 
@@ -192,15 +208,30 @@ async def _finish_host_run(
         action_run_id_for_dispatch = host_run.action_run_id
         await db.commit()
 
-    if not dispatch_next or host_id_for_dispatch is None:
-        return
-    from app.tasks.host_lock import release_host_queue
+    if dispatch_next and host_id_for_dispatch is not None:
+        from app.tasks.host_lock import release_host_queue
 
-    await release_host_queue(
-        host_id_for_dispatch,
-        after=f"host_run_id={host_run_id}",
-        exclude_action_run_id=action_run_id_for_dispatch,
-    )
+        await release_host_queue(
+            host_id_for_dispatch,
+            after=f"host_run_id={host_run_id}",
+            exclude_action_run_id=action_run_id_for_dispatch,
+        )
+
+    # Close the parent if this was its last host, as action_host does. The
+    # orchestrator does it after its last batch, but not for a host it had
+    # stopped waiting for: one the host queue re-sent, or one still running
+    # when the run was cancelled, which left the run without an end
+    # (BUG-104). A no-op while any sibling is open.
+    from app.tasks.action_orchestrator import finalise_run_if_complete
+
+    try:
+        await finalise_run_if_complete(action_run_id_for_dispatch)
+    except Exception:
+        logger.exception(
+            "builtin_dispatchers: could not finalise action_run %s after host_run %s",
+            action_run_id_for_dispatch,
+            host_run_id,
+        )
 
 
 async def _load_action_run_parameters(action_run_id: int) -> dict:
@@ -489,20 +520,15 @@ async def close_origin_host_run(job_id: int, payload: dict | None) -> None:
         ).scalar_one_or_none()
         if host_run is None or host_run.status not in ("pending", "queued", "running"):
             return
-        action_run_id = host_run.action_run_id
 
     succeeded = status == "success"
     error = None if succeeded else f"sync did not complete successfully (status={status!r})"
     # dispatch_next=False: ``_async_run`` already ran its own
     # dispatch-next-pending in its finally, and a second pick here would
-    # race it for the same pending row.
+    # race it for the same pending row. ``_finish_host_run`` closes the
+    # parent run: the orchestrator's own aggregation ran when the built-in
+    # first returned, long before this job was re-dispatched.
     await _finish_host_run(origin_id, succeeded=succeeded, error=error, dispatch_next=False)
-
-    from app.tasks.action_orchestrator import finalise_run_if_complete  # noqa: PLC0415
-
-    # Nothing else will: the orchestrator's own aggregation ran when the
-    # built-in first returned, long before this job was re-dispatched.
-    await finalise_run_if_complete(action_run_id)
 
 
 async def _sync_async(action_run_id: int, host_run_id: int) -> None:

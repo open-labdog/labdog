@@ -32,7 +32,7 @@ The Docker command above is the fastest path — see [`openlabdog/labdog`](https
 
 ## ✨ What you get
 
-**Configuration modules** &nbsp;`firewall` · `services` · `hosts` · `packages` · `users` · `cron` · `dns-resolver`
+**Configuration modules** &nbsp;`firewall` · `services` · `hosts` · `packages` · `users` · `cron` · `dns-resolver` · `ca-certs`
 
 Declare state per host or per group. Everything goes through Ansible. Same rule format for nftables and iptables.
 
@@ -85,7 +85,7 @@ Anthropic API, or a Claude subscription. See the
 - **SSH** — push config to hosts and serve an in-browser terminal (asyncssh + xterm.js)
 - **Git** — pull GitOps configs and Action packs from any Git server; SSH key or HTTPS PAT auth, credentials encrypted at rest
 - **Proxmox VE** — automatic snapshot + rollback, VM discovery
-- **Grafana Mimir/Loki** — register a Prometheus-compatible endpoint to show instant CPU/memory/disk on the host page; ties into the bundled Alloy install action so metrics flow back automatically
+- **Grafana Mimir/Loki** — register a Prometheus-compatible endpoint to show instant CPU/memory/disk on the host page; ties into the Alloy install action from `labdog-playbooks` so metrics flow back automatically
 - **Prometheus / Alloy** — the other direction: an opt-in `/metrics` endpoint exposing fleet state and LabDog's own health for your existing scraper, with a ready-made Grafana dashboard and alert rules
 - **Webhooks** — inbound triggers from your Git host for GitOps sync, and
   from Grafana Alerting for alert intake

@@ -1,41 +1,74 @@
 # GitOps UI
 
-GitOps lets a Git repository drive all configuration for a group. When enabled, LabDog pulls YAML from the repo on every push (via webhook) and imports it as the group's desired state.
+GitOps lets a Git repository drive a group's configuration. When a group is
+bound to a file in a repository, every push to that repository (delivered by
+webhook) imports the file as the group's desired state and syncs the group's
+hosts.
 
-For the YAML schema and file format, see the [GitOps guide](../examples/gitops/README.md).
+For the YAML schema and file format, see the
+[GitOps guide](../examples/gitops/README.md).
 
 ---
 
-## Git Repos Page
+## Git repositories
 
-**Path:** `/git-repos`
+**Path:** `/git-repos` (Settings › Integrations › Git remotes)
 
-Lists all connected repositories. Each row shows:
+Every connected repository — used for GitOps and for git-backed
+[action packs](actions.md#action-packs).
 
 | Column | Description |
 |--------|-------------|
-| Name | Label for this repo connection |
-| URL | Clone URL (SSH or HTTPS) |
-| Branch | Branch LabDog tracks |
-| Groups | How many groups use this repo |
-| Last Import | When the repo was last pulled and imported |
-| Status | `ok`, `error`, or `never` |
+| name | Label for this repository |
+| url | Clone URL (SSH or HTTPS) |
+| branch | The branch LabDog tracks |
+| auth | `ssh`, `https` (token) or `public` |
+| groups | How many groups are bound to it |
+| last sync | *synced*, *stale* (over a day ago) or *never synced*, with how long ago. It counts the last GitOps import and the last successful sync of any action pack on the repository, whichever is newer |
 
-### Adding a Repository
+Each row has **webhooks**, **edit** and **delete**; the row itself opens the
+repository's page. **webhooks** shows the three push URLs —
+`/api/webhooks/github`, `/gitlab` and `/gitea` on your LabDog address — each
+with a copy button.
 
-Click **Add Repository**. Fields:
+### Connecting a repository
 
-| Field | Notes |
-|-------|-------|
-| Name | Display label |
-| URL | `git@github.com:org/repo.git` or `https://github.com/org/repo` |
-| Branch | Usually `main` or `master` |
-| Auth method | **SSH key** (select from stored keys) or **HTTPS token** |
-| Token / Deploy key | Credentials for private repos |
+**Add Repository** opens a three-step wizard at `/git-repos/new`:
 
-After saving, the **Webhook URL** is shown on the repo's detail row. Copy it into your GitHub / GitLab / Gitea project settings to enable push-triggered imports.
+1. **Connect** — a name, the URL (SSH or HTTPS; the auth fields follow the
+   scheme), the branch, and credentials: the SSH key LabDog uses as a
+   deploy key for an SSH URL, or a personal access token for HTTPS (blank
+   for a public repository). An optional **webhook secret** lets a push be
+   verified. Connecting clones the repository.
+2. **Scan** — LabDog looks through the clone for action packs and GitOps
+   files. **Cancel & remove repo** backs out.
+3. **Review & activate** — two lists of checkbox rows:
+   - **gitops files** — each file that declares a group (`group: web`), to
+     bind to that group. A group already bound to another repository is
+     marked **already bound** and cannot be ticked until GitOps is disabled
+     on it.
+   - **action packs** — each pack found, marked **contested** when one of
+     its action keys already exists in another pack, and **conflict** when
+     two packs in this repository contribute the same key. **resolve
+     action-key conflicts** lets you pick the winner for each contested key.
 
-### Webhook Setup
+   **Activate** binds the ticked groups and registers the ticked packs.
+
+### A repository's page
+
+**Path:** `/git-repos/{id}`
+
+- **connection** — branch, auth, the last commit LabDog fetched and when
+  (by a GitOps import or a pack sync, whichever is newer), and whether a
+  webhook secret is set.
+- **gitops-bound groups** — each group, the file it imports from, and its
+  import status.
+- **action packs** — each pack from this repository, its path and state.
+
+**Re-scan** clones the repository again and looks for new packs and GitOps
+files.
+
+### Webhook setup
 
 | Platform | Where to add |
 |----------|-------------|
@@ -43,49 +76,59 @@ After saving, the **Webhook URL** is shown on the repo's detail row. Copy it int
 | GitLab | Settings → Webhooks |
 | Gitea | Settings → Webhooks |
 
-Set the payload URL to the webhook URL shown in LabDog, content type to `application/json`, and configure the secret if shown. Only `push` events are needed.
+Set the payload URL to the matching URL from **webhooks**, the content type
+to `application/json`, and the secret to the repository's webhook secret if
+you set one. Only `push` events are needed.
+
+> **A webhook is required.** Imports run only when a push arrives — LabDog
+> does not poll the repository, and there is no import button. A group
+> bound to a repository without a webhook keeps the state it had.
 
 ---
 
 ## Enabling GitOps on a Group
 
-Open the group's detail page (`/groups/{id}`). In the **GitOps** card, click **Enable**. A dialog asks you to:
+On the group's page (`/groups/{id}`), the **gitops** panel on the Overview
+tab has **Enable…**. The dialog asks for:
 
-1. Select a repository (must already be added on the Git Repos page)
-2. Enter the path to the YAML file within the repo (e.g. `groups/web-servers.yaml`)
+1. the **repository** (it must already be connected), and
+2. the **file path** of the group's YAML within it (e.g.
+   `groups/web-servers.yaml`).
 
-After enabling:
+Enabling binds the group; the file is imported on the next push. From then
+on:
 
-- A **GitBranch banner** appears at the top of every module tab
-- **Add**, **Edit**, and **Delete** controls are hidden — the repo is the source of truth
-- An immediate import is triggered from the current HEAD of the branch
+- The group's head carries a **gitops** tag, coloured by import status, and
+  the panel shows the status, repository, file and last import.
+- Every module editor on the Config tab is **read-only**, with a banner
+  saying the repository is the source of truth.
 
-### Disabling GitOps (Break-glass)
+### Disabling GitOps (break-glass)
 
-If you need to make emergency edits directly in the UI:
+To edit the group directly again, **Disable GitOps** in the same panel. The
+editors unlock immediately.
 
-1. Open the group detail page
-2. In the GitOps card, click **Disable**
-3. Confirm. The mutation lock is lifted and all controls reappear.
-
-> The repo is **not** deleted — you can re-enable GitOps at any time. The database state is whatever was last imported from the repo (disabling does not revert anything).
+> Nothing is deleted — not the repository, and not the group's items, which
+> stay as they were last imported. You can enable GitOps again at any time.
 
 ---
 
 ## Import Flow
 
-When a push arrives via webhook:
+When a push arrives:
 
 ```
-Git push → Webhook → Parse & validate YAML
-         → Advisory lock on group
-         → Fan out to per-module handlers (firewall, services, packages, …)
-         → All modules updated in one transaction
-         → Audit log entry written
-         → Sync triggered (if auto-sync enabled)
+Git push → Webhook → Clone at the pushed commit
+         → For each group bound to this repository:
+             read its file → parse & validate the YAML
+             → fan out to per-module handlers (firewall, services, packages, …)
+             → audit entry
+         → Sync every host of each imported group
 ```
 
-If the YAML is invalid or a module handler fails, the entire import is rolled back and an error is recorded on the repo row.
+If a group's file is missing or invalid, or a module fails to import, the
+group's GitOps status shows **error** with the message. Each bound group is
+handled on its own, so one bad file does not stop the others.
 
 ### Missing Sections
 

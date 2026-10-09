@@ -10,6 +10,7 @@ and how to back out cleanly when something goes wrong.
 > is "restore from yesterday's snapshot, lose a day of audit log".
 
 - [Compatibility](#compatibility)
+  - [Versioning](#versioning)
 - [Pre-upgrade](#pre-upgrade)
 - [Upgrading](#upgrading)
   - [Docker](#docker)
@@ -36,6 +37,124 @@ hardcoded one goes stale the moment it ships.
 Each release notes in `CHANGELOG.md` whether it carries breaking
 schema changes, deprecated config fields, or non-reversible
 migrations. Read that section before upgrading.
+
+### Versioning
+
+From 1.0.0, LabDog follows [Semantic Versioning](https://semver.org/).
+A change that breaks existing use of anything below comes only in a new
+major version (2.0.0). A minor release (1.1.0) only adds to them, and a
+patch release (1.0.1) only fixes bugs.
+
+- **Configuration**: the keys in `labdog.toml`, the `LABDOG_*`
+  environment variables, and the setting keys under **Settings**.
+- **The pack format**: the manifest a pack declares its actions in, and
+  the action keys and parameters it can use (see
+  [Actions](ui/actions.md)).
+- **The GitOps file format** (see [the GitOps guide](examples/gitops/README.md)).
+- **The webhook endpoints** under `/api/webhooks/` (`github`, `gitlab`,
+  `gitea`, `grafana-alerts`) and the payloads they accept.
+- **The Prometheus metrics**: names and labels in
+  [Metrics export](metrics-export.md).
+- **The REST calls these docs tell you to make**, such as
+  `POST /api/hosts/{id}/trust-host-key`.
+- **The upgrade path**: every earlier release upgrades to every 1.x
+  release by the procedure on this page.
+
+Not covered, and free to change in a minor release: the web UI's layout,
+the rest of `/api` (it is the UI's backend), the database schema (only
+ever changed by migrations), log messages, and what the AI assistant is
+told and allowed to run.
+
+One exception: a fix that closes a security hole may refuse something
+that used to work, in any release. Its upgrade notes say so.
+
+### Upgrading to 1.0.0
+
+Nothing is required unless you deleted the seeded `labdog-playbooks`
+pack or LabDog cannot reach GitHub (see 1). Every new thing that can
+change a host or send mail is off until you turn it on: alert
+investigations stay read-only, no alert is on the full-auto list, no
+mail server is configured and nobody is subscribed, and schedules keep
+reading their cron expressions in UTC. Five things are worth checking.
+
+**1. The bundled action pack is gone.** The image and the `.deb` / `.rpm` /
+`.tar.gz` packages no longer carry a copy of `labdog-playbooks`. Actions
+come only from the packs under **Operations → Actions → Packs**, so:
+
+- If you still have the seeded `labdog-playbooks` pack, nothing changes:
+  it has been supplying the same actions all along, and the keys it
+  shared with the bundled copy stop being contested. The **pinned** and
+  **frozen** badges on them go away.
+- A pin that chose **bundled** is deleted by the upgrade. If another pack
+  declares that key, it now wins on its own; if two or more do, the key
+  needs a winner again and its actions can't run until you pick one.
+- If you deleted `labdog-playbooks`, or LabDog cannot reach GitHub, its
+  actions disappear until a pack provides them. Re-add it (repository
+  `https://github.com/open-labdog/labdog-playbooks`, branch `main`, then a
+  pack on that repository), point the repository at a mirror, or add a
+  local-directory pack.
+
+**2. The AI assistant refuses more at read-only.** A command now counts
+as read-only only in a form listed in `backend/app/ai/command_policy.yaml`;
+a subcommand or option the list does not name counts as a change. Before,
+it was the other way round, so most of `qm`, `pct` and `pvesh`, container
+runtimes, systemd tools, `ip`, package managers and storage tools ran in a
+read-only session whatever the subcommand. `wget`, `man`, `xxd`, `initctl`
+and `at` now need approval too. A read-only session, which is what
+scheduled checks and alert investigations run as by default, will be
+refused commands it used to run. The refusal names the read-only forms of
+the command, so the assistant usually finds one; if a scheduled check
+keeps failing on one, look at its refused calls in the session. See
+[Autonomy levels](ui/assistant.md#autonomy-levels).
+
+**3. Retention keys in `labdog.toml` now log a warning at startup.**
+`audit_retention_days`, `run_retention_days` and `drift_retention_days`
+under `[logging]`, or as `LABDOG_LOGGING__…` variables, never did
+anything: retention is read only from **Settings › System**. Check that
+the values there are what you meant to keep, then delete the keys. The
+packaged `labdog.toml` no longer has them, so a `.deb` or `.rpm` upgrade
+of a modified config may ask which version to keep.
+
+**4. A pack playbook that imports a file next to it is no longer loaded.**
+Only the playbook's own text and the pack's roles reach a run, so a
+playbook using `import_tasks`, `include_tasks`, `vars_files` or
+`import_playbook` with a relative path never got past its first task. It
+is now refused when the pack loads: the action is missing from the
+library, and the log says `pack '<name>': failed to load manifest …`,
+naming the files. Move them into a role. No `labdog-playbooks` action is affected.
+
+**5. If you rotated the encryption key on 0.10.0 or earlier**, re-enter
+each Git repository's webhook secret. The rotation script skipped that
+column, so signed push webhooks have answered 500 since, and GitOps has
+not imported a push. See
+[encryption-key-rotation.md](encryption-key-rotation.md).
+
+Smaller things to know:
+
+- **The `security.allowed_origins` workaround for the web terminal** from
+  the 0.10.0 notes can go: the terminal accepts its own origin again. Keep
+  the setting only for a frontend served from another host.
+- **Email** needs `notifications.public_url` set before it sends anything
+  with a link; LabDog will not build links from a request's `Host`
+  header. See [Notifications](ui/notifications.md).
+- **Full auto for named alerts** needs Grafana's contact point to send
+  resolved notifications, or every fix is judged as not working, and it is
+  refused on the machine LabDog itself runs on. See
+  [Alerts](ui/alerts.md#full-auto-for-named-alerts).
+- **Setting `scheduling.timezone`** keeps every schedule's clock time and
+  moves it to the new zone: `0 3 * * *` then runs at 03:00 there. Check
+  existing schedules after changing it.
+- **The navigation was rebuilt.** Old URLs (`/dashboard`, `/schedules`,
+  `/action-packs`, `/hosts/discover`, `/groups/{id}/rules` and the other
+  module pages) redirect, so bookmarks keep working.
+- **Docker:** no compose change is needed.
+
+Eight migrations (`0039`–`0046`) apply with the normal step below. All
+are forward-safe. Three repair data and leave it repaired on downgrade:
+`0039` advances id sequences, `0040` empties host-run output that was
+two quote characters, `0041` fills in each host's last sync time.
+Downgrading past `0045` and `0046` drops the mail settings, outbox and
+subscriptions, and the rollback history.
 
 ### Upgrading to 0.10.0
 
@@ -75,7 +194,7 @@ combine here:
   `logging.audit_retention_days` (default 90).
 
 Set both values first if you want to keep more. Both are in
-**Settings** and in `labdog.toml`.
+**Settings** only: the same keys in `labdog.toml` have no effect.
 
 Smaller things to know:
 
@@ -107,6 +226,14 @@ Smaller things to know:
   row count before dropping it.
 - **Docker:** Celery beat is now a third supervised subprocess, and
   `/health/ready` fails if it dies. No compose change is needed.
+- **The web terminal fails with "Connection failed: Closed (1006)"**
+  on 0.10.0 unless the UI's origin is listed in
+  `security.allowed_origins`, which a deployment serving the UI and API
+  from one host never needed before. Set it, for example
+  `LABDOG_SECURITY__ALLOWED_ORIGINS='["https://labdog.example.com"]'`.
+  From the release after 0.10.0 the terminal accepts its own origin
+  without it (BUG-88), and the list is only needed for a frontend served
+  from elsewhere.
 
 Fourteen migrations (`0025`–`0038`) apply with the normal step below.
 All are forward-safe; `0037` and `0038` are documented as lossy on
@@ -145,13 +272,9 @@ There is no separate `git tag` step — the release artifacts on the
 GitHub Releases page are what you install from. See
 [CONTRIBUTING.md → Release process](pathname:///../CONTRIBUTING.md#release-process).
 
-The bundled action pack is fetched from `labdog-playbooks` at the
-SHA pinned in the repo-root [`LABDOG_PLAYBOOKS_REF`](https://github.com/open-labdog/labdog/blob/main/LABDOG_PLAYBOOKS_REF)
-file at build time, so the bundled pack content shipped with a
-LabDog release corresponds exactly to one `labdog-playbooks`
-commit. To ship newer playbook content, bump that file's SHA in
-the release PR; CI re-fetches as part of the image / artefact
-build.
+No action pack ships with a release. Actions come from packs synced
+at runtime, the seeded `labdog-playbooks` pack among them, so new
+playbooks arrive with a pack sync rather than an upgrade.
 
 ---
 
@@ -247,14 +370,14 @@ curl -fsS http://127.0.0.1:8000/api/version
 #    "build_date":"2026-05-12T09:14:37Z",
 #    "license":"AGPL-3.0-or-later",
 #    "repo_url":"https://github.com/open-labdog/labdog"}
-# (Also visible in the UI at Settings → About.)
+# (Also visible in the UI at Settings › System, in the About panel.)
 
 # 2. Health endpoint returns 200.
 curl -fsS http://127.0.0.1:8000/health
 # → {"status":"ok"}
 
 # 3. End-to-end: trigger one sync against a known-good test host.
-#    Use the UI (Hosts → pick a host → Plan → Sync) or the API.
+#    Use the UI (Operations → Plans, pick the host, apply) or the API.
 #    A successful sync confirms SSH keys decrypt, packs load, and
 #    the celery worker is healthy after the restart.
 ```

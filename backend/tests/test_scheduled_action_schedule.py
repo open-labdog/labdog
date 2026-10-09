@@ -292,3 +292,137 @@ async def test_fleet_schedule_creates_fleet_run(db):
 
     # The two hosts above won't be touched until the orchestrator runs.
     assert h1.id != h2.id  # silence ARG003-style unused warnings
+
+
+# ---------------------------------------------------------------------------
+# Where the walk starts, and which clock it reads
+# ---------------------------------------------------------------------------
+
+
+def _half_an_hour_away(now: datetime) -> str:
+    """An hourly expression whose minute is 30 minutes from *now*.
+
+    It matched several times in any window of hours behind *now*, and
+    won't match again for half an hour, so whether a row is due depends
+    only on where the walk starts.
+    """
+    return f"{(now.minute + 30) % 60} * * * *"
+
+
+async def test_reenabling_waits_for_the_next_time_instead_of_firing_at_once(db):
+    """Off for two days, then on: the runs it missed are not made up on the next tick."""
+    host = await create_host(db)
+    now = datetime.now(UTC)
+    sa = ScheduledAction(
+        target_kind="host",
+        target_id=host.id,
+        action_key="_builtin.collect_state",
+        schedule_cron=_half_an_hour_away(now),
+        enabled=False,
+        last_dispatched_at=now - timedelta(days=2),
+    )
+    db.add(sa)
+    await db.flush()
+
+    sa.set_schedule(sa.schedule_cron, True, now)
+    await db.commit()
+
+    result = await _check_due_async()
+    assert result["dispatched"] == 0
+
+
+async def test_a_new_expression_waits_for_its_own_next_time(db):
+    host = await create_host(db)
+    now = datetime.now(UTC)
+    sa = ScheduledAction(
+        target_kind="host",
+        target_id=host.id,
+        action_key="_builtin.collect_state",
+        schedule_cron="0 0 1 1 *",
+        enabled=True,
+        last_dispatched_at=now - timedelta(days=2),
+    )
+    db.add(sa)
+    await db.flush()
+
+    sa.set_schedule(_half_an_hour_away(now), True, now)
+    await db.commit()
+
+    result = await _check_due_async()
+    assert result["dispatched"] == 0
+
+
+async def test_a_changed_schedule_still_fires_once_its_time_comes(db):
+    """The change only moves the start; a time after it is due as usual."""
+    host = await create_host(db)
+    now = datetime.now(UTC)
+    db.add(
+        ScheduledAction(
+            target_kind="host",
+            target_id=host.id,
+            action_key="_builtin.collect_state",
+            schedule_cron="* * * * *",
+            enabled=True,
+            last_dispatched_at=now - timedelta(days=2),
+            schedule_changed_at=now - timedelta(minutes=2),
+        )
+    )
+    await db.commit()
+
+    result = await _check_due_async()
+    assert result["dispatched"] == 1
+
+
+def test_set_schedule_restarts_the_walk_only_when_the_schedule_moves():
+    then = datetime(2026, 10, 1, 12, tzinfo=UTC)
+    now = then + timedelta(hours=1)
+    sa = ScheduledAction(schedule_cron="0 3 * * *", enabled=True, schedule_changed_at=then)
+
+    sa.set_schedule("0 3 * * *", True, now)
+    assert sa.schedule_changed_at == then, "nothing changed"
+
+    sa.set_schedule("0 3 * * *", False, now)
+    assert sa.schedule_changed_at == then, "switching off doesn't move the start"
+
+    sa.set_schedule("0 3 * * *", True, now)
+    assert sa.schedule_changed_at == now, "switching on does"
+
+    later = now + timedelta(hours=1)
+    sa.set_schedule("0 4 * * *", True, later)
+    assert sa.schedule_changed_at == later, "so does a new expression"
+
+
+@pytest.fixture
+async def kolkata(db):
+    """``scheduling.timezone`` = Asia/Kolkata (UTC+5:30, no daylight saving)."""
+    from app.models.app_setting import AppSetting
+    from app.settings_service import invalidate_cache
+
+    db.add(AppSetting(key="scheduling.timezone", value="Asia/Kolkata"))
+    await db.flush()
+    invalidate_cache("scheduling.timezone")
+    yield
+    invalidate_cache("scheduling.timezone")
+
+
+async def test_the_expression_is_read_in_the_scheduling_timezone(db, kolkata):
+    """Kolkata's clock time of half an hour ago has passed; as UTC it is hours off."""
+    from zoneinfo import ZoneInfo
+
+    host = await create_host(db)
+    now = datetime.now(UTC)
+    local = (now - timedelta(minutes=30)).astimezone(ZoneInfo("Asia/Kolkata"))
+    db.add(
+        ScheduledAction(
+            target_kind="host",
+            target_id=host.id,
+            action_key="_builtin.collect_state",
+            schedule_cron=f"{local.minute} {local.hour} * * *",
+            enabled=True,
+            last_dispatched_at=now - timedelta(hours=2),
+        )
+    )
+    await db.commit()
+
+    result = await _check_due_async()
+    assert result["dispatched"] == 1

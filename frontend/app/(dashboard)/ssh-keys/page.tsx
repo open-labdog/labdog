@@ -1,40 +1,35 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { InfoIcon } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
-import { Breadcrumb } from "@/components/ui/breadcrumb"
-import { Tooltip } from "@/components/ui/tooltip"
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import { DataTable } from "@/components/ui/data-table"
-import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
-import { useDelayedLoading, formatRelativeTime } from "@/lib/utils"
-import { TableSkeleton } from "@/components/ui/skeleton"
+import { plural, shortAgo } from "@/lib/fleet"
 import { showSuccess, showError } from "@/lib/toast"
 import { sshKeySchema, type SshKeyInput } from "@/lib/schemas"
 import type { SSHKey, Host } from "@/lib/types"
+import { Banner, BulkBar, Confirm, Field, Filter, Modal, PageHead, Table, Tag, type Sort } from "@/components/ld"
 
+const CRUMBS = [
+  { label: "settings", href: "/settings" },
+  { label: "access", href: "/settings?section=access" },
+]
+
+/**
+ * SSH keys — the credential every host is reached with. A key is named,
+ * carries the user it logs in as, and one of them is the default a new
+ * host gets. The private key is written once and never shown again.
+ */
 export default function SSHKeysPage() {
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [confirmState, setConfirmState] = useState<{
-    open: boolean; title: string; description: string; action: () => void | Promise<void>; loading?: boolean
-  } | null>(null)
-  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const queryClient = useQueryClient()
+  const [q, setQ] = useState("")
+  const [user, setUser] = useState("all")
+  const [sort, setSort] = useState<Sort>({ k: "name", dir: 1 })
+  const [sel, setSel] = useState<Set<string | number>>(new Set())
+  const [uploadOpen, setUploadOpen] = useState(false)
+  const [confirmState, setConfirmState] = useState<{ title: string; description: string; action: () => void | Promise<void>; loading?: boolean } | null>(null)
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null)
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false)
@@ -44,7 +39,6 @@ export default function SSHKeysPage() {
   const [editIsDefault, setEditIsDefault] = useState(false)
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
-  const queryClient = useQueryClient()
 
   const form = useForm<SshKeyInput>({
     resolver: zodResolver(sshKeySchema),
@@ -60,11 +54,32 @@ export default function SSHKeysPage() {
     queryKey: ["hosts"],
     queryFn: () => apiFetch<Host[]>("/api/hosts"),
   })
-  const hostCountByKey = new Map<number, number>()
-  hosts?.forEach(h => {
-    if (h.ssh_key_id != null) hostCountByKey.set(h.ssh_key_id, (hostCountByKey.get(h.ssh_key_id) ?? 0) + 1)
-  })
-  const showLoading = useDelayedLoading(isLoading)
+  const hostCountByKey = useMemo(() => {
+    const m = new Map<number, number>()
+    hosts?.forEach((h) => {
+      if (h.ssh_key_id != null) m.set(h.ssh_key_id, (m.get(h.ssh_key_id) ?? 0) + 1)
+    })
+    return m
+  }, [hosts])
+
+  const all = useMemo(() => sshKeys ?? [], [sshKeys])
+  const users = useMemo(() => [...new Set(all.map((k) => k.ssh_user))].sort(), [all])
+  const rows = useMemo(() => {
+    const ql = q.trim().toLowerCase()
+    const r = all.filter((k) => (user === "all" || k.ssh_user === user) && (!ql || k.name.toLowerCase().includes(ql) || (k.public_key ?? "").toLowerCase().includes(ql)))
+    const key: Record<string, (k: SSHKey) => string | number> = {
+      name: (k) => k.name.toLowerCase(),
+      user: (k) => k.ssh_user,
+      hosts: (k) => hostCountByKey.get(k.id) ?? 0,
+      created: (k) => k.created_at,
+    }
+    const f = key[sort.k] ?? key.name
+    return r.sort((a, b) => {
+      const x = f(a)
+      const y = f(b)
+      return (x > y ? 1 : x < y ? -1 : 0) * sort.dir
+    })
+  }, [all, q, user, sort, hostCountByKey])
 
   const uploadMutation = useApiMutation({
     mutationFn: (data: SshKeyInput) =>
@@ -79,14 +94,13 @@ export default function SSHKeysPage() {
       }),
     invalidateKeys: [["ssh-keys"]],
     onSuccess: () => {
-      setDialogOpen(false)
+      setUploadOpen(false)
       form.reset()
     },
   })
 
   const deleteMutation = useApiMutation<unknown, number, SSHKey>({
-    mutationFn: (keyId) =>
-      apiFetch(`/api/ssh-keys/${keyId}`, { method: "DELETE" }),
+    mutationFn: (keyId) => apiFetch(`/api/ssh-keys/${keyId}`, { method: "DELETE" }),
     invalidateKeys: [["ssh-keys"]],
     successMessage: "SSH key deleted",
     optimisticUpdate: {
@@ -95,19 +109,23 @@ export default function SSHKeysPage() {
     },
   })
 
-  const onUpload = form.handleSubmit((data) => {
-    uploadMutation.mutate(data)
-  })
+  const closeUpload = () => {
+    setUploadOpen(false)
+    form.reset()
+    uploadMutation.reset()
+  }
 
-  function handleDelete(keyId: number) {
+  const onUpload = form.handleSubmit((data) => uploadMutation.mutate(data))
+
+  function handleDelete(key: SSHKey) {
+    const n = hostCountByKey.get(key.id) ?? 0
     setConfirmState({
-      open: true,
-      title: "Delete SSH Key",
-      description: "Are you sure you want to delete this SSH key? This action cannot be undone.",
+      title: "Delete SSH key",
+      description: n > 0 ? `${plural(n, "host")} reach the fleet with ${key.name}; they will need another key. This cannot be undone.` : `Delete ${key.name}? This cannot be undone.`,
       action: async () => {
-        setConfirmState((prev) => prev ? { ...prev, loading: true } : null)
+        setConfirmState((prev) => (prev ? { ...prev, loading: true } : null))
         try {
-          await deleteMutation.mutateAsync(keyId)
+          await deleteMutation.mutateAsync(key.id)
         } finally {
           setConfirmState(null)
         }
@@ -115,20 +133,12 @@ export default function SSHKeysPage() {
     })
   }
 
-  const toggleSelect = (id: number) => {
-    setSelected(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
   async function handleBulkDelete() {
-    const ids = Array.from(selected)
+    const ids = Array.from(sel) as number[]
     setBulkDeleting(true)
     setBulkProgress({ done: 0, total: ids.length })
-    let success = 0, failed = 0
+    let success = 0
+    let failed = 0
     for (const id of ids) {
       try {
         await apiFetch(`/api/ssh-keys/${id}`, { method: "DELETE" })
@@ -140,13 +150,10 @@ export default function SSHKeysPage() {
     }
     setBulkDeleting(false)
     setBulkProgress(null)
-    setSelected(new Set())
+    setSel(new Set())
     await queryClient.invalidateQueries({ queryKey: ["ssh-keys"] })
-    if (failed === 0) {
-      showSuccess(`Deleted ${success} SSH key${success !== 1 ? "s" : ""}`)
-    } else {
-      showError(`Deleted ${success} of ${ids.length}. ${failed} failed.`)
-    }
+    if (failed === 0) showSuccess(`Deleted ${plural(success, "SSH key")}`)
+    else showError(`Deleted ${success} of ${ids.length}. ${failed} failed.`)
     setBulkConfirmOpen(false)
   }
 
@@ -182,230 +189,179 @@ export default function SSHKeysPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <Breadcrumb items={[{ label: "SSH Keys" }]} />
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">SSH Keys</h1>
-          <p className="text-slate-400 text-sm mt-1">Manage SSH keys for host access</p>
+    <>
+      <PageHead
+        crumbs={CRUMBS}
+        title={
+          <>
+            SSH keys <span className="mono num text-[12.5px] font-normal text-text-faint">{all.length}</span>
+          </>
+        }
+        sub="The credential every host is reached with. The default key is what a new host gets; the private key is encrypted at rest and never shown again."
+        actions={
+          <button type="button" className="btn btn-sm btn-primary" onClick={() => setUploadOpen(true)}>
+            Upload key…
+          </button>
+        }
+      >
+        <div className="flex flex-wrap items-center gap-[7px]">
+          <input className="inp mono" style={{ width: 200, fontSize: 11.5, padding: "4px 8px" }} placeholder="Search keys…" aria-label="search keys" value={q} onChange={(e) => setQ(e.target.value)} />
+          <Filter label="user" value={user} onChange={setUser} options={users.map((u) => ({ k: u, label: u, n: all.filter((k) => k.ssh_user === u).length }))} />
+          <span className="tt ml-auto hidden sm:inline">a host with no key of its own uses the default</span>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={(open) => {
-          setDialogOpen(open)
-          if (!open) { form.reset(); uploadMutation.reset() }
-        }}>
-          <DialogTrigger render={<Button />}>
-            Upload Key
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Upload SSH Key</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={onUpload} noValidate className="space-y-4 mt-2">
-              <div className="space-y-2">
-                <Label htmlFor="key-name">Name</Label>
-                <Input
-                  id="key-name"
-                  type="text"
-                  placeholder="e.g. production-key"
-                  {...form.register("name")}
-                />
-                {form.formState.errors.name && (
-                  <p className="text-sm text-red-400">{form.formState.errors.name.message}</p>
-                )}
-              </div>
-
-               <div className="space-y-2">
-                 <div className="flex items-center gap-1.5">
-                   <Label htmlFor="private-key">Private Key</Label>
-                   <Tooltip content="Your private key is encrypted at rest with AES-256-GCM before storage.">
-                     <InfoIcon className="w-3.5 h-3.5 text-slate-500 cursor-help" />
-                   </Tooltip>
-                 </div>
-                 <textarea
-                   id="private-key"
-                   placeholder="Paste your private key here..."
-                   {...form.register("private_key")}
-                   rows={6}
-                   className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm font-mono text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring resize-none dark:bg-input/30"
-                 />
-                 {form.formState.errors.private_key && (
-                   <p className="text-sm text-red-400">{form.formState.errors.private_key.message}</p>
-                 )}
-               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="ssh-user">SSH User</Label>
-                <Input
-                  id="ssh-user"
-                  type="text"
-                  placeholder="root"
-                  {...form.register("ssh_user")}
-                  className="font-mono"
-                />
-                {form.formState.errors.ssh_user && (
-                  <p className="text-sm text-red-400">{form.formState.errors.ssh_user.message}</p>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  id="is-default"
-                  type="checkbox"
-                  {...form.register("is_default")}
-                  className="rounded border-input"
-                />
-                <Label htmlFor="is-default">Set as default key</Label>
-              </div>
-
-              {uploadMutation.error && (
-                <p className="text-sm text-red-400">{uploadMutation.error.message}</p>
-              )}
-
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => { setDialogOpen(false); form.reset(); uploadMutation.reset() }}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={uploadMutation.isPending}>
-                  {uploadMutation.isPending ? "Uploading..." : "Upload Key"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      {selected.size > 0 && (
-        <div className="flex items-center gap-3 px-4 py-2 bg-slate-800 rounded-lg border border-slate-700">
-          <span className="text-sm text-slate-300">{selected.size} selected</span>
-          {bulkProgress ? (
-            <span className="text-sm text-slate-400">Deleting {bulkProgress.done}/{bulkProgress.total}...</span>
-          ) : (
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={() => setBulkConfirmOpen(true)}
-              disabled={bulkDeleting}
-            >
-              Delete Selected
-            </Button>
-          )}
-          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
-            Clear
-          </Button>
-        </div>
-      )}
-
-      {showLoading && <TableSkeleton rows={5} columns={3} />}
+      </PageHead>
 
       {error && (
-        <div className="text-red-400 py-8 text-center">Failed to load SSH keys</div>
+        <Banner tone="danger" flush>
+          Could not load SSH keys: {error.message}
+        </Banner>
       )}
 
-      {!isLoading && !error && (
-        <DataTable<SSHKey>
-          tableId="ssh-keys"
-          data={sshKeys}
-          emptyMessage="No SSH keys yet. Upload your first key to get started."
-          getRowKey={(k) => k.id}
-          columns={[
-            {
-              key: "select",
-              label: "",
-              cell: (k) => (
-                <input
-                  type="checkbox"
-                  checked={selected.has(k.id)}
-                  onChange={() => toggleSelect(k.id)}
-                  className="rounded border-slate-600"
-                />
-              ),
-              defaultWidth: 40,
-              resizable: false,
-              sortable: false,
-            },
-            {
-              key: "name",
-              label: "Name",
-              accessor: (k) => k.name,
-              cell: (k) => (
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-white">{k.name}</span>
-                    {k.is_default && <Badge className="bg-green-600 text-white text-[10px] px-1.5 py-0">Default</Badge>}
-                  </div>
-                  {k.public_key && (
-                    <div className="font-mono text-[11px] text-slate-500 mt-0.5 truncate max-w-[280px]" title={k.public_key}>
-                      {k.public_key.split(" ").slice(0, 2).join(" ").substring(0, 48)}...
-                    </div>
-                  )}
-                </div>
-              ),
-              defaultWidth: 300,
-              filter: { type: "text" },
-            },
-            {
-              key: "ssh_user",
-              label: "SSH User",
-              accessor: (k) => k.ssh_user,
-              cell: (k) => <span className="font-mono text-sm text-slate-300">{k.ssh_user}</span>,
-              defaultWidth: 120,
-              filter: { type: "enum", from: "accessor" },
-            },
-            {
-              key: "hosts",
-              label: "Hosts",
-              accessor: (k) => hostCountByKey.get(k.id) ?? 0,
-              cell: (k) => {
-                const count = hostCountByKey.get(k.id) ?? 0
-                return count > 0
-                  ? <span className="text-sm tabular-nums text-slate-300">{count}</span>
-                  : <span className="text-sm text-slate-600">0</span>
-              },
-              defaultWidth: 70,
-            },
-            {
-              key: "created_at",
-              label: "Created",
-              accessor: (k) => k.created_at,
-              cell: (k) => (
-                <span className="text-sm text-slate-300" title={new Date(k.created_at).toLocaleString()}>
-                  {formatRelativeTime(k.created_at)}
+      <Table<SSHKey>
+        cols={[
+          {
+            k: "name",
+            label: "name",
+            w: "minmax(220px,1.4fr)",
+            cell: (k) => (
+              <span className="flex min-w-0 flex-col">
+                <span className="flex items-center gap-1.5">
+                  <span className="mono trunc font-medium text-text">{k.name}</span>
+                  {k.is_default && <Tag tone="accent">default</Tag>}
                 </span>
-              ),
-              defaultWidth: 100,
+                {k.public_key && (
+                  <span className="mono trunc text-[10.5px] text-text-faint" title={k.public_key}>
+                    {k.public_key.split(" ").slice(0, 2).join(" ").substring(0, 48)}…
+                  </span>
+                )}
+              </span>
+            ),
+          },
+          { k: "user", label: "user", w: "110px", cell: (k) => <span className="mono text-[11px]">{k.ssh_user}</span> },
+          {
+            k: "hosts",
+            label: "hosts",
+            w: "70px",
+            right: true,
+            cell: (k) => {
+              const n = hostCountByKey.get(k.id) ?? 0
+              return <span className={`mono num ${n ? "text-text" : "text-text-faint"}`}>{n}</span>
             },
-            {
-              key: "actions",
-              label: "",
-              cell: (k) => (
-                <div className="flex gap-1">
-                  <Button variant="ghost" size="sm" onClick={() => openEdit(k)}>Edit</Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleDelete(k.id)}
-                    disabled={deleteMutation.isPending}
-                    className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                  >
-                    Delete
-                  </Button>
-                </div>
-              ),
-              defaultWidth: 140,
-              resizable: false,
-              sortable: false,
-            },
-          ]}
-        />
+          },
+          { k: "created", label: "added", w: "84px", cell: (k) => <span className="mono num text-[11px]" title={new Date(k.created_at).toLocaleString()}>{shortAgo(k.created_at)} ago</span> },
+          {
+            k: "actions",
+            label: "",
+            w: "118px",
+            right: true,
+            sortable: false,
+            cell: (k) => (
+              <span className="flex gap-0.5">
+                <button type="button" className="btn btn-sm btn-ghost" onClick={() => openEdit(k)}>
+                  edit
+                </button>
+                <button type="button" className="btn btn-sm btn-ghost text-danger" disabled={deleteMutation.isPending} onClick={() => handleDelete(k)}>
+                  delete
+                </button>
+              </span>
+            ),
+          },
+        ]}
+        rows={rows}
+        keyOf={(k) => k.id}
+        sort={sort}
+        onSort={(k) => setSort((s) => ({ k, dir: s.k === k ? ((-s.dir) as 1 | -1) : 1 }))}
+        selected={sel}
+        onSelect={setSel}
+        loading={isLoading}
+        empty={all.length === 0 ? "No SSH keys yet. Upload one before adding hosts — it is how LabDog reaches them." : "No key matches."}
+      />
+
+      <BulkBar n={sel.size} onClear={() => setSel(new Set())} status={bulkProgress ? `Deleting ${bulkProgress.done}/${bulkProgress.total}…` : undefined}>
+        <button type="button" className="btn btn-sm btn-danger" disabled={bulkDeleting} onClick={() => setBulkConfirmOpen(true)}>
+          Delete selected
+        </button>
+      </BulkBar>
+
+      {uploadOpen && (
+        <Modal
+          title="Upload SSH key"
+          meta="encrypted at rest"
+          w={520}
+          onClose={closeUpload}
+          onSubmit={onUpload}
+          footer={
+            <>
+              <span className="tt mr-auto">AES-256-GCM before it touches the database</span>
+              <button type="button" className="btn" onClick={closeUpload}>
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={uploadMutation.isPending}>
+                {uploadMutation.isPending ? "Uploading…" : "Upload key"}
+              </button>
+            </>
+          }
+        >
+          <div className="grid gap-[11px]" style={{ gridTemplateColumns: "1fr 140px" }}>
+            <Field label="name" htmlFor="key-name" error={form.formState.errors.name?.message}>
+              <input id="key-name" className="inp mono" placeholder="e.g. production-key" {...form.register("name")} />
+            </Field>
+            <Field label="ssh user" htmlFor="ssh-user" error={form.formState.errors.ssh_user?.message}>
+              <input id="ssh-user" className="inp mono" placeholder="root" {...form.register("ssh_user")} />
+            </Field>
+          </div>
+          <Field label="private key" htmlFor="private-key" hint="never shown again" error={form.formState.errors.private_key?.message}>
+            <textarea id="private-key" className="inp mono" rows={7} placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" spellCheck={false} {...form.register("private_key")} />
+          </Field>
+          <label className="flex items-center gap-2 text-xs text-text">
+            <input id="is-default" type="checkbox" {...form.register("is_default")} />
+            set as the default key
+          </label>
+          {uploadMutation.error && <Banner tone="danger">{uploadMutation.error.message}</Banner>}
+        </Modal>
+      )}
+
+      {editingKey && (
+        <Modal
+          title="Edit SSH key"
+          meta={editingKey.name}
+          w={460}
+          onClose={() => setEditingKey(null)}
+          onSubmit={(e) => {
+            e.preventDefault()
+            void handleEditSave()
+          }}
+          footer={
+            <>
+              <span className="tt mr-auto">the key material cannot be changed — upload a new one</span>
+              <button type="button" className="btn" onClick={() => setEditingKey(null)}>
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={editSaving}>
+                {editSaving ? "Saving…" : "Save"}
+              </button>
+            </>
+          }
+        >
+          <div className="grid gap-[11px]" style={{ gridTemplateColumns: "1fr 140px" }}>
+            <Field label="name" htmlFor="edit-name">
+              <input id="edit-name" className="inp mono" value={editName} onChange={(e) => setEditName(e.target.value)} />
+            </Field>
+            <Field label="ssh user" htmlFor="edit-ssh-user">
+              <input id="edit-ssh-user" className="inp mono" value={editSshUser} onChange={(e) => setEditSshUser(e.target.value)} />
+            </Field>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-text">
+            <input id="edit-default" type="checkbox" checked={editIsDefault} onChange={(e) => setEditIsDefault(e.target.checked)} />
+            set as the default key
+          </label>
+          {editError && <Banner tone="danger">{editError}</Banner>}
+        </Modal>
       )}
 
       {confirmState && (
-        <ConfirmDialog
-          open={confirmState.open}
+        <Confirm
+          open
           onOpenChange={(open) => !open && setConfirmState(null)}
           title={confirmState.title}
           description={confirmState.description}
@@ -416,45 +372,16 @@ export default function SSHKeysPage() {
         />
       )}
 
-      <ConfirmDialog
+      <Confirm
         open={bulkConfirmOpen}
         onOpenChange={setBulkConfirmOpen}
-        title={`Delete ${selected.size} ${selected.size === 1 ? "key" : "keys"}?`}
-        description="This action cannot be undone."
+        title={`Delete ${plural(sel.size, "key")}?`}
+        description="Hosts that use these keys will need another one before LabDog can reach them again. This cannot be undone."
         confirmLabel="Delete All"
         variant="destructive"
         loading={bulkDeleting}
         onConfirm={handleBulkDelete}
       />
-
-      <Dialog open={!!editingKey} onOpenChange={(open) => { if (!open) setEditingKey(null) }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit SSH Key</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 mt-2">
-            <div className="space-y-2">
-              <Label htmlFor="edit-name">Name</Label>
-              <Input id="edit-name" value={editName} onChange={(e) => setEditName(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-ssh-user">SSH User</Label>
-              <Input id="edit-ssh-user" value={editSshUser} onChange={(e) => setEditSshUser(e.target.value)} className="font-mono" />
-            </div>
-            <div className="flex items-center gap-2">
-              <input id="edit-default" type="checkbox" checked={editIsDefault} onChange={(e) => setEditIsDefault(e.target.checked)} className="rounded border-input" />
-              <Label htmlFor="edit-default">Set as default key</Label>
-            </div>
-            {editError && <p className="text-sm text-red-400">{editError}</p>}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setEditingKey(null)}>Cancel</Button>
-              <Button onClick={handleEditSave} disabled={editSaving}>
-                {editSaving ? "Saving..." : "Save"}
-              </Button>
-            </DialogFooter>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
+    </>
   )
 }

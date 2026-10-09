@@ -56,16 +56,20 @@ celery_app.conf.update(
         "app.tasks.ca_cert_action.*": {"queue": "long_running"},
         "app.tasks.resolver_sync.*": {"queue": "long_running"},
         "app.tasks.resolver_drift.*": {"queue": "long_running"},
-        # Its own queue, served by its own worker. run_action blocks in
-        # result.join() waiting for children it publishes to
-        # long_running; sharing that pool is a self-deadlock at
-        # concurrency=4. See app/celery_manager.py.
+        # Its own queue, served by its own worker. run_action blocks
+        # waiting for children it publishes to long_running; sharing that
+        # pool is a self-deadlock at concurrency=4. See
+        # app/celery_manager.py.
         "app.tasks.action_orchestrator.*": {"queue": "orchestrator"},
         "app.tasks.action_host.*": {"queue": "long_running"},
         "app.tasks.builtin_dispatchers.*": {"queue": "long_running"},
         "app.tasks.scheduled_action_schedule.*": {"queue": "long_running"},
         "app.tasks.facts.*": {"queue": "long_running"},
         "app.tasks.ai_task.*": {"queue": "long_running"},
+        # The sweep is quick and stays on default; the check and a rollback
+        # wait on SSH and on Proxmox restarting a VM.
+        "app.tasks.ai_remediation.check_remediation": {"queue": "long_running"},
+        "app.tasks.ai_remediation.run_rollback": {"queue": "long_running"},
         "discovery.*": {"queue": "long_running"},
         "gitops.*": {"queue": "long_running"},
         "scans.check_scheduled": {"queue": "default"},
@@ -136,9 +140,12 @@ def _sync_packs_on_worker_start(sender=None, **_kwargs):
     Failures are logged and swallowed so a failing git remote doesn't
     prevent the worker from starting.
 
-    The orchestrator worker reloads the registry but does **not** sync:
-    two processes running `git pull` into the same pack working trees at
-    boot is a race, and the orchestrator only ever reads the registry.
+    The orchestrator worker reloads the registry but does **not** sync: it
+    only ever reads the registry, and the API and this worker's sibling
+    already sync every pack at boot. Those two take turns in each
+    checkout, under the pack's checkout lock, and their rebuilds take
+    turns under the registry lock (BUG-96); a third sync would only wait
+    in line for nothing.
     """
     orchestrator = _is_orchestrator_worker(sender)
     try:
@@ -156,7 +163,9 @@ def _sync_packs_on_worker_start(sender=None, **_kwargs):
 
         asyncio.run(_do_sync())
     except Exception:
-        logger.exception("action-pack sync on worker_ready failed; bundled pack only")
+        logger.exception(
+            "action-pack sync on worker_ready failed; built-in actions only until the next rebuild"
+        )
 
 
 @beat_init.connect
@@ -244,4 +253,6 @@ celery_app.conf.include = [
     "app.tasks.ai_approvals",
     "app.tasks.ai_snapshots",
     "app.tasks.ai_alerts",
+    "app.tasks.ai_remediation",
+    "app.tasks.notifications",
 ]

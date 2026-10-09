@@ -83,8 +83,9 @@ def run_ansible(
             default ``ANSIBLE_ROLES_PATH`` env var and forwarded to
             ``ansible_runner.run()``.
         roles_paths: Optional list of additional roles directories (e.g. from
-            user packs) joined into ``ANSIBLE_ROLES_PATH``. The bundled
-            ``roles/`` dir is always included as a fallback.
+            user packs) joined into ``ANSIBLE_ROLES_PATH``. LabDog's own
+            ``roles/`` dir next to this module is always included as a
+            fallback.
         event_handler: Optional callback invoked by ansible-runner for every
             event as it is emitted during the run (not just at the end). Used
             to stream task-by-task output to the live view. Receives the event
@@ -117,7 +118,7 @@ def run_ansible(
         f.write(inventory_json)
 
     # Assemble roles path: caller-supplied dirs (e.g. a user pack's roles)
-    # take precedence, bundled roles are the fallback. De-duplicate while
+    # take precedence, LabDog's own roles are the fallback. De-duplicate while
     # preserving order.
     seen: set[str] = set()
     combined_roles: list[str] = []

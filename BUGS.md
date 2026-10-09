@@ -10,7 +10,8 @@ Open bugs in LabDog. New entries are added as bugs are surfaced.
    the bug ID (e.g. `fix(sync): BUG-37 — dispatch Celery tasks after
    commit`). That commit message is the canonical record (symptom,
    root cause, fix).
-2. Delete the entry from this file in the same commit. Do **not** mark
+2. Delete the entry from this file in the same commit, and its heading
+   and intro when it was the last entry under them. Do **not** mark
    bugs `[x]` and leave them here — fixed entries belong in git history,
    not in the registry.
 
@@ -32,21 +33,9 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-83`, `SEC-35`,
+ID counter as of last housekeeping pass: `BUG-114`, `SEC-38`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry.
-
----
-
-## Open
-
-### Security findings — High
-
-Filed 2026-05-21 from a `security-auditor` whitebox source-level
-review (see the `code-audit` branch history for the baseline). Each entry was
-spot-checked against current HEAD before filing.
-
-_No bugs are currently open._
 
 ---
 
@@ -75,8 +64,6 @@ protecting host root from an ordinary account. All three are now in
 place: the classifier hardening, the extra-vars validator, and the pack
 content policy.
 
-### Security — Medium
-
 ### Security — Low
 
 - [ ] **SEC-35** Grafana, Loki, Mimir and AI-provider base URLs are
@@ -86,11 +73,3 @@ content policy.
       follow redirects by default — and a documented homelab decision. Git
       repo URLs *do* block these (`app/schemas/git_repos.py:18-25`). Filed
       so it is not re-discovered as new, not because it needs changing.
-
-### Correctness — High
-
-_No bugs are currently open._
-
-### Correctness — Medium
-
-_No bugs are currently open._

@@ -58,7 +58,7 @@ jobs:
       && github.base_ref == 'main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Validate VERSION bump
@@ -101,8 +101,8 @@ jobs:
        && !startsWith(github.ref, 'refs/tags/'))
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
           cache: pip
@@ -124,8 +124,8 @@ jobs:
        && !startsWith(github.ref, 'refs/tags/'))
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
           cache: pip
@@ -134,40 +134,6 @@ jobs:
       - name: bandit (low+ with baseline)
         working-directory: backend
         run: bandit -r app/ -l --baseline bandit-baseline.json
-
-  ansible-lint:
-    if: >-
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
-      (github.event_name == 'workflow_dispatch'
-       && github.ref != 'refs/heads/main'
-       && !startsWith(github.ref, 'refs/tags/'))
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: "3.12"
-          cache: pip
-      - name: Install ansible-lint
-        # Upper-bounded so a floating major release can't silently start
-        # enforcing new rules and break CI (as ansible-lint 26.x did with
-        # role-name).
-        run: pip install -U pip "ansible-lint>=24,<27" "ansible-core>=2.16" -q
-      - name: Fetch bundled action pack
-        # backend/app/ansible/ is gitignored; ansible-lint targets a
-        # bundled action. Fetch the pinned ref via the shared script.
-        run: |
-          export LABDOG_PLAYBOOKS_REF="$(tr -d '[:space:]' < LABDOG_PLAYBOOKS_REF)"
-          ./scripts/fetch-bundled-pack.sh backend/app/ansible
-      - name: ansible-lint
-        # Run from inside the fetched pack so ansible-lint discovers the
-        # pack's own .ansible-lint (skip_list: role-name) and
-        # .ansible-lint-ignore baseline. Linting from the repo root
-        # bypassed them, so the pack's deliberate role-name convention
-        # tripped --strict once a newer ansible-lint enforced the rule.
-        working-directory: backend/app/ansible
-        run: ansible-lint --strict actions/k8s-upgrade
 
   frontend-lint:
     if: >-
@@ -178,8 +144,8 @@ jobs:
        && !startsWith(github.ref, 'refs/tags/'))
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           cache: npm
@@ -232,8 +198,8 @@ jobs:
       SECRET_KEY: ci-test-secret-key-not-for-production
       ENCRYPTION_KEY: Y2ktdGVzdC1lbmNyeXB0aW9uLWtleS0zMmJ5dGVz
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
           cache: pip
@@ -254,16 +220,9 @@ jobs:
           uv export --frozen --no-emit-project --extra dev --extra agent --format requirements-txt -o /tmp/req.txt
           uv pip install --system -r /tmp/req.txt
           uv pip install --system --no-deps .
-      - name: Fetch bundled action pack
-        # backend/app/ansible/ is gitignored; pytest expects the bundled
-        # pack to be present (tests reference linux-upgrade etc.).
-        # Delegates to the shared script used by Dockerfile + packaging.
-        run: |
-          export LABDOG_PLAYBOOKS_REF="$(tr -d '[:space:]' < LABDOG_PLAYBOOKS_REF)"
-          ./scripts/fetch-bundled-pack.sh backend/app/ansible
       - name: pytest
         working-directory: backend
-        run: python -m pytest tests/ -v -m "not integration" --ignore=tests/integration
+        run: python -m pytest tests/ -v
 
   frontend-build-check:
     if: >-
@@ -274,8 +233,8 @@ jobs:
        && !startsWith(github.ref, 'refs/tags/'))
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           cache: npm
@@ -356,13 +315,13 @@ jobs:
       # disables it for the same reason.
       LABDOG_RATE_LIMIT__ENABLED: "false"
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: backend/pyproject.toml
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           cache: npm
@@ -374,10 +333,6 @@ jobs:
           uv export --frozen --no-emit-project --format requirements-txt -o /tmp/req.txt
           uv pip install --system -r /tmp/req.txt
           uv pip install --system --no-deps .
-      - name: Fetch bundled action pack
-        run: |
-          export LABDOG_PLAYBOOKS_REF="$(tr -d '[:space:]' < LABDOG_PLAYBOOKS_REF)"
-          ./scripts/fetch-bundled-pack.sh backend/app/ansible
       - name: Build frontend
         working-directory: frontend
         # No NEXT_PUBLIC_API_URL: it must stay empty so the bundle calls
@@ -427,8 +382,8 @@ jobs:
        && !startsWith(github.ref, 'refs/tags/'))
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           cache: npm
@@ -455,7 +410,7 @@ jobs:
       && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Derive Docker Hub username from DOCKER_HUB_REPO
         id: hub
         run: |
@@ -464,16 +419,15 @@ jobs:
             exit 1
           fi
           echo "user=$(echo '${{ vars.DOCKER_HUB_REPO }}' | cut -d/ -f1)" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ steps.hub.outputs.user }}
           password: ${{ secrets.DOCKER_HUB_PAT }}
       - id: meta
         run: |
           echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
-          echo "playbooks_ref=$(tr -d '[:space:]' < LABDOG_PLAYBOOKS_REF)" >> "$GITHUB_OUTPUT"
-      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: Dockerfile
@@ -484,7 +438,6 @@ jobs:
           build-args: |
             GIT_SHA=${{ github.sha }}
             BUILD_DATE=${{ steps.meta.outputs.build_date }}
-            LABDOG_PLAYBOOKS_REF=${{ steps.meta.outputs.playbooks_ref }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -500,7 +453,7 @@ jobs:
     outputs:
       image_ref: ${{ steps.meta.outputs.image_ref }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Derive Docker Hub username from DOCKER_HUB_REPO
         id: hub
         run: |
@@ -509,8 +462,8 @@ jobs:
             exit 1
           fi
           echo "user=$(echo '${{ vars.DOCKER_HUB_REPO }}' | cut -d/ -f1)" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ steps.hub.outputs.user }}
           password: ${{ secrets.DOCKER_HUB_PAT }}
@@ -520,8 +473,7 @@ jobs:
           echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
           echo "image_ref=${{ vars.DOCKER_HUB_REPO }}:test-$SHORT_SHA" >> "$GITHUB_OUTPUT"
           echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
-          echo "playbooks_ref=$(tr -d '[:space:]' < LABDOG_PLAYBOOKS_REF)" >> "$GITHUB_OUTPUT"
-      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: Dockerfile
@@ -532,7 +484,6 @@ jobs:
           build-args: |
             GIT_SHA=${{ github.sha }}
             BUILD_DATE=${{ steps.meta.outputs.build_date }}
-            LABDOG_PLAYBOOKS_REF=${{ steps.meta.outputs.playbooks_ref }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -543,7 +494,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [backend-lint, backend-test, frontend-build-check]
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Derive Docker Hub username from DOCKER_HUB_REPO
         id: hub
         run: |
@@ -552,8 +503,8 @@ jobs:
             exit 1
           fi
           echo "user=$(echo '${{ vars.DOCKER_HUB_REPO }}' | cut -d/ -f1)" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ steps.hub.outputs.user }}
           password: ${{ secrets.DOCKER_HUB_PAT }}
@@ -562,8 +513,7 @@ jobs:
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
           echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
-          echo "playbooks_ref=$(tr -d '[:space:]' < LABDOG_PLAYBOOKS_REF)" >> "$GITHUB_OUTPUT"
-      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: Dockerfile
@@ -574,7 +524,6 @@ jobs:
           build-args: |
             GIT_SHA=${{ github.sha }}
             BUILD_DATE=${{ steps.meta.outputs.build_date }}
-            LABDOG_PLAYBOOKS_REF=${{ steps.meta.outputs.playbooks_ref }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -586,8 +535,8 @@ jobs:
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
       && github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           cache: npm
@@ -597,9 +546,13 @@ jobs:
         run: |
           npm ci --prefer-offline
           npm run build
-      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: website/build
+          # v4 stopped including dotfiles by default. Docusaurus copies
+          # website/static/.nojekyll into the build, and the artifact should
+          # carry exactly what the build produced, as it did on v3.
+          include-hidden-files: true
 
   pages-deploy:
     # Publishes the built docs site to GitHub Pages on main only.
@@ -618,7 +571,7 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - id: deploy
-        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
 
 
   # ---- PACKAGING SMOKE --------------------------------------------------
@@ -633,7 +586,7 @@ jobs:
   packaging-smoke:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0  # need the PR base commit for the change guard
       - name: Decide whether to run
@@ -648,12 +601,12 @@ jobs:
             pull_request)
               BASE="${{ github.event.pull_request.base.sha }}"
               if git diff --name-only "$BASE" HEAD \
-                   | grep -qE '^(packaging/|backend/pyproject\.toml|backend/uv\.lock|scripts/fetch-bundled-pack\.sh|LABDOG_PLAYBOOKS_REF|VERSION|\.github/workflows/ci\.yml)'; then
+                   | grep -qE '^(packaging/|backend/pyproject\.toml|backend/uv\.lock|VERSION|\.github/workflows/ci\.yml)'; then
                 RUN=true
               fi ;;
           esac
           echo "run=$RUN" | tee -a "$GITHUB_OUTPUT"
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         if: steps.decide.outputs.run == 'true'
         with:
           python-version: "3.12"
@@ -662,7 +615,7 @@ jobs:
         # so uv is a prerequisite of every target, not just deb/rpm.
         if: steps.decide.outputs.run == 'true'
         run: pip install -U uv -q
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         if: steps.decide.outputs.run == 'true'
         with:
           node-version: 24
@@ -781,15 +734,15 @@ jobs:
             echo "run=false" | tee -a "$GITHUB_OUTPUT"
             echo "::notice::Push to main — the PR that produced it already ran the full suite."
           fi
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.decide.outputs.run == 'true'
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         if: steps.decide.outputs.run == 'true'
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: backend/pyproject.toml
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         if: steps.decide.outputs.run == 'true'
         with:
           node-version: 24
@@ -804,15 +757,10 @@ jobs:
           uv export --frozen --no-emit-project --extra dev --extra agent --format requirements-txt -o /tmp/req.txt
           uv pip install --system -r /tmp/req.txt
           uv pip install --system --no-deps .
-      - name: Fetch bundled action pack
-        if: steps.decide.outputs.run == 'true'
-        run: |
-          export LABDOG_PLAYBOOKS_REF="$(tr -d '[:space:]' < LABDOG_PLAYBOOKS_REF)"
-          ./scripts/fetch-bundled-pack.sh backend/app/ansible
       - name: pytest
         if: steps.decide.outputs.run == 'true'
         working-directory: backend
-        run: python -m pytest tests/ -q -m "not integration" --ignore=tests/integration
+        run: python -m pytest tests/ -q
       - name: ruff
         if: steps.decide.outputs.run == 'true'
         working-directory: backend
@@ -845,7 +793,7 @@ jobs:
       id-token: write # sign the provenance attestation
       attestations: write # record it against the repository
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Need full history + tags for the duplicate-tag check and
           # the tag-push step.
@@ -873,14 +821,14 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
             echo "Building release v$V from commit ${GITHUB_SHA}"
           fi
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         if: steps.ver.outputs.skip != 'true'
         with:
           python-version: "3.12"
       - name: Install uv
         if: steps.ver.outputs.skip != 'true'
         run: pip install -U uv -q
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         if: steps.ver.outputs.skip != 'true'
         with:
           node-version: 24
@@ -933,7 +881,7 @@ jobs:
         # workflow run and verified with:
         #   gh attestation verify labdog_X.Y.Z_amd64.deb --repo open-labdog/labdog
         if: steps.ver.outputs.skip != 'true'
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             packaging/dist/*.tar.gz
@@ -990,7 +938,7 @@ jobs:
       # Check out so the scanner can read .trivyignore. Without this the
       # ignore file is absent from the runner workspace and silently has no
       # effect — including the day someone flips ignore-unfixed to false.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Trivy — informational scan (low/medium)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -1017,7 +965,7 @@ jobs:
        && !startsWith(github.ref, 'refs/tags/'))
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Run gitleaks
@@ -1045,8 +993,8 @@ jobs:
        && !startsWith(github.ref, 'refs/tags/'))
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
           cache: pip
@@ -1081,8 +1029,8 @@ jobs:
        && !startsWith(github.ref, 'refs/tags/'))
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           cache: npm

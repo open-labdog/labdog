@@ -4,23 +4,14 @@ import { useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
-import { useDelayedLoading } from "@/lib/utils"
 import { showSuccess, showError } from "@/lib/toast"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Breadcrumb } from "@/components/ui/breadcrumb"
-import { TableSkeleton } from "@/components/ui/skeleton"
-import { ConfirmDialog } from "@/components/ui/confirm-dialog"
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { DataTable } from "@/components/ui/data-table"
+import { Banner, Confirm, Field, Modal, PageHead, Table, Tag } from "@/components/ld"
 import type { ProxmoxNode, VMMapping } from "@/lib/types"
+
+const CRUMBS = [
+  { label: "settings", href: "/settings" },
+  { label: "integrations", href: "/settings" },
+]
 
 interface NodeFormState {
   name: string
@@ -42,7 +33,12 @@ const emptyForm: NodeFormState = {
   ca_cert_clear: false,
 }
 
-export default function ProxmoxSettingsPage({ embedded }: { embedded?: boolean } = {}) {
+/**
+ * Proxmox — the hypervisors LabDog snapshots guests on before a
+ * destructive action, and rolls back to when verification fails. Served
+ * at `/hypervisors`; `/settings/proxmox` redirects there.
+ */
+export default function ProxmoxSettingsPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingNode, setEditingNode] = useState<ProxmoxNode | null>(null)
   const [form, setForm] = useState<NodeFormState>(emptyForm)
@@ -51,13 +47,7 @@ export default function ProxmoxSettingsPage({ embedded }: { embedded?: boolean }
   const [testingId, setTestingId] = useState<number | null>(null)
   const [cleaningUp, setCleaningUp] = useState(false)
   const [discovering, setDiscovering] = useState(false)
-  const [confirmState, setConfirmState] = useState<{
-    open: boolean
-    title: string
-    description: string
-    action: () => void | Promise<void>
-    loading?: boolean
-  } | null>(null)
+  const [confirmState, setConfirmState] = useState<{ title: string; description: string; action: () => void | Promise<void>; loading?: boolean } | null>(null)
 
   const queryClient = useQueryClient()
 
@@ -65,11 +55,9 @@ export default function ProxmoxSettingsPage({ embedded }: { embedded?: boolean }
     queryKey: ["proxmox-nodes"],
     queryFn: () => apiFetch<ProxmoxNode[]>("/api/proxmox/nodes"),
   })
-  const showLoading = useDelayedLoading(isLoading)
 
   const deleteMutation = useApiMutation<unknown, number, ProxmoxNode>({
-    mutationFn: (nodeId) =>
-      apiFetch(`/api/proxmox/nodes/${nodeId}`, { method: "DELETE" }),
+    mutationFn: (nodeId) => apiFetch(`/api/proxmox/nodes/${nodeId}`, { method: "DELETE" }),
     invalidateKeys: [["proxmox-nodes"]],
     successMessage: "Proxmox node deleted",
     optimisticUpdate: {
@@ -77,6 +65,8 @@ export default function ProxmoxSettingsPage({ embedded }: { embedded?: boolean }
       updater: (old, nodeId) => old.filter((n) => n.id !== nodeId),
     },
   })
+
+  const set = <K extends keyof NodeFormState>(k: K, v: NodeFormState[K]) => setForm((p) => ({ ...p, [k]: v }))
 
   function openCreate() {
     setEditingNode(null)
@@ -100,6 +90,11 @@ export default function ProxmoxSettingsPage({ embedded }: { embedded?: boolean }
     setDialogOpen(true)
   }
 
+  function closeDialog() {
+    setDialogOpen(false)
+    setFormError(null)
+  }
+
   async function handleSave() {
     setFormSaving(true)
     setFormError(null)
@@ -111,20 +106,12 @@ export default function ProxmoxSettingsPage({ embedded }: { embedded?: boolean }
           token_id: form.token_id || undefined,
           verify_ssl: form.verify_ssl,
         }
-        if (form.token_secret) {
-          payload.token_secret = form.token_secret
-        }
+        if (form.token_secret) payload.token_secret = form.token_secret
         // CA cert is tri-state on PUT: a pasted value replaces, an explicit
         // clear sends "" (NULL the column), and omitting leaves it unchanged.
-        if (form.ca_cert_pem.trim()) {
-          payload.ca_cert_pem = form.ca_cert_pem
-        } else if (form.ca_cert_clear) {
-          payload.ca_cert_pem = ""
-        }
-        await apiFetch(`/api/proxmox/nodes/${editingNode.id}`, {
-          method: "PUT",
-          json: payload,
-        })
+        if (form.ca_cert_pem.trim()) payload.ca_cert_pem = form.ca_cert_pem
+        else if (form.ca_cert_clear) payload.ca_cert_pem = ""
+        await apiFetch(`/api/proxmox/nodes/${editingNode.id}`, { method: "PUT", json: payload })
         showSuccess("Proxmox node updated")
       } else {
         const payload: Record<string, unknown> = {
@@ -135,13 +122,8 @@ export default function ProxmoxSettingsPage({ embedded }: { embedded?: boolean }
           verify_ssl: form.verify_ssl,
         }
         // Only send a CA cert on create when one was actually pasted.
-        if (form.ca_cert_pem.trim()) {
-          payload.ca_cert_pem = form.ca_cert_pem
-        }
-        await apiFetch("/api/proxmox/nodes", {
-          method: "POST",
-          json: payload,
-        })
+        if (form.ca_cert_pem.trim()) payload.ca_cert_pem = form.ca_cert_pem
+        await apiFetch("/api/proxmox/nodes", { method: "POST", json: payload })
         showSuccess("Proxmox node created")
       }
       await queryClient.invalidateQueries({ queryKey: ["proxmox-nodes"] })
@@ -155,9 +137,8 @@ export default function ProxmoxSettingsPage({ embedded }: { embedded?: boolean }
 
   function handleDelete(node: ProxmoxNode) {
     setConfirmState({
-      open: true,
-      title: "Delete Proxmox Node",
-      description: `Are you sure you want to delete "${node.name}"? This action cannot be undone.`,
+      title: "Delete Proxmox node",
+      description: `Guests on ${node.name} lose snapshot-before-change and rollback until it is added again. This cannot be undone.`,
       action: async () => {
         setConfirmState((prev) => (prev ? { ...prev, loading: true } : null))
         try {
@@ -172,10 +153,7 @@ export default function ProxmoxSettingsPage({ embedded }: { embedded?: boolean }
   async function handleCleanupSnapshots() {
     setCleaningUp(true)
     try {
-      const result = await apiFetch<{ deleted: number; errors: string[] }>(
-        "/api/proxmox/nodes/cleanup-snapshots",
-        { method: "POST" }
-      )
+      const result = await apiFetch<{ deleted: number; errors: string[] }>("/api/proxmox/nodes/cleanup-snapshots", { method: "POST" })
       showSuccess(`Cleaned up ${result.deleted} orphaned snapshot(s)`)
     } catch (err) {
       showError(err instanceof Error ? err.message : "Cleanup failed")
@@ -187,9 +165,7 @@ export default function ProxmoxSettingsPage({ embedded }: { embedded?: boolean }
   async function handleDiscoverAll() {
     setDiscovering(true)
     try {
-      const result = await apiFetch<VMMapping[]>("/api/proxmox/discover", {
-        method: "POST",
-      })
+      const result = await apiFetch<VMMapping[]>("/api/proxmox/discover", { method: "POST" })
       showSuccess(`Discovered ${result.length} VM mapping(s)`)
       // Refresh the hosts overview column and any open host detail pages.
       await queryClient.invalidateQueries({ queryKey: ["vm-mappings"] })
@@ -204,15 +180,9 @@ export default function ProxmoxSettingsPage({ embedded }: { embedded?: boolean }
   async function handleTestConnection(node: ProxmoxNode) {
     setTestingId(node.id)
     try {
-      const result = await apiFetch<{ success: boolean; message: string; version: string | null }>(
-        `/api/proxmox/nodes/${node.id}/test`,
-        { method: "POST" }
-      )
-      if (result.success) {
-        showSuccess(result.version ? `Connected — Proxmox ${result.version}` : "Connection successful")
-      } else {
-        showError(`Connection failed: ${result.message}`)
-      }
+      const result = await apiFetch<{ success: boolean; message: string; version: string | null }>(`/api/proxmox/nodes/${node.id}/test`, { method: "POST" })
+      if (result.success) showSuccess(result.version ? `Connected — Proxmox ${result.version}` : "Connection successful")
+      else showError(`Connection failed: ${result.message}`)
     } catch (err) {
       showError(err instanceof Error ? err.message : "Test failed")
     } finally {
@@ -220,295 +190,171 @@ export default function ProxmoxSettingsPage({ embedded }: { embedded?: boolean }
     }
   }
 
+  const all = nodes ?? []
+
   return (
-    <div className="space-y-6">
-      {!embedded && <Breadcrumb items={[{ label: "Settings", href: "/settings" }, { label: "Proxmox" }]} />}
-
-      <div className="flex items-center justify-between">
-        {!embedded && (
-          <div>
-            <h1 className="text-2xl font-bold text-white">Proxmox Nodes</h1>
-            <p className="text-slate-400 text-sm mt-1">
-              Configure Proxmox VE API connections for VM management.
-            </p>
-          </div>
-        )}
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={handleDiscoverAll}
-            disabled={discovering}
-          >
-            {discovering ? "Discovering..." : "Discover VM Mappings"}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={handleCleanupSnapshots}
-            disabled={cleaningUp}
-          >
-            {cleaningUp ? "Cleaning..." : "Cleanup Orphaned Snapshots"}
-          </Button>
-          <Button onClick={openCreate}>Add Node</Button>
-        </div>
-      </div>
-
-      {showLoading && <TableSkeleton rows={3} columns={5} />}
+    <>
+      <PageHead
+        crumbs={CRUMBS}
+        title={
+          <>
+            Proxmox <span className="mono num text-[12.5px] font-normal text-text-faint">{all.length}</span>
+          </>
+        }
+        sub="A connected node lets LabDog snapshot a guest before a destructive action and roll it back if verification fails. Guests are matched to hosts by discovering VM mappings."
+        actions={
+          <>
+            <button type="button" className="btn btn-sm" onClick={() => void handleDiscoverAll()} disabled={discovering || all.length === 0}>
+              {discovering ? "Discovering…" : "Discover VM mappings"}
+            </button>
+            <button type="button" className="btn btn-sm" onClick={() => void handleCleanupSnapshots()} disabled={cleaningUp || all.length === 0}>
+              {cleaningUp ? "Cleaning…" : "Clean up orphaned snapshots"}
+            </button>
+            <button type="button" className="btn btn-sm btn-primary" onClick={openCreate}>
+              Add node…
+            </button>
+          </>
+        }
+      />
 
       {error && (
-        <div className="text-red-400 py-8 text-center">Failed to load Proxmox nodes</div>
+        <Banner tone="danger" flush>
+          Could not load Proxmox nodes: {error.message}
+        </Banner>
       )}
 
-      {!isLoading && !error && nodes?.length === 0 && (
-        <div className="text-slate-400 py-8 text-center">
-          No Proxmox nodes configured. Click <strong>Add Node</strong> to get started.
-        </div>
-      )}
-
-      {!isLoading && !error && (
-        <DataTable<ProxmoxNode>
-          tableId="proxmox-nodes"
-          data={nodes}
-          emptyMessage={<>No Proxmox nodes configured. Click <strong>Add Node</strong> to get started.</>}
-          getRowKey={(n) => n.id}
-          columns={[
-            {
-              key: "name",
-              label: "Name",
-              accessor: (n) => n.name,
-              cell: (n) => <span className="font-medium text-white">{n.name}</span>,
-              defaultWidth: 180,
-              filter: { type: "text" },
-            },
-            {
-              key: "api_url",
-              label: "API URL",
-              accessor: (n) => n.api_url,
-              cell: (n) => <span className="font-mono text-slate-300 text-sm">{n.api_url}</span>,
-              defaultWidth: 280,
-              filter: { type: "text", placeholder: "e.g. github.com" },
-            },
-            {
-              key: "token_id",
-              label: "Token ID",
-              accessor: (n) => n.token_id,
-              cell: (n) => <span className="font-mono text-slate-300 text-sm">{n.token_id}</span>,
-              defaultWidth: 200,
-              filter: { type: "text" },
-            },
-            {
-              key: "verify_ssl",
-              label: "SSL Verify",
-              accessor: (n) => n.verify_ssl,
-              cell: (n) => n.verify_ssl
-                ? <span className="text-green-400 text-sm">Yes</span>
-                : <span className="text-yellow-400 text-sm">No</span>,
-              defaultWidth: 120,
-              filter: { type: "boolean" },
-            },
-            {
-              key: "has_ca_cert",
-              label: "CA Cert",
-              accessor: (n) => n.has_ca_cert,
-              cell: (n) => n.has_ca_cert
-                ? (
-                  <span
-                    className="text-green-400 text-sm font-mono"
-                    title={n.ca_cert_fingerprint ?? undefined}
-                  >
-                    {n.ca_cert_fingerprint
-                      ? `${n.ca_cert_fingerprint.slice(0, 16)}…`
-                      : "Yes"}
-                  </span>
-                )
-                : <span className="text-slate-500 text-sm">—</span>,
-              defaultWidth: 160,
-              filter: { type: "boolean" },
-            },
-            {
-              key: "actions",
-              label: "Actions",
-              cell: (node) => (
-                <div className="flex gap-1">
-                  <Button size="sm" variant="ghost" disabled={testingId === node.id} onClick={() => handleTestConnection(node)}>
-                    {testingId === node.id ? "Testing..." : "Test"}
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => openEdit(node)}>Edit</Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                    onClick={() => handleDelete(node)}
-                    disabled={deleteMutation.isPending}
-                  >
-                    Delete
-                  </Button>
-                </div>
+      <Table<ProxmoxNode>
+        cols={[
+          { k: "name", label: "name", w: "minmax(140px,1fr)", sortable: false, cell: (n) => <span className="mono font-medium text-text">{n.name}</span> },
+          { k: "api_url", label: "api url", w: "minmax(220px,1.6fr)", sortable: false, cell: (n) => <span className="mono text-[11px]">{n.api_url}</span> },
+          { k: "token_id", label: "token id", w: "minmax(150px,1fr)", sortable: false, cell: (n) => <span className="mono text-[11px]">{n.token_id}</span> },
+          { k: "tls", label: "tls", w: "96px", sortable: false, cell: (n) => (n.verify_ssl ? <Tag tone="ok">verified</Tag> : <Tag tone="warn">unverified</Tag>) },
+          {
+            k: "ca",
+            label: "ca cert",
+            w: "150px",
+            sortable: false,
+            cell: (n) =>
+              n.has_ca_cert ? (
+                <span className="mono text-[11px] text-ok" title={n.ca_cert_fingerprint ?? undefined}>
+                  {n.ca_cert_fingerprint ? `${n.ca_cert_fingerprint.slice(0, 16)}…` : "yes"}
+                </span>
+              ) : (
+                <span className="text-text-faint">system trust store</span>
               ),
-              defaultWidth: 220,
-              resizable: false,
-              sortable: false,
-            },
-          ]}
-        />
-      )}
+          },
+          {
+            k: "actions",
+            label: "",
+            w: "170px",
+            right: true,
+            sortable: false,
+            cell: (node) => (
+              <span className="flex gap-0.5">
+                <button type="button" className="btn btn-sm btn-ghost" disabled={testingId === node.id} onClick={() => handleTestConnection(node)}>
+                  {testingId === node.id ? "testing…" : "test"}
+                </button>
+                <button type="button" className="btn btn-sm btn-ghost" onClick={() => openEdit(node)}>
+                  edit
+                </button>
+                <button type="button" className="btn btn-sm btn-ghost text-danger" disabled={deleteMutation.isPending} onClick={() => handleDelete(node)}>
+                  delete
+                </button>
+              </span>
+            ),
+          },
+        ]}
+        rows={all}
+        keyOf={(n) => n.id}
+        loading={isLoading}
+        empty="No Proxmox nodes. Add one to snapshot guests before destructive actions and roll back when verification fails."
+      />
 
-      <Dialog
-        open={dialogOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            setDialogOpen(false)
-            setFormError(null)
-          }
-        }}
-      >
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{editingNode ? "Edit Proxmox Node" : "Add Proxmox Node"}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 mt-2">
-            <div className="space-y-2">
-              <Label htmlFor="node-name">Name</Label>
-              <Input
-                id="node-name"
-                placeholder="e.g. pve-01"
-                value={form.name}
-                onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="node-api-url">API URL</Label>
-              <Input
-                id="node-api-url"
-                placeholder="https://pve.example.com:8006"
-                value={form.api_url}
-                onChange={(e) => setForm((prev) => ({ ...prev, api_url: e.target.value }))}
-                className="font-mono"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="node-token-id">Token ID</Label>
-              <Input
-                id="node-token-id"
-                placeholder="user@realm!tokenname"
-                value={form.token_id}
-                onChange={(e) => setForm((prev) => ({ ...prev, token_id: e.target.value }))}
-                className="font-mono"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="node-token-secret">
-                Token Secret{editingNode && " (leave blank to keep current)"}
-              </Label>
-              <Input
-                id="node-token-secret"
-                type="password"
-                placeholder={editingNode ? "Leave blank to keep current" : "API token secret UUID"}
-                value={form.token_secret}
-                onChange={(e) => setForm((prev) => ({ ...prev, token_secret: e.target.value }))}
-                className="font-mono"
-              />
-            </div>
-
-            <div className="flex items-center gap-2">
-              <input
-                id="node-verify-ssl"
-                type="checkbox"
-                checked={form.verify_ssl}
-                onChange={(e) => setForm((prev) => ({ ...prev, verify_ssl: e.target.checked }))}
-                className="rounded border-input"
-              />
-              <Label htmlFor="node-verify-ssl">Verify SSL certificate</Label>
-            </div>
-
-            {form.verify_ssl && (
-              <div className="space-y-2">
-                <Label htmlFor="node-ca-cert">CA certificate (PEM, optional)</Label>
-                {editingNode?.has_ca_cert && !form.ca_cert_clear && (
-                  <p className="text-sm text-slate-400">
-                    CA configured
-                    {editingNode.ca_cert_fingerprint && (
-                      <>
-                        :{" "}
-                        <span className="font-mono text-slate-300 break-all">
-                          {editingNode.ca_cert_fingerprint}
-                        </span>
-                      </>
-                    )}{" "}
-                    — paste a new PEM to replace, or{" "}
-                    <button
-                      type="button"
-                      className="text-red-400 hover:text-red-300 underline"
-                      onClick={() =>
-                        setForm((prev) => ({ ...prev, ca_cert_pem: "", ca_cert_clear: true }))
-                      }
-                    >
-                      Clear CA
-                    </button>{" "}
-                    to remove.
-                  </p>
-                )}
-                {editingNode?.has_ca_cert && form.ca_cert_clear && (
-                  <p className="text-sm text-yellow-400">
-                    CA will be cleared on save.{" "}
-                    <button
-                      type="button"
-                      className="text-slate-300 hover:text-white underline"
-                      onClick={() =>
-                        setForm((prev) => ({ ...prev, ca_cert_clear: false }))
-                      }
-                    >
-                      Undo
-                    </button>
-                  </p>
-                )}
-                <textarea
-                  id="node-ca-cert"
-                  rows={6}
-                  placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"}
-                  value={form.ca_cert_pem}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      ca_cert_pem: e.target.value,
-                      // Typing a PEM supersedes an explicit clear.
-                      ca_cert_clear: e.target.value.trim() ? false : prev.ca_cert_clear,
-                    }))
-                  }
-                  className="w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1.5 font-mono text-sm transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30"
-                />
-                <p className="text-xs text-slate-500">
-                  Verify the node&apos;s TLS certificate against this CA (or self-signed cert)
-                  instead of the system trust store. Leave blank to use the system trust store.
-                </p>
-              </div>
-            )}
-
-            {formError && <p className="text-sm text-red-400">{formError}</p>}
-
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setDialogOpen(false)
-                  setFormError(null)
-                }}
-              >
+      {dialogOpen && (
+        <Modal
+          title={editingNode ? "Edit Proxmox node" : "Add Proxmox node"}
+          meta={editingNode?.name}
+          w={520}
+          onClose={closeDialog}
+          onSubmit={(e) => {
+            e.preventDefault()
+            void handleSave()
+          }}
+          footer={
+            <>
+              <span className="tt mr-auto">an API token with VM.Snapshot and VM.Audit is enough</span>
+              <button type="button" className="btn" onClick={closeDialog}>
                 Cancel
-              </Button>
-              <Button onClick={handleSave} disabled={formSaving}>
-                {formSaving ? "Saving..." : editingNode ? "Save Changes" : "Add Node"}
-              </Button>
-            </DialogFooter>
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={formSaving}>
+                {formSaving ? "Saving…" : editingNode ? "Save changes" : "Add node"}
+              </button>
+            </>
+          }
+        >
+          <div className="grid gap-[11px]" style={{ gridTemplateColumns: "140px 1fr" }}>
+            <Field label="name" htmlFor="node-name">
+              <input id="node-name" className="inp mono" placeholder="e.g. pve-01" value={form.name} onChange={(e) => set("name", e.target.value)} />
+            </Field>
+            <Field label="api url" htmlFor="node-api-url">
+              <input id="node-api-url" className="inp mono" placeholder="https://pve.example.com:8006" value={form.api_url} onChange={(e) => set("api_url", e.target.value)} />
+            </Field>
           </div>
-        </DialogContent>
-      </Dialog>
+          <div className="grid gap-[11px]" style={{ gridTemplateColumns: "1fr 1fr" }}>
+            <Field label="token id" htmlFor="node-token-id">
+              <input id="node-token-id" className="inp mono" placeholder="user@realm!tokenname" value={form.token_id} onChange={(e) => set("token_id", e.target.value)} />
+            </Field>
+            <Field label="token secret" htmlFor="node-token-secret" hint={editingNode ? "blank keeps the current one" : undefined}>
+              <input id="node-token-secret" type="password" className="inp mono" autoComplete="off" placeholder={editingNode ? "leave blank to keep current" : "API token secret UUID"} value={form.token_secret} onChange={(e) => set("token_secret", e.target.value)} />
+            </Field>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-text">
+            <input id="node-verify-ssl" type="checkbox" checked={form.verify_ssl} onChange={(e) => set("verify_ssl", e.target.checked)} />
+            verify the node&apos;s TLS certificate
+          </label>
+          {form.verify_ssl && (
+            <Field label="ca certificate" htmlFor="node-ca-cert" hint="PEM, optional — blank uses the system trust store">
+              {editingNode?.has_ca_cert && !form.ca_cert_clear && (
+                <span className="text-[11.5px] text-text-3">
+                  A CA is configured{editingNode.ca_cert_fingerprint && <> (<span className="mono break-all text-text-2">{editingNode.ca_cert_fingerprint}</span>)</>} — paste a new PEM to replace it, or{" "}
+                  <button type="button" className="text-danger underline" onClick={() => setForm((p) => ({ ...p, ca_cert_pem: "", ca_cert_clear: true }))}>
+                    clear it
+                  </button>
+                  .
+                </span>
+              )}
+              {editingNode?.has_ca_cert && form.ca_cert_clear && (
+                <span className="text-[11.5px] text-warn">
+                  The CA will be cleared on save.{" "}
+                  <button type="button" className="text-text-2 underline" onClick={() => set("ca_cert_clear", false)}>
+                    undo
+                  </button>
+                </span>
+              )}
+              <textarea
+                id="node-ca-cert"
+                className="inp mono"
+                rows={6}
+                placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"}
+                value={form.ca_cert_pem}
+                onChange={(e) =>
+                  setForm((p) => ({
+                    ...p,
+                    ca_cert_pem: e.target.value,
+                    // Typing a PEM supersedes an explicit clear.
+                    ca_cert_clear: e.target.value.trim() ? false : p.ca_cert_clear,
+                  }))
+                }
+              />
+            </Field>
+          )}
+          {formError && <Banner tone="danger">{formError}</Banner>}
+        </Modal>
+      )}
 
       {confirmState && (
-        <ConfirmDialog
-          open={confirmState.open}
+        <Confirm
+          open
           onOpenChange={(open) => !open && setConfirmState(null)}
           title={confirmState.title}
           description={confirmState.description}
@@ -518,6 +364,6 @@ export default function ProxmoxSettingsPage({ embedded }: { embedded?: boolean }
           onConfirm={confirmState.action}
         />
       )}
-    </div>
+    </>
   )
 }

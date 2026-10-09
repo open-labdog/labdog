@@ -36,7 +36,7 @@ class MetricsBackendMapping(BaseModel):
 
     When present, the action-dispatch layer fills these extra-vars from the
     registered default Grafana instance (unless the operator supplied them),
-    so e.g. the bundled alloy-install action ships to the same backend
+    so e.g. labdog-playbooks' alloy-install action ships to the same backend
     LabDog queries — without the operator re-typing URLs. Keeping the var
     *names* in the manifest means LabDog core never hardcodes ``alloy_*``.
     """
@@ -143,7 +143,7 @@ class ActionManifest(BaseModel):
         description=(
             "Opt-in mapping that lets LabDog inject its registered default "
             "Grafana instance's URLs into this action's playbook vars at "
-            "dispatch (e.g. the bundled alloy-install action). LabDog also "
+            "dispatch (e.g. labdog-playbooks' alloy-install action). LabDog also "
             "always injects labdog_host_id / labdog_hostname for per-host "
             "runs so shipped metrics are queryable back."
         ),

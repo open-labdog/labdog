@@ -458,3 +458,141 @@ async def test_moving_to_another_path_on_the_same_server_keeps_the_pin(superuser
     assert resp.status_code == 200, resp.text
     await db.refresh(repo)
     assert repo.ssh_host_key_entry == entry
+
+
+# ---------------------------------------------------------------------------
+# Constraint violations answer 4xx, not 500 (BUG-85)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_racing_create_answers_409_rather_than_500(db):
+    """Two creates can both pass the name lookup; the loser's unique
+    violation must be the 409 the lookup would have given."""
+    from fastapi import HTTPException
+
+    from app.api.git_repos import _flush_or_conflict
+    from app.models.git_repository import GitAuthType, GitRepository
+
+    def repo(url: str) -> GitRepository:
+        return GitRepository(name="raced", url=url, branch="main", auth_type=GitAuthType.none)
+
+    db.add(repo("https://example.com/a.git"))
+    await db.flush()
+    db.add(repo("https://example.com/b.git"))
+    with pytest.raises(HTTPException) as exc:
+        await _flush_or_conflict(db)
+    assert exc.value.status_code == 409
+    assert "already exists" in exc.value.detail
+
+
+async def test_renaming_onto_a_taken_name_is_409(superuser_client):
+    """The update path has no name lookup at all, so this used to fail at
+    commit with a 500."""
+    for name in ("first", "second"):
+        resp = await superuser_client.post(
+            "/api/git-repos",
+            json={"name": name, "url": f"https://example.com/{name}.git", "branch": "main"},
+        )
+        assert resp.status_code == 201, resp.text
+    second_id = resp.json()["id"]
+
+    resp = await superuser_client.put(f"/api/git-repos/{second_id}", json={"name": "first"})
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["detail"] == "Git repository name already exists"
+
+
+# ---------------------------------------------------------------------------
+# "Last sync" counts pack syncs, not only GitOps imports
+# ---------------------------------------------------------------------------
+
+
+async def _repo_with_pack(superuser_client, db, name, *, status, synced_at, sha):
+    from app.packs.models import ActionPack, PackSourceType
+
+    create = await superuser_client.post(
+        "/api/git-repos",
+        json={"name": name, "url": f"https://example.com/{name}.git", "branch": "main"},
+    )
+    repo_id = create.json()["id"]
+    db.add(
+        ActionPack(
+            name=f"{name}-pack",
+            source_type=PackSourceType.GIT,
+            git_repository_id=repo_id,
+            last_sync_status=status,
+            last_synced_at=synced_at,
+            current_sha=sha,
+        )
+    )
+    await db.commit()
+    return repo_id
+
+
+async def test_a_pack_only_repo_reports_its_pack_sync(superuser_client, db):
+    """A repository that only feeds a pack used to say "never synced"
+    however often the pack synced: only the GitOps import wrote the
+    repository's sync time."""
+    from datetime import UTC, datetime
+
+    at = datetime(2026, 10, 9, 8, 41, 16, tzinfo=UTC)
+    repo_id = await _repo_with_pack(
+        superuser_client, db, "packs-only", status="ok", synced_at=at, sha="3ebd9fd9" * 5
+    )
+
+    one = (await superuser_client.get(f"/api/git-repos/{repo_id}")).json()
+    listed = next(
+        r for r in (await superuser_client.get("/api/git-repos")).json() if r["id"] == repo_id
+    )
+    for data in (one, listed):
+        assert datetime.fromisoformat(data["last_sync_at"]) == at
+        assert data["last_commit_sha"] == "3ebd9fd9" * 5
+
+
+async def test_a_failed_pack_sync_is_not_a_sync(superuser_client, db):
+    from datetime import UTC, datetime
+
+    repo_id = await _repo_with_pack(
+        superuser_client,
+        db,
+        "pack-failed",
+        status="failed",
+        synced_at=datetime(2026, 10, 9, tzinfo=UTC),
+        sha=None,
+    )
+
+    data = (await superuser_client.get(f"/api/git-repos/{repo_id}")).json()
+    assert data["last_sync_at"] is None
+    assert data["last_commit_sha"] is None
+
+
+async def test_the_newer_of_import_and_pack_sync_wins(superuser_client, db):
+    """The GitOps import keeps its own SHA (it skips a push it has already
+    imported by it); the API only reports whichever fetch is newer."""
+    from datetime import UTC, datetime
+
+    from sqlalchemy import select
+
+    from app.models.git_repository import GitRepository
+
+    repo_id = await _repo_with_pack(
+        superuser_client,
+        db,
+        "both",
+        status="ok",
+        synced_at=datetime(2026, 10, 9, 8, 0, tzinfo=UTC),
+        sha="a" * 40,
+    )
+    repo = (await db.execute(select(GitRepository).where(GitRepository.id == repo_id))).scalar_one()
+    repo.last_sync_at = datetime(2026, 10, 9, 9, 0, tzinfo=UTC)
+    repo.last_commit_sha = "b" * 40
+    await db.commit()
+
+    data = (await superuser_client.get(f"/api/git-repos/{repo_id}")).json()
+    assert data["last_commit_sha"] == "b" * 40
+
+    repo.last_sync_at = datetime(2026, 10, 9, 7, 0, tzinfo=UTC)
+    await db.commit()
+    data = (await superuser_client.get(f"/api/git-repos/{repo_id}")).json()
+    assert data["last_commit_sha"] == "a" * 40
+    await db.refresh(repo)
+    assert repo.last_commit_sha == "b" * 40

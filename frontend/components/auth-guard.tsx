@@ -19,7 +19,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     }
 
     if (user && isPublic) {
-      window.location.replace('/dashboard')
+      window.location.replace('/overview')
     }
   }, [user, loading, pathname, isPublic])
 

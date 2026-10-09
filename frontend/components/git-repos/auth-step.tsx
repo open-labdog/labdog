@@ -3,9 +3,7 @@
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useQuery } from "@tanstack/react-query"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import { Banner, Field, Panel } from "@/components/ld"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
 import { gitRepoSchema, type GitRepoInput } from "@/lib/schemas"
@@ -21,11 +19,8 @@ const defaultFormValues: GitRepoInput = {
   webhook_secret: "",
 }
 
-export function AuthStep({
-  onCreated,
-}: {
-  onCreated: (repo: { id: number; name: string }) => void
-}) {
+/** Step 1 of connecting a repository: where it is and how LabDog gets in. */
+export function AuthStep({ onCreated }: { onCreated: (repo: { id: number; name: string }) => void }) {
   const form = useForm<GitRepoInput>({
     resolver: zodResolver(gitRepoSchema),
     defaultValues: defaultFormValues,
@@ -53,10 +48,7 @@ export function AuthStep({
         webhook_secret: data.webhook_secret || null,
       }
       if (token) body.https_token = token
-      return apiFetch<GitRepository>("/api/git-repos", {
-        method: "POST",
-        body: JSON.stringify(body),
-      })
+      return apiFetch<GitRepository>("/api/git-repos", { method: "POST", body: JSON.stringify(body) })
     },
     invalidateKeys: [["git-repos"]],
     onSuccess: (data) => onCreated({ id: data.id, name: data.name }),
@@ -65,96 +57,53 @@ export function AuthStep({
   const onSubmit = form.handleSubmit((data) => createMutation.mutate(data))
 
   return (
-    <form
-      onSubmit={onSubmit}
-      noValidate
-      className="space-y-4 rounded-lg border border-slate-700 bg-slate-900 p-6"
-    >
-      <div className="space-y-2">
-        <Label htmlFor="repo-name">Name</Label>
-        <Input id="repo-name" type="text" placeholder="e.g. infra-config" {...form.register("name")} />
-        {form.formState.errors.name && (
-          <p className="text-sm text-red-400">{form.formState.errors.name.message}</p>
-        )}
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="repo-url">URL</Label>
-        <Input
-          id="repo-url"
-          type="text"
-          placeholder="git@github.com:org/repo.git"
-          {...form.register("url")}
-        />
-        {form.formState.errors.url && (
-          <p className="text-sm text-red-400">{form.formState.errors.url.message}</p>
-        )}
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="repo-branch">Branch</Label>
-        <Input id="repo-branch" type="text" placeholder="main" {...form.register("branch")} />
-      </div>
-
-      {detectedAuth === "ssh_key" && (
-        <div className="space-y-2">
-          <Label htmlFor="ssh-key-select">SSH Key</Label>
-          <select
-            id="ssh-key-select"
-            {...form.register("ssh_key_id")}
-            className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30"
-          >
-            <option value="">Select an SSH key...</option>
-            {sshKeys?.map((key) => (
-              <option key={key.id} value={key.id}>
-                {key.name}
-                {key.is_default ? " (default)" : ""}
-              </option>
-            ))}
-          </select>
-          {form.formState.errors.ssh_key_id && (
-            <p className="text-sm text-red-400">{form.formState.errors.ssh_key_id.message}</p>
-          )}
-          <p className="text-xs text-slate-500">
-            SSH URL detected — pick the deploy key LabDog should use.
-          </p>
+    <Panel title="connect" meta="step 1 · nothing is imported yet">
+      <form onSubmit={onSubmit} noValidate className="flex flex-col gap-[11px] p-[13px]">
+        <div className="grid gap-[11px]" style={{ gridTemplateColumns: "1fr 120px" }}>
+          <Field label="name" htmlFor="repo-name" error={form.formState.errors.name?.message}>
+            <input id="repo-name" className="inp mono" placeholder="e.g. infra-config" {...form.register("name")} />
+          </Field>
+          <Field label="branch" htmlFor="repo-branch">
+            <input id="repo-branch" className="inp mono" placeholder="main" {...form.register("branch")} />
+          </Field>
         </div>
-      )}
+        <Field label="url" htmlFor="repo-url" hint="ssh or https — the auth fields follow the scheme" error={form.formState.errors.url?.message}>
+          <input id="repo-url" className="inp mono" placeholder="git@github.com:org/repo.git" {...form.register("url")} />
+        </Field>
 
-      {detectedAuth === "https" && (
-        <div className="space-y-2">
-          <Label htmlFor="https-token">Personal Access Token (optional)</Label>
-          <Input
-            id="https-token"
-            type="password"
-            placeholder="Leave blank for public repos"
-            {...form.register("https_token")}
-          />
-          <p className="text-xs text-slate-500">
-            HTTPS URL detected — leave the token blank for public repos.
-          </p>
+        {detectedAuth === "ssh_key" && (
+          <Field label="ssh key" htmlFor="ssh-key-select" hint="SSH URL — pick the deploy key LabDog uses" error={form.formState.errors.ssh_key_id?.message}>
+            <select id="ssh-key-select" className="inp mono" {...form.register("ssh_key_id")}>
+              <option value="">— pick an SSH key —</option>
+              {sshKeys?.map((key) => (
+                <option key={key.id} value={key.id}>
+                  {key.name}
+                  {key.is_default ? " (default)" : ""}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
+
+        {detectedAuth === "https" && (
+          <Field label="personal access token" htmlFor="https-token" hint="HTTPS URL — blank for public repos">
+            <input id="https-token" type="password" className="inp mono" autoComplete="off" {...form.register("https_token")} />
+          </Field>
+        )}
+
+        <Field label="webhook secret" htmlFor="webhook-secret" hint="optional — lets a push trigger a sync">
+          <input id="webhook-secret" type="text" className="inp mono" autoComplete="off" {...form.register("webhook_secret")} />
+        </Field>
+
+        {createMutation.error && <Banner tone="danger">{createMutation.error.message}</Banner>}
+
+        <div className="flex items-center gap-2">
+          <span className="tt mr-auto">connecting clones the repository and scans it</span>
+          <button type="submit" className="btn btn-primary" disabled={createMutation.isPending}>
+            {createMutation.isPending ? "Connecting…" : "Connect & scan"}
+          </button>
         </div>
-      )}
-
-      <div className="space-y-2">
-        <Label htmlFor="webhook-secret">Webhook Secret (optional)</Label>
-        <Input
-          id="webhook-secret"
-          type="text"
-          placeholder="Optional webhook secret"
-          {...form.register("webhook_secret")}
-        />
-      </div>
-
-      {createMutation.error && (
-        <p className="text-sm text-red-400">{createMutation.error.message}</p>
-      )}
-
-      <div className="flex justify-end pt-2">
-        <Button type="submit" disabled={createMutation.isPending}>
-          {createMutation.isPending ? "Connecting..." : "Connect & scan"}
-        </Button>
-      </div>
-    </form>
+      </form>
+    </Panel>
   )
 }

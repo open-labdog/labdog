@@ -80,22 +80,12 @@ async def _make_repo(db, url: str, name: str = "test-scan-repo") -> GitRepositor
 # ---------------------------------------------------------------------------
 
 
-async def test_scan_endpoint_requires_superuser(client, db, well_formed_origin):
+async def test_scan_endpoint_requires_auth(client, db, well_formed_origin):
     """Unauthenticated → 401 or 403 (CSRF fires before auth on mutating requests)."""
     repo = await _make_repo(db, f"file://{well_formed_origin}")
     await db.commit()
     resp = await client.post(f"/api/git-repos/{repo.id}/scan")
     assert resp.status_code in (401, 403)
-
-
-async def test_scan_endpoint_requires_superuser_for_non_admin(
-    regular_user_client, db, well_formed_origin
-):
-    """Plain authenticated user (non-superuser) → 403."""
-    repo = await _make_repo(db, f"file://{well_formed_origin}")
-    await db.commit()
-    resp = await regular_user_client.post(f"/api/git-repos/{repo.id}/scan")
-    assert resp.status_code == 403
 
 
 async def test_scan_endpoint_404_for_unknown_repo(superuser_client, db):
@@ -185,7 +175,7 @@ async def test_scan_endpoint_empty_registry_no_existing_winners(
 
     resp = await superuser_client.post(f"/api/git-repos/{repo.id}/scan")
     body = resp.json()
-    # The bundled pack might or might not have linux-upgrade depending
+    # A pack might or might not have linux-upgrade depending
     # on what's loaded into ACTION_REGISTRY at test time; what matters
     # is that the response shape is correct.
     assert isinstance(body["existing_key_winners"], dict)

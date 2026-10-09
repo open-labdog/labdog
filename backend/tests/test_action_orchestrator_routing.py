@@ -13,7 +13,7 @@ Validates that:
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -26,7 +26,7 @@ from app.tasks.action_orchestrator import (
 )
 from tests.conftest import create_host
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("sample_pack")]
 
 
 @pytest.fixture(autouse=True)
@@ -43,15 +43,20 @@ def patch_task_session(db):
 
 
 def test_builtin_routing_table_complete():
-    """Every _builtin.* registered key has a dispatcher mapping."""
-    expected = {
-        "_builtin.sync",
-        "_builtin.drift_check",
-        "_builtin.collect_state",
-    }
+    """Every per-host built-in has a dispatcher mapping, and each names a real task."""
+    import importlib
+
+    from celery import Task
+
+    from app.actions.builtins import BUILTIN_DEFINITIONS
+
+    expected = {d.key for d in BUILTIN_DEFINITIONS if d.supports_host}
     assert set(PER_HOST_TASK_FOR_BUILTIN.keys()) == expected
     for task_name in PER_HOST_TASK_FOR_BUILTIN.values():
-        assert task_name.startswith("app.tasks.builtin_dispatchers.")
+        module, _, attr = task_name.rpartition(".")
+        task = getattr(importlib.import_module(module), attr)
+        assert isinstance(task, Task), task_name
+        assert task.name == task_name
 
 
 class _FakeRedis:
@@ -64,11 +69,23 @@ class _FakeRedis:
 
 @pytest.fixture
 def stub_celery_dispatch():
+    """Capture what the orchestrator sends, and don't wait for it to run.
+
+    The orchestrator waits for a batch by re-reading its rows, and nothing
+    here runs the per-host tasks, so the wait is stubbed out: these tests
+    are about which task is sent for which host.
+    """
+    sent: list[tuple[str, list]] = []
+
+    def _send_task(name, args=None, **_):
+        sent.append((name, args or []))
+
     with (
-        patch("celery.app.base.Celery.send_task"),
+        patch("app.tasks.action_orchestrator.celery_app.send_task", side_effect=_send_task),
+        patch("app.tasks.action_orchestrator._wait", new=AsyncMock(return_value="go")),
         patch("redis.from_url", return_value=_FakeRedis()),
     ):
-        yield
+        yield sent
 
 
 async def test_builtin_action_routes_to_dispatcher(superuser_client, db, stub_celery_dispatch):
@@ -76,27 +93,6 @@ async def test_builtin_action_routes_to_dispatcher(superuser_client, db, stub_ce
     uses run_builtin_collect_state, not run_action_host."""
     host = await create_host(db)
     await db.commit()
-
-    captured: list[str] = []
-
-    def signature(name, args=None, queue=None, **_):
-        captured.append(name)
-        return ("sig", name, args)
-
-    class _Result:
-        def join(self, *args, **kwargs):  # noqa: ARG002
-            return []
-
-    def _group(sig_iter):
-        # Force the lazy generator so each celery_app.signature(...)
-        # call lands in the captured list.
-        list(sig_iter)
-
-        class _G:
-            def apply_async(self):
-                return _Result()
-
-        return _G()
 
     # Create the run via API so it's persisted in the same DB session.
     resp = await superuser_client.post(
@@ -106,12 +102,9 @@ async def test_builtin_action_routes_to_dispatcher(superuser_client, db, stub_ce
     assert resp.status_code == 201
     run_id = resp.json()["id"]
 
-    with (
-        patch("app.tasks.action_orchestrator.celery_app.signature", side_effect=signature),
-        patch("celery.group", side_effect=_group),
-    ):
-        await _run_action_async(run_id)
+    await _run_action_async(run_id)
 
+    captured = [name for name, _ in stub_celery_dispatch]
     assert "app.tasks.builtin_dispatchers.run_builtin_collect_state" in captured
     assert _DEFAULT_PER_HOST_TASK not in captured
 
@@ -120,27 +113,6 @@ async def test_pack_action_routes_to_default_runner(superuser_client, db, stub_c
     """linux-upgrade is pack-supplied → default per-host task."""
     host = await create_host(db)
     await db.commit()
-
-    captured: list[str] = []
-
-    def signature(name, args=None, queue=None, **_):
-        captured.append(name)
-        return ("sig", name, args)
-
-    class _Result:
-        def join(self, *args, **kwargs):  # noqa: ARG002
-            return []
-
-    def _group(sig_iter):
-        # Force the lazy generator so each celery_app.signature(...)
-        # call lands in the captured list.
-        list(sig_iter)
-
-        class _G:
-            def apply_async(self):
-                return _Result()
-
-        return _G()
 
     resp = await superuser_client.post(
         "/api/actions/runs",
@@ -153,13 +125,9 @@ async def test_pack_action_routes_to_default_runner(superuser_client, db, stub_c
     assert resp.status_code == 201
     run_id = resp.json()["id"]
 
-    with (
-        patch("app.tasks.action_orchestrator.celery_app.signature", side_effect=signature),
-        patch("celery.group", side_effect=_group),
-    ):
-        await _run_action_async(run_id)
+    await _run_action_async(run_id)
 
-    assert _DEFAULT_PER_HOST_TASK in captured
+    assert _DEFAULT_PER_HOST_TASK in [name for name, _ in stub_celery_dispatch]
 
 
 async def test_fleet_resolves_to_all_hosts(db, stub_celery_dispatch):
@@ -193,35 +161,10 @@ async def test_fleet_resolves_to_all_hosts(db, stub_celery_dispatch):
     await db.commit()
     run_id = run.id
 
-    captured: list[tuple] = []
+    await _run_action_async(run_id)
 
-    def signature(name, args=None, queue=None, **_):
-        captured.append((name, args))
-        return ("sig", name, args)
-
-    class _Result:
-        def join(self, *args, **kwargs):  # noqa: ARG002
-            return []
-
-    def _group(sig_iter):
-        # Force the lazy generator so each celery_app.signature(...)
-        # call lands in the captured list.
-        list(sig_iter)
-
-        class _G:
-            def apply_async(self):
-                return _Result()
-
-        return _G()
-
-    with (
-        patch("app.tasks.action_orchestrator.celery_app.signature", side_effect=signature),
-        patch("celery.group", side_effect=_group),
-    ):
-        await _run_action_async(run_id)
-
-    # One signature per host_run; 3 hosts × 1 signature each.
-    assert len(captured) == 3
+    # One task per host_run; 3 hosts × 1 task each.
+    assert len(stub_celery_dispatch) == 3
     # Verify ActionHostRun rows were persisted, one per host.
     from sqlalchemy import select
 

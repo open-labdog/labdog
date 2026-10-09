@@ -7,10 +7,14 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.alert_autonomy import BASE_LEVELS as ALERT_BASE_LEVELS
+from app.ai.alert_autonomy import validate_alertnames
 from app.ai.alert_mission import DEFAULT_TEMPLATE as DEFAULT_ALERT_MISSION
 from app.ai.alert_mission import FIELDS as ALERT_MISSION_FIELDS
 from app.ai.alert_mission import validate_template as validate_alert_mission
+from app.cron_walk import TIMEZONE_SETTING, timezone_names, validate_timezone
 from app.models.app_setting import AppSetting
+from app.notifications.urls import validate_public_url
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +90,7 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
     "logging.audit_retention_days": {
         "type": "int",
         "default": 90,
-        "min": 1,
+        "min": 0,
         "max": 3650,
         "description": "Days to retain audit log entries (0 = keep forever)",
     },
@@ -96,8 +100,8 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "min": 0,
         "max": 3650,
         "description": (
-            "Days to retain finished action runs, their transcripts, and sync "
-            "jobs (0 = keep forever)"
+            "Days to retain finished action runs, their transcripts, sync jobs "
+            "and sent notifications (0 = keep forever)"
         ),
     },
     "logging.drift_retention_days": {
@@ -134,6 +138,24 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "min": 1,
         "max": 168,
         "description": "Max age in hours before orphaned Proxmox snapshots are cleaned up",
+    },
+    TIMEZONE_SETTING: {
+        "type": "string",
+        "default": "UTC",
+        "validator": validate_timezone,
+        # Offered, not enforced: the validator decides, so a legacy or
+        # alias name already saved stays valid. A callable, evaluated per
+        # request, so importing this module does not scan the tz database.
+        "suggestions": timezone_names,
+        "description": "Timezone that schedule cron expressions are read in.",
+        "help": (
+            "An IANA name such as Europe/Stockholm. Covers scheduled actions and discovery "
+            "scans; cron jobs LabDog manages on hosts run on each host's own clock. Changing it "
+            "keeps every schedule's clock time and moves it to the new zone, so 0 3 * * * runs "
+            "at 03:00 there — check existing schedules afterwards. Across a daylight-saving "
+            "change, a time the clock skips runs once at the jump and a time it repeats runs "
+            "once."
+        ),
     },
     # --- AI subsystem -----------------------------------------------------
     # Defaults are deliberately closed: AI is off until an operator turns it
@@ -286,10 +308,10 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "default": 0,
         "min": 0,
         "max": 1,
-        "description": "Start a read-only AI investigation when an eligible alert arrives.",
+        "description": "Start an AI investigation when an eligible alert arrives.",
         "help": (
             "This spends money without anyone asking, so it is off by default and bounded by the "
-            "AI budgets."
+            "AI budgets. What the investigation may change is ai.alert_autonomy_level."
         ),
     },
     "ai.alert_mission_template": {
@@ -312,6 +334,144 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "help": (
             "Read from the alert's 'severity' label. An alert whose severity is missing or not "
             "one of these is skipped and says so, rather than being guessed either way."
+        ),
+    },
+    # --- Alert remediation. Full auto is per alert, never instance-wide —
+    # see app.ai.alert_autonomy for why the level has no full_auto choice.
+    "ai.alert_autonomy_level": {
+        "type": "string",
+        "default": "read_only",
+        "choices": list(ALERT_BASE_LEVELS),
+        "description": "What an alert investigation may change on the host.",
+        "help": (
+            "read_only: it only looks. approval: each change it wants to make waits in the "
+            "approvals queue — LabDog sends no notification yet, so a request nobody opens the "
+            "page to see expires after ai.approval_expiry_hours. Alerts named in "
+            "ai.alert_full_auto_alertnames may go further."
+        ),
+    },
+    "ai.alert_full_auto_alertnames": {
+        "type": "text",
+        "default": "",
+        "max_length": 4000,
+        "validator": validate_alertnames,
+        "description": "Alerts that may change the host without asking, one name per line.",
+        "help": (
+            "Exact alert names, no wildcards. Their investigations run at full auto — changes are "
+            "made with nobody approving them — but only while every safeguard holds: the alert "
+            "is firing and names a LabDog host, the webhook token is at least 32 characters, a "
+            "snapshot can be taken first, no other automatic fix is running on the host, and the "
+            "cooldown and daily cap allow it. Otherwise the alert runs at "
+            "ai.alert_autonomy_level, and its row on the Alerts page says why."
+        ),
+    },
+    "ai.alert_full_auto_requires_snapshot": {
+        "type": "int",
+        "default": 1,
+        "min": 0,
+        "max": 1,
+        "description": "Allow full auto only on hosts LabDog can snapshot first.",
+        "help": (
+            "Needs ai.snapshot_before_mutating on and a Proxmox VM mapping for the host. Turn off "
+            "to allow full auto on bare metal and unmapped hosts, whose changes then have no "
+            "rollback point."
+        ),
+    },
+    "ai.alert_remediation_cooldown_minutes": {
+        "type": "int",
+        "default": 60,
+        "min": 0,
+        "max": 10080,
+        "description": "Minutes before an alert may automatically fix the same host again.",
+        "help": (
+            "Starts when a full-auto session for that alert changes the host. A fix that does not "
+            "hold, or a flapping alert, would otherwise make the same change over and over. The "
+            "alert is still investigated during the cooldown, at ai.alert_autonomy_level. "
+            "0 = no cooldown."
+        ),
+    },
+    "ai.alert_remediation_daily_cap": {
+        "type": "int",
+        "default": 3,
+        "min": 1,
+        "max": 100,
+        "description": "Most automatic fixes one host may get in 24 hours.",
+        "help": (
+            "Counts full-auto alert sessions that changed the host, across every alert. Past it, "
+            "investigations of that host run at ai.alert_autonomy_level."
+        ),
+    },
+    "ai.alert_max_commands": {
+        "type": "int",
+        "default": 15,
+        "min": 1,
+        "max": 200,
+        "description": "Maximum shell commands in a full-auto alert session.",
+        "help": (
+            "The lower of this and ai.max_commands applies. Too few, and a fix whose first "
+            "attempts fail runs out partway and leaves the host half changed. The session gets "
+            "this many model turns plus five, even above ai.max_iterations."
+        ),
+    },
+    "ai.alert_wall_clock_seconds": {
+        "type": "int",
+        "default": 900,
+        "min": 30,
+        "max": 21600,
+        "description": "Maximum wall-clock seconds for a full-auto alert session.",
+        "help": (
+            "The lower of this and ai.wall_clock_seconds applies. Each change waits for its "
+            "snapshot first, so a fix of several changes needs more time than an investigation."
+        ),
+    },
+    "ai.alert_remediation_check_minutes": {
+        "type": "int",
+        "default": 10,
+        "min": 2,
+        "max": 120,
+        "description": "Minutes after an automatic fix before LabDog checks whether it worked.",
+        "help": (
+            "Counted from the end of the session. Long enough for the alert to resolve: Grafana "
+            "sends the resolved notification after its next evaluation and group interval. The "
+            "check asks whether the alert resolved, whether LabDog can still reach the host over "
+            "SSH, and whether a new critical alert has fired on it."
+        ),
+    },
+    "ai.alert_auto_rollback": {
+        "type": "int",
+        "default": 1,
+        "min": 0,
+        "max": 1,
+        "description": "Roll a host back automatically when an automatic fix made it worse.",
+        "help": (
+            "Worse means LabDog can no longer reach the host over SSH, or a new critical alert "
+            "fired on it after the fix. The host is restored to the snapshot taken before the "
+            "session's first change, which restarts it and discards everything written since. A "
+            "fix that only failed to clear the alert is not rolled back."
+        ),
+    },
+    # --- Notifications. Shown on the Email page rather than here, beside
+    # the mail server they only matter with.
+    "notifications.public_url": {
+        "type": "string",
+        "default": "",
+        "validator": validate_public_url,
+        "description": "LabDog's address, for links in notifications.",
+        "help": (
+            "Such as https://labdog.example.com. Every notification links back to the page "
+            "it is about, and none is sent while this is empty: LabDog will not guess its "
+            "own address from a request's Host header, which the client chooses."
+        ),
+    },
+    "notifications.approval_expiry_warning_hours": {
+        "type": "int",
+        "default": 2,
+        "min": 0,
+        "max": 168,
+        "description": "Warn this many hours before an approval request expires (0 = never).",
+        "help": (
+            "For subscribers to 'Approval about to expire'. One warning per request. "
+            "Requests expire after ai.approval_expiry_hours."
         ),
     },
 }
@@ -365,6 +525,12 @@ def _validate(key: str, value: str) -> str:
     if vtype == "string":
         if "choices" in defn and value not in defn["choices"]:
             raise ValueError(f"{key}: must be one of {defn['choices']}")
+        validator = defn.get("validator")
+        if validator is not None:
+            try:
+                return str(validator(value))
+            except ValueError as exc:
+                raise ValueError(f"{key}: {exc}") from exc
         return value
 
     if vtype == "text":
@@ -435,6 +601,7 @@ async def get_all_settings(db: AsyncSession) -> list[dict]:
                 "min": defn.get("min"),
                 "max": defn.get("max"),
                 "choices": defn.get("choices"),
+                "suggestions": defn["suggestions"]() if "suggestions" in defn else None,
                 "max_length": defn.get("max_length"),
                 "updated_at": db_row.updated_at.isoformat()
                 if db_row and db_row.updated_at

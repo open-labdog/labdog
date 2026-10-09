@@ -63,10 +63,10 @@ Commands:
   migrate     Run alembic upgrade head
   migrate-down  Roll back one migration (alembic downgrade -1)
   migrate-new <msg>  Generate a new migration (alembic revision --autogenerate)
-  bundle      Re-fetch the bundled action pack from labdog-playbooks
-              (clones at the pinned ref in ./LABDOG_PLAYBOOKS_REF;
-              override repo URL via env: LABDOG_PLAYBOOKS_REPO=...
-              point at a local working copy via LABDOG_PLAYBOOKS_LOCAL)
+
+Environment:
+  LABDOG_PLAYBOOKS_LOCAL=/path  On start, register a labdog-playbooks working
+              copy as a local action pack (and disable the seeded git pack)
 
 Infrastructure (postgres, redis) runs via docker compose.
 Backend (labdog, celery worker, celery beat) and frontend (next dev) run as local processes.
@@ -82,60 +82,38 @@ log() {
   echo "[dev] $*"
 }
 
-#--- Bundled action pack ---
+#--- Local playbooks pack ---
 #
-# The bundled pack at backend/app/ansible/ is fetched at container
-# build time in production (see Dockerfile Stage 2b) and is gitignored
-# in this repo. Dev needs the same content to mimic production -- we
-# clone it on demand into backend/app/ansible/ at the pinned ref in
-# the repo-root LABDOG_PLAYBOOKS_REF file.
+# Action packs are synced from git at runtime; nothing ships with the
+# app. A fresh dev DB has the seeded labdog-playbooks git pack, which
+# syncs from GitHub on start.
 #
-# Escape hatch: set LABDOG_PLAYBOOKS_LOCAL=/path/to/working/copy to
-# rsync from a sibling labdog-playbooks checkout instead. Useful when
-# you're iterating on the playbooks repo and don't want to commit
-# every change just to test it here.
+# To iterate on a labdog-playbooks working copy without pushing every
+# change, set LABDOG_PLAYBOOKS_LOCAL=/path/to/labdog-playbooks. Start
+# then registers that directory as a local pack named
+# "labdog-playbooks-local" and disables the seeded git pack, so the two
+# don't contest every action key. Unset it and re-enable the git pack
+# in the UI to go back.
 
-BUNDLED_DIR="${ROOT_DIR}/backend/app/ansible"
-REF_FILE="${ROOT_DIR}/LABDOG_PLAYBOOKS_REF"
+LOCAL_PACK_NAME="labdog-playbooks-local"
 
-ensure_bundled_pack() {
-  # No-op when the directory is already populated (has an `actions`
-  # subdir). Operators can force re-fetch via `./dev/dev.sh bundle`.
-  if [[ -d "${BUNDLED_DIR}/actions" ]]; then
-    return
-  fi
-  fetch_bundled_pack
-}
-
-fetch_bundled_pack() {
-  # LABDOG_PLAYBOOKS_LOCAL bypasses the clone entirely -- rsync from
-  # a sibling working copy. Useful when iterating on upstream
-  # playbooks without round-tripping through git. Dev-only escape
-  # hatch; production builds always go through the shared script.
-  if [[ -n "${LABDOG_PLAYBOOKS_LOCAL:-}" ]]; then
-    if [[ ! -d "${LABDOG_PLAYBOOKS_LOCAL}" ]]; then
-      log "ERROR: LABDOG_PLAYBOOKS_LOCAL=${LABDOG_PLAYBOOKS_LOCAL} does not exist"
-      exit 1
-    fi
-    log "Bundling from local checkout: ${LABDOG_PLAYBOOKS_LOCAL}"
-    rm -rf "${BUNDLED_DIR}"
-    mkdir -p "${BUNDLED_DIR}"
-    rsync -a --delete \
-      --exclude='.git' --exclude='.gitignore' \
-      "${LABDOG_PLAYBOOKS_LOCAL}/" "${BUNDLED_DIR}/"
-    log "Bundled pack populated at ${BUNDLED_DIR}"
-    return
-  fi
-
-  # Delegate to the shared script -- single source of truth for the
-  # clone logic shared with the Dockerfile, packaging/Makefile, and
-  # the CI workflow.
-  local ref="${LABDOG_PLAYBOOKS_REF:-}"
-  if [[ -z "$ref" && -f "$REF_FILE" ]]; then
-    ref="$(tr -d '[:space:]' < "$REF_FILE")"
-  fi
-  LABDOG_PLAYBOOKS_REF="$ref" \
-    "${ROOT_DIR}/scripts/fetch-bundled-pack.sh" "${BUNDLED_DIR}"
+register_local_playbooks_pack() {
+  [[ -n "${LABDOG_PLAYBOOKS_LOCAL:-}" ]] || return 0
+  local path
+  path="$(cd "${LABDOG_PLAYBOOKS_LOCAL}" 2>/dev/null && pwd)" || {
+    log "ERROR: LABDOG_PLAYBOOKS_LOCAL=${LABDOG_PLAYBOOKS_LOCAL} does not exist"
+    exit 1
+  }
+  log "Registering ${path} as local pack ${LOCAL_PACK_NAME}..."
+  docker compose -f "${SCRIPT_DIR}/docker-compose.yml" --env-file "${ENV_FILE}" \
+    exec -T postgres psql -q -v ON_ERROR_STOP=1 -U labdog -d labdog \
+      -v name="${LOCAL_PACK_NAME}" -v path="${path}" <<'SQL'
+INSERT INTO action_packs (name, enabled, source_type, local_path, path, trusted, created_at, updated_at)
+VALUES (:'name', true, 'local', :'path', '', true, now(), now())
+ON CONFLICT (name) DO UPDATE SET local_path = EXCLUDED.local_path, enabled = true, updated_at = now();
+UPDATE action_packs SET enabled = false, updated_at = now()
+WHERE name = 'labdog-playbooks' AND source_type = 'git';
+SQL
 }
 
 #--- Infrastructure ---
@@ -171,11 +149,11 @@ start_backend() {
 
   ensure_dev_env
   load_dev_env
-  ensure_bundled_pack
 
   # Run migrations
   log "Running migrations..."
   (cd "${ROOT_DIR}/backend" && LABDOG_CONFIG="${SCRIPT_DIR}/labdog.toml" "${VENV}/alembic" upgrade head)
+  register_local_playbooks_pack
 
   # Prepend the venv bin to PATH so child processes (e.g. ansible-runner
   # spawning ansible-playbook) can resolve console scripts installed in
@@ -401,9 +379,6 @@ case "${1:-}" in
     ;;
   migrate-new)
     run_migrate_new "${2:-}"
-    ;;
-  bundle)
-    fetch_bundled_pack
     ;;
   *)
     usage

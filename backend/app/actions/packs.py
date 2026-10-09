@@ -39,18 +39,16 @@ logger = logging.getLogger(__name__)
 class Pack:
     name: str
     path: Path
-    pack_id: int | None = None
-    """Database id of the matching ``ActionPack`` row, or ``None`` for
-    the in-image bundled pack. Used as the natural key for the
-    ``action_resolution`` and ``action_registry_snapshot`` tables."""
+    pack_id: int
+    """Database id of the matching ``ActionPack`` row. Used as the
+    natural key for the ``action_resolution`` and
+    ``action_registry_snapshot`` tables."""
 
     trusted: bool = False
     """Whether this pack may ship content that runs on the LabDog host.
 
     Defaults false so a caller that forgets to pass it gets the safe
-    answer. The bundled pack is constructed with ``trusted=True``: it is
-    in-image content shipped with the release, not a repository anyone
-    pointed LabDog at, so it is already as trusted as the application."""
+    answer."""
 
     @property
     def actions_dir(self) -> Path:
@@ -91,6 +89,91 @@ def _resolve_within_pack(
     return resolved
 
 
+class PlaybookImportsSiblings(Exception):
+    """A playbook pulls in files from its own directory, which a run never has."""
+
+
+#: Keys whose relative value Ansible resolves against the playbook's own
+#: directory, as a task or as a top-level playbook entry.
+_TASK_IMPORT_KEYS = (
+    "import_tasks",
+    "include_tasks",
+    "ansible.builtin.import_tasks",
+    "ansible.builtin.include_tasks",
+)
+_PLAYBOOK_IMPORT_KEYS = ("import_playbook", "ansible.builtin.import_playbook")
+
+
+def _iter_tasks(node: dict):
+    """Tasks in every section a play can carry, including nested blocks."""
+    for key in ("tasks", "pre_tasks", "post_tasks", "handlers", "block", "rescue", "always"):
+        entries = node.get(key)
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if isinstance(entry, dict):
+                yield entry
+                yield from _iter_tasks(entry)
+
+
+def _sibling_references(playbook: Path) -> list[str]:
+    """Relative paths *playbook* imports from its own directory.
+
+    ``run_ansible`` copies the playbook's text alone into its run
+    directory; the rest of an action reaches a run only as roles on
+    ``ANSIBLE_ROLES_PATH``. A task file, vars file or playbook imported by
+    a relative path is therefore never there, and the run fails before its
+    first task (BUG-86). Imports inside a role resolve against the role and
+    are fine. Templated paths cannot be resolved here and are left alone,
+    as is a playbook that does not parse: its run reports that itself.
+    """
+    try:
+        doc = yaml.safe_load(playbook.read_text())
+    except (OSError, yaml.YAMLError):
+        return []
+    if not isinstance(doc, list):
+        return []
+
+    refs: list[str] = []
+
+    def add(value) -> None:
+        if isinstance(value, dict):
+            value = value.get("file") or value.get("_raw_params")
+        if not isinstance(value, str):
+            return
+        value = value.strip()
+        if value and "{{" not in value and not value.startswith("/"):
+            refs.append(value)
+
+    for entry in doc:
+        if not isinstance(entry, dict):
+            continue
+        for key in _PLAYBOOK_IMPORT_KEYS:
+            if key in entry:
+                add(entry[key])
+        vars_files = entry.get("vars_files")
+        for item in vars_files if isinstance(vars_files, list) else []:
+            # A nested list is a set of alternatives, first found wins.
+            for candidate in item if isinstance(item, list) else [item]:
+                add(candidate)
+        for task in _iter_tasks(entry):
+            for key in _TASK_IMPORT_KEYS:
+                if key in task:
+                    add(task[key])
+    return refs
+
+
+def _refuse_sibling_references(playbook: Path, manifest_path: Path, field: str) -> None:
+    refs = _sibling_references(playbook)
+    if refs:
+        raise PlaybookImportsSiblings(
+            f"Manifest {manifest_path} references {field} {playbook.name!r}, which imports "
+            f"{', '.join(repr(r) for r in refs)} from its own directory. LabDog copies only "
+            "the playbook file into a run, so those files would be missing. Move them into "
+            "a role under actions/<key>/roles/ or the pack's roles/, and import the role."
+        )
+
+
 def _manifest_to_definition(
     manifest: ActionManifest,
     manifest_path: Path,
@@ -104,6 +187,7 @@ def _manifest_to_definition(
             f"Manifest {manifest_path} references playbook "
             f"{manifest.playbook!r} which does not exist at {playbook_path}."
         )
+    _refuse_sibling_references(playbook_path, manifest_path, "playbook")
     # Roles are searched action-private first (``actions/<key>/roles/``,
     # next to this manifest), then pack-shared (``<pack>/roles/``). Each is
     # included only if present. Without the action-private path, an action
@@ -126,6 +210,7 @@ def _manifest_to_definition(
                 f"{manifest.verify_playbook!r} which does not exist at "
                 f"{candidate}."
             )
+        _refuse_sibling_references(candidate, manifest_path, "verify_playbook")
         verify_playbook_path = candidate
     return ActionDefinition(
         key=manifest.key,
@@ -178,17 +263,8 @@ def load_pack(pack: Pack) -> list[ActionDefinition]:
     can't take down the whole pack.
     """
     if not pack.actions_dir.is_dir():
-        # For the bundled pack this typically means the build-time
-        # clone from labdog-playbooks hasn't run yet (production: see
-        # Dockerfile Stage 2b / packaging/Makefile; dev: run
-        # ``./dev/dev.sh bundle``). Built-in pseudo-actions are
-        # registered separately so an empty bundled pack doesn't take
-        # the registry down -- the operator just sees a smaller
-        # action catalog.
         logger.warning(
-            "pack %r has no actions directory at %s; skipping. "
-            "For the bundled pack, run ./dev/dev.sh bundle (dev) or "
-            "rebuild the container image (production).",
+            "pack %r has no actions directory at %s; skipping.",
             pack.name,
             pack.actions_dir,
         )
@@ -233,7 +309,7 @@ def load_pack(pack: Pack) -> list[ActionDefinition]:
             continue
         try:
             defns.append(_manifest_to_definition(manifest, manifest_path, pack))
-        except FileNotFoundError as exc:
+        except (FileNotFoundError, PlaybookImportsSiblings) as exc:
             logger.error(
                 "pack %r: failed to load manifest %s: %s",
                 pack.name,
@@ -248,7 +324,7 @@ class PackContributor:
     """One pack's participation in a particular action key, for the
     contested-keys view."""
 
-    pack_id: int | None
+    pack_id: int
     pack_name: str
 
 
@@ -262,8 +338,8 @@ class ResolutionMergeResult:
     ``winning_pack_id=None``, ``overridden_from=`` every contributor.
     The API surfaces this state; the orchestrator refuses to dispatch.
 
-    ``new_snapshot`` — ``key → pack_id`` (None=bundled) for keys with
-    a resolved winner. The caller persists this into
+    ``new_snapshot`` — ``key → pack_id`` for keys with a resolved
+    winner. The caller persists this into
     ``action_registry_snapshot`` to drive the next rebuild's freeze
     logic. Unresolved keys are deliberately omitted so a later
     rebuild treats them fresh.
@@ -283,8 +359,8 @@ class ResolutionMergeResult:
     """
 
     registry: dict[str, ActionDefinition]
-    new_snapshot: dict[str, int | None]
-    fresh_freezes: dict[str, int | None]
+    new_snapshot: dict[str, int]
+    fresh_freezes: dict[str, int]
     stale_resolution_keys: set[str]
     contributors: dict[str, list[PackContributor]]
 
@@ -315,8 +391,8 @@ def _unresolved_placeholder(
 def load_packs_with_resolutions(
     packs: list[Pack],
     *,
-    resolutions: dict[str, int | None],
-    prior_winners: dict[str, int | None],
+    resolutions: dict[str, int],
+    prior_winners: dict[str, int],
 ) -> ResolutionMergeResult:
     """Merge packs into a registry honouring explicit per-key resolutions
     and freeze-on-fresh-conflict semantics.
@@ -325,7 +401,6 @@ def load_packs_with_resolutions(
 
     1. **Uncontested key** (one contributor) — that pack wins.
     2. **Contested + explicit resolution** — pinned pack wins.
-       ``pack_id=None`` resolves to bundled.
     3. **Contested + no resolution** — *unresolved*. The registry
        entry is a placeholder with no playbook; the orchestrator
        refuses to dispatch and the UI prompts the operator.
@@ -349,8 +424,8 @@ def load_packs_with_resolutions(
             contributors.setdefault(defn.key, []).append((pack, defn))
 
     registry: dict[str, ActionDefinition] = {}
-    new_snapshot: dict[str, int | None] = {}
-    fresh_freezes: dict[str, int | None] = {}
+    new_snapshot: dict[str, int] = {}
+    fresh_freezes: dict[str, int] = {}
     stale: set[str] = set()
 
     for key, candidates in contributors.items():

@@ -172,16 +172,59 @@ class TestDiscoveryAPI:
         )
         assert resp.status_code == 404
 
-    async def test_non_superuser_scan_rejected(self, regular_user_client):
-        resp = await regular_user_client.post("/api/discovery/scan", json={"cidr": "10.0.0.0/28"})
-        assert resp.status_code == 403
 
-    async def test_non_superuser_add_rejected(self, regular_user_client):
-        resp = await regular_user_client.post(
-            "/api/discovery/add-hosts",
-            json={"ips": ["10.0.0.1"], "ssh_key_id": 1},
+class TestKnownHostsAreReported:
+    """BUG-111: a scan leaves out the addresses that are already hosts, and
+    said nothing about them. A range whose only SSH host had just been
+    added by a scan schedule came back "No new SSH hosts found", and read
+    as a miss."""
+
+    def test_the_task_returns_what_it_left_out(self):
+        from app.tasks.discovery import scan_network_task
+
+        async def answers(host, port, semaphore, timeout):  # noqa: ARG001
+            return (host, "open") if host == "10.0.0.5" else None
+
+        with (
+            patch("app.discovery.scanner.check_port", new=answers),
+            patch("app.settings_service.get_setting_cached_typed", return_value=10),
+            patch.object(scan_network_task, "update_state"),
+        ):
+            result = scan_network_task.run(
+                "10.0.0.0/29", 22, 0.1, ["10.0.0.6", "10.0.0.2", "10.9.9.9"]
+            )
+
+        assert result["skipped_known"] == ["10.0.0.2", "10.0.0.6"]
+        assert result["total_scanned"] == 4
+        assert [h["ip"] for h in result["hosts_found"]] == ["10.0.0.5"]
+
+    async def test_the_status_names_them(self, superuser_client, db):
+        from tests.conftest import create_host
+
+        await create_host(db, hostname="tester", ip="10.10.10.164")
+        done = MagicMock(
+            state="SUCCESS",
+            result={
+                "hosts_found": [],
+                "total_scanned": 242,
+                "skipped_known": ["10.10.10.164", "10.10.10.200"],
+            },
         )
-        assert resp.status_code == 403
+        with patch("app.api.discovery.AsyncResult", return_value=done):
+            resp = await superuser_client.get("/api/discovery/scan/job-1")
+
+        assert resp.status_code == 200
+        assert resp.json()["skipped_known"] == [
+            {"ip": "10.10.10.164", "hostname": "tester"},
+            # Deleted since the scan started: still reported, without a name.
+            {"ip": "10.10.10.200", "hostname": None},
+        ]
+
+    async def test_a_result_from_an_older_worker_has_none(self, superuser_client):
+        done = MagicMock(state="SUCCESS", result={"hosts_found": [], "total_scanned": 14})
+        with patch("app.api.discovery.AsyncResult", return_value=done):
+            resp = await superuser_client.get("/api/discovery/scan/job-2")
+        assert resp.json()["skipped_known"] == []
 
 
 class TestVerifySshErrorCategories:

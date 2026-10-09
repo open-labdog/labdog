@@ -34,10 +34,8 @@ class ActionDefinitionOut(BaseModel):
     pack_name: str
     #: ``ActionPack.id`` of the winning pack — ``None`` when the key
     #: is **unresolved** (multiple packs declare it and no operator pin
-    #: exists yet). Also ``None`` for built-in pseudo-actions and for
-    #: bundled-pack actions (the bundled pack has no DB row); the
-    #: frontend distinguishes these via ``pack_name`` /
-    #: ``unresolved``.
+    #: exists yet). Also ``None`` for built-in pseudo-actions; the
+    #: frontend tells the two apart via ``unresolved``.
     winning_pack_id: int | None = None
     #: True when the action key is contested by multiple packs and the
     #: operator has not pinned a winner. The Run button must be

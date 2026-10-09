@@ -212,6 +212,51 @@ class TestTheTerminalHandshake:
         with patch.object(settings.security, "allowed_origins", ["http://localhost:3000"]):
             assert await check_ws_origin(ws) is allowed
 
+    @pytest.mark.parametrize(
+        ("origin", "host", "allowed"),
+        [
+            # BUG-88: lin-manager, TLS ended at nginx, Host passed through.
+            ("https://labdog.lan.tyresson.se", "labdog.lan.tyresson.se", True),
+            ("https://LabDog.lan.tyresson.se", "labdog.lan.tyresson.se", True),
+            ("https://labdog.example.com", "labdog.example.com:443", True),
+            ("http://10.0.0.5:8000", "10.0.0.5:8000", True),
+            ("http://[::1]:8000", "[::1]:8000", True),
+            # A cross-site page names its own origin, not ours.
+            ("https://evil.example.com", "labdog.lan.tyresson.se", False),
+            ("https://labdog.lan.tyresson.se.evil.com", "labdog.lan.tyresson.se", False),
+            # Same name, different port: a different origin.
+            ("http://labdog.lan:8080", "labdog.lan:8000", False),
+            ("https://labdog.lan", None, False),
+            ("null", "labdog.lan", False),
+            ("https://labdog.lan:notaport", "labdog.lan", False),
+        ],
+    )
+    async def test_the_request_own_origin_is_allowed(self, origin, host, allowed):
+        """BUG-88: a same-origin deployment never needed allowed_origins
+        for CORS, so requiring it for the terminal broke every one that
+        relied on the default."""
+        from app.auth.ws_auth import check_ws_origin
+
+        ws = MagicMock()
+        ws.headers = {"origin": origin} if host is None else {"origin": origin, "host": host}
+        with patch.object(settings.security, "allowed_origins", ["http://localhost:3000"]):
+            assert await check_ws_origin(ws) is allowed
+
+    async def test_a_refused_origin_is_logged(self, caplog):
+        """The refusal reaches the browser as a bare 1006, so the log is
+        the only place that says why."""
+        from app.auth.ws_auth import check_ws_origin
+
+        ws = MagicMock()
+        ws.headers = {"origin": "https://evil.example.com", "host": "labdog.lan"}
+        ws.url.path = "/api/ssh-terminal/ws/1"
+        with patch.object(settings.security, "allowed_origins", ["http://localhost:3000"]):
+            with caplog.at_level("WARNING", logger="app.auth.ws_auth"):
+                assert await check_ws_origin(ws) is False
+
+        assert "https://evil.example.com" in caplog.text
+        assert "labdog.lan" in caplog.text
+
     async def test_an_unauthenticated_peer_never_gets_an_accepted_socket(self, app, db):
         """Accepting first meant an unauthenticated caller held an open
         socket, however briefly, on the endpoint that hands out a root
