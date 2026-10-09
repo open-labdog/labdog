@@ -17,7 +17,7 @@ The format follows [Keep a Changelog]; LabDog follows
   marked. Keys line up whether or not they expand, the chevron is the
   only toggle, and every change is confirmed with a toast. A **frozen**
   key, pinned automatically when a second pack started declaring it, can
-  now be confirmed with **Keep <pack>**. Before, the pin was already the
+  now be confirmed with **Keep** *pack*. Before, the pin was already the
   selected choice and clicking it did nothing.
 
 ### Removed

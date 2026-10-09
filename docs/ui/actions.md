@@ -357,7 +357,7 @@ The **Packs** tab (Operations → Actions → Packs) is two panels:
    under itself into a choice of every candidate pack, with each one's
    source, commit and last sync — pick one and it saves via
    `PUT /api/action-resolutions/{key}`. A **frozen** row also offers
-   **Keep <pack>** to confirm the automatic pin. Uncontested rows have no picker
+   **Keep** *pack* to confirm the automatic pin. Uncontested rows have no picker
    because the key has only one contributor; if and when another pack
    appears later, freeze-on-fresh-conflict kicks in and you pin then.
 2. **pack sources** (management). **Add pack…** adds one; each row shows
@@ -385,7 +385,7 @@ manifest that turns a previously-uncontested key into a contested
 one, the rebuild **freezes** the winner to whichever pack was
 previously serving that key by writing an `action_resolution` row
 pinning it. The row's `decided_by_user_id` is `NULL`, which the UI
-surfaces as a **frozen** status — you can confirm with **Keep <pack>**
+surfaces as a **frozen** status — you can confirm with **Keep** *pack*
 in the row's picker, which re-pins the same pack (and sets `decided_by_user_id` to you and clears the
 frozen tag) or switch to a different candidate. Without the
 freeze, an upstream sync could turn a working action into an
