@@ -44,13 +44,46 @@ async def _flush_or_conflict(db: AsyncSession) -> None:
         raise
 
 
+async def _with_pack_syncs(db: AsyncSession, repos: list[GitRepository]) -> list[GitRepoResponse]:
+    """Report the latest successful fetch of each repository.
+
+    ``GitRepository.last_sync_at`` / ``last_commit_sha`` are written only
+    by the GitOps import, which also uses the SHA to skip a push it has
+    already imported, so a pack sync must not touch them. A repository
+    that only feeds action packs therefore read "never synced" however
+    often its packs synced. The newer of the GitOps import and
+    the repository's last successful pack sync is what the list and the
+    repository page mean by "last sync".
+    """
+    out = [GitRepoResponse.model_validate(r) for r in repos]
+    if not repos:
+        return out
+    rows = await db.execute(
+        select(ActionPack.git_repository_id, ActionPack.last_synced_at, ActionPack.current_sha)
+        .where(
+            ActionPack.git_repository_id.in_([r.id for r in repos]),
+            ActionPack.last_sync_status == "ok",
+            ActionPack.last_synced_at.is_not(None),
+        )
+        .order_by(ActionPack.last_synced_at)
+    )
+    latest = {repo_id: (at, sha) for repo_id, at, sha in rows.all()}
+    for resp in out:
+        if resp.id in latest:
+            at, sha = latest[resp.id]
+            if resp.last_sync_at is None or at > resp.last_sync_at:
+                resp.last_sync_at = at
+                resp.last_commit_sha = sha or resp.last_commit_sha
+    return out
+
+
 @router.get("", response_model=list[GitRepoResponse])
 async def list_git_repos(
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(GitRepository).order_by(GitRepository.created_at.desc()))
-    return result.scalars().all()
+    return await _with_pack_syncs(db, list(result.scalars().all()))
 
 
 @router.post("", response_model=GitRepoResponse, status_code=201)
@@ -113,7 +146,7 @@ async def get_git_repo(
     repo = result.scalar_one_or_none()
     if not repo:
         raise HTTPException(status_code=404, detail="Git repository not found")
-    return repo
+    return (await _with_pack_syncs(db, [repo]))[0]
 
 
 @router.put("/{repo_id}", response_model=GitRepoResponse)
@@ -198,7 +231,7 @@ async def update_git_repo(
     )
     await db.commit()
     await db.refresh(repo)
-    return repo
+    return (await _with_pack_syncs(db, [repo]))[0]
 
 
 @router.post("/{repo_id}/trust-host-key", status_code=204)
