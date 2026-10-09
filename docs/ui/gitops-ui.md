@@ -24,7 +24,7 @@ Every connected repository — used for GitOps and for git-backed
 | branch | The branch LabDog tracks |
 | auth | `ssh`, `https` (token) or `public` |
 | groups | How many groups are bound to it |
-| last sync | *synced*, *stale* or *never synced*, with how long ago |
+| last sync | *synced*, *stale* (over a day ago) or *never synced*, with how long ago. It counts the last GitOps import and the last successful sync of any action pack on the repository, whichever is newer |
 
 Each row has **webhooks**, **edit** and **delete**; the row itself opens the
 repository's page. **webhooks** shows the three push URLs —
@@ -58,8 +58,9 @@ with a copy button.
 
 **Path:** `/git-repos/{id}`
 
-- **connection** — branch, auth, the last commit LabDog saw, the last sync,
-  and whether a webhook secret is set.
+- **connection** — branch, auth, the last commit LabDog fetched and when
+  (by a GitOps import or a pack sync, whichever is newer), and whether a
+  webhook secret is set.
 - **gitops-bound groups** — each group, the file it imports from, and its
   import status.
 - **action packs** — each pack from this repository, its path and state.

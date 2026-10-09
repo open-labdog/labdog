@@ -494,6 +494,13 @@ source of actions; see [Upgrading to 1.0.0](docs/upgrade.md#upgrading-to-100).
 
 ### Fixed
 
+- **Settings › Git repositories shows when a repository last synced.** A
+  repository that only feeds action packs read *never synced*, though its
+  packs synced at every start and on every pack sync: only a GitOps import
+  recorded the time. The list and the repository's page now show the
+  newer of the last GitOps import and the last successful pack sync, with
+  that sync's commit.
+
 - **A command the assistant was refused records which host it was for.**
   On a Claude subscription (the Agent SDK provider), a refused
   `run_ssh_command` was listed in the session and the audit trail without
