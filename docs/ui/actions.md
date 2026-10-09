@@ -72,7 +72,12 @@ For a multi-host run (a group, fleet, or scheduled run), the run screen
 shows a table of hosts, each with its own status. Click a host to filter
 the output to just that host's log; **show all hosts** returns to the
 combined view, which prefixes each host's section with a
-`===== hostname =====` header.
+`===== hostname =====` header. A table of more than ten hosts is paged:
+**‹ ›** in its footer step through the pages, and the menu beside them
+shows 10, 25 or 50 hosts per page, or all of them. The choice is remembered
+in this browser.
+
+The log is docked at the bottom of the run screen, below the host table.
 
 The log window's header has its own controls, and the same ones are on the
 SSH terminal:
@@ -80,8 +85,11 @@ SSH terminal:
 - **A− / A+** make the text smaller or larger.
 - **▾** minimizes the window to its header; **▴** brings it back.
 - **⤢** maximizes it to fill the browser window; **⤡** or **Esc** restores it.
-- The strip along the bottom edge resizes the window: drag it, or
-  double-click it to go back to the default height.
+- A strip along one edge resizes the window: drag it, or double-click it
+  to go back to the default height. The run log's strip is on its top edge:
+  dragging it up makes the log taller, over the host table, up to the top
+  of the page's content. The terminal's is on its bottom edge, and it stops
+  at the bottom of the page, so the strip never leaves the screen.
 
 The text size, the height and whether it is minimized are remembered in
 this browser, separately for the log and the terminal. Nothing is saved on

@@ -4,15 +4,17 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { API_BASE, apiFetch } from "@/lib/api"
 import { toast } from "sonner"
-import { Banner, PageHead, RunStatus, Table, Window } from "@/components/ld"
+import { Banner, PageHead, Pager, RunStatus, Table, Window, lastPage, pageSlice } from "@/components/ld"
+import { useLocalPref } from "@/lib/local-pref"
 import type { ActionHostRun, ActionRun } from "@/lib/types"
 import { AnsibleLog, findMatches } from "@/components/ansible-log"
 import { FAILURE_KINDS, parseAnsibleLog } from "@/lib/ansible-log"
 
 const TERMINAL = new Set(["succeeded", "failed", "partial", "cancelled"])
 
-// What the log was before it could be resized: 60% of a typical window.
-const LOG_DEFAULT_HEIGHT = 560
+// The log's height under a multi-host run's table, until the viewer drags
+// it; a single-host run has no table, so its log fills the page.
+const LOG_DEFAULT_HEIGHT = 420
 
 // Strip terminal control sequences from Ansible output.
 //
@@ -57,6 +59,8 @@ export function ActionRunDetail({ runId }: { runId: number }) {
   // Which host's log to show, by ActionHostRun.id. null = combined view.
   const [selectedHostRunId, setSelectedHostRunId] = useState<number | null>(null)
   const [pinToBottom, setPinToBottom] = useState(true)
+  const [hostPage, setHostPage] = useState(0)
+  const [hostsPref, setHostsPref] = useLocalPref("labdog.run-hosts", { pageSize: 10 })
   const [query, setQuery] = useState("")
   const [current, setCurrent] = useState(0)
   const outputRef = useRef<HTMLPreElement>(null)
@@ -236,23 +240,43 @@ export function ActionRunDetail({ runId }: { runId: number }) {
         )}
       />
 
-      <div className="scroll flex flex-1 flex-col gap-3 p-3.5">
+      {/* No page scroll: the host table scrolls inside its share of the
+          column, and the log is docked at the bottom, growing upwards over it. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-3 p-3.5">
         {run?.error_message && <Banner tone="danger">{run.error_message}</Banner>}
         {run?.status === "pending" && run.pending_reason && <Banner tone="warn">Waiting: {run.pending_reason}</Banner>}
 
         {isMultiHost && run && (
-          // Its own scroll past ~9 rows, so the log below cannot squeeze it.
-          <div className="flex shrink-0 flex-col" style={{ maxHeight: 320 }}>
+          <div className="flex min-h-0 flex-1 flex-col">
             <Table<ActionHostRun>
               cols={[
                 { k: "host", label: "host", w: "minmax(140px,1fr)", sortable: false, cell: (hr) => <span className="mono trunc">{hostLabel(hr)}{hr.host_id === null && <span className="text-text-faint"> (deleted)</span>}</span> },
                 { k: "status", label: "status", w: "120px", right: true, sortable: false, cell: (hr) => <RunStatus s={hr.status} reason={hr.pending_reason} /> },
               ]}
-              rows={run.host_runs}
+              rows={pageSlice(run.host_runs, Math.min(hostPage, lastPage(run.host_runs.length, hostsPref.pageSize)), hostsPref.pageSize)}
               keyOf={(hr) => hr.id}
               onRowClick={(hr) => selectHostRun(hr.id)}
               activeKey={selectedHostRunId ?? undefined}
-              footer={selectedHostRunId !== null && <button type="button" className="btn btn-sm btn-ghost" onClick={() => setSelectedHostRunId(null)}>show all hosts</button>}
+              footer={
+                (selectedHostRunId !== null || run.host_runs.length > 10) && (
+                  <div className="flex items-center gap-2">
+                    {selectedHostRunId !== null && <button type="button" className="btn btn-sm btn-ghost" onClick={() => setSelectedHostRunId(null)}>show all hosts</button>}
+                    <div className="ml-auto">
+                      <Pager
+                        noun="hosts"
+                        total={run.host_runs.length}
+                        page={Math.min(hostPage, lastPage(run.host_runs.length, hostsPref.pageSize))}
+                        size={hostsPref.pageSize}
+                        onPage={setHostPage}
+                        onSize={(pageSize) => {
+                          setHostsPref({ pageSize })
+                          setHostPage(0)
+                        }}
+                      />
+                    </div>
+                  </div>
+                )
+              }
             />
           </div>
         )}
@@ -260,9 +284,10 @@ export function ActionRunDetail({ runId }: { runId: number }) {
         <Window
           storageKey="log"
           title={selectedLabel ? `ansible output — ${selectedLabel}` : "ansible output"}
-          defaultHeight={LOG_DEFAULT_HEIGHT}
+          defaultHeight={isMultiHost ? LOG_DEFAULT_HEIGHT : "fill"}
           defaultFontSize={11}
           escRestores
+          anchor="bottom"
           testId="log-window"
           actions={({ pref, update }) => (
             <>
