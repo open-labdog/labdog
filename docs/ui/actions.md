@@ -78,7 +78,10 @@ combined view, which prefixes each host's section with a
 shows 10, 25 or 50 hosts per page, or all of them. The choice is remembered
 in this browser.
 
-The log is docked at the bottom of the run screen, below the host table.
+The log is docked at the bottom of the run screen. It opens just under the
+host table, which shows its whole page of hosts, or at the top of the
+screen for a single-host run. If the table is taller than the screen, it
+scrolls and the log keeps at least a few lines.
 
 The log window's header has its own controls, and the same ones are on the
 SSH terminal:
@@ -92,9 +95,10 @@ SSH terminal:
   of the page's content. The terminal's is on its bottom edge, and it stops
   at the bottom of the page, so the strip never leaves the screen.
 
-The text size, the height and whether it is minimized are remembered in
-this browser, separately for the log and the terminal. Nothing is saved on
-the server.
+The text size and whether it is minimized are remembered in this browser,
+separately for the log and the terminal, and so is the terminal's height.
+The log's height is not: each run opens with the log under its own host
+table. Nothing is saved on the server.
 
 The log is coloured by what each line says, so a failure stands out from
 the tasks around it:

@@ -12,7 +12,20 @@ async function drag(page: Page, handle: Locator, dy: number) {
 }
 
 // The run log and the SSH terminal can be resized, maximized and
-// minimized, and their text size changed; the choices survive a reload.
+// minimized, and their text size changed; the choices survive a reload,
+// except the log's height, whose default depends on the run's host table.
+
+/** Pixels between the top of the log window and what is above it: the
+ *  host table, or the top of the page's content. */
+async function gapAbove(win: Locator) {
+  return Math.round(
+    await win.evaluate((el) => {
+      const prev = el.previousElementSibling
+      const top = prev ? prev.getBoundingClientRect().bottom : el.parentElement!.getBoundingClientRect().top + parseFloat(getComputedStyle(el.parentElement!).paddingTop)
+      return el.getBoundingClientRect().top - top
+    }),
+  )
+}
 
 const LOG = Array.from({ length: 80 }, (_, i) => `ok: [web1] => line ${i + 1}`).join("\n")
 
@@ -24,6 +37,8 @@ test.describe("Run log window", () => {
     const log = page.getByTestId("run-log")
     await expect(log).toContainText("line 80")
     await expect(log).toHaveCSS("font-size", "11px")
+    // One host, so no table: the log starts at the top of the page's content.
+    expect(await gapAbove(win)).toBe(0)
 
     await win.getByRole("button", { name: "Larger text" }).click()
     await win.getByRole("button", { name: "Larger text" }).click()
@@ -53,16 +68,21 @@ test.describe("Run log window", () => {
     await expect(log).toBeHidden()
     await expect(log).toBeAttached()
 
-    // Remembered across a reload: minimized, 13px, the dragged height.
+    // Double-clicking the handle returns to the default height.
+    await win.getByRole("button", { name: "Restore" }).click()
+    await win.getByRole("separator").dblclick()
+    expect(Math.round((await win.boundingBox())!.height)).toBe(Math.round(before))
+    await drag(page, win.getByRole("separator"), 150)
+    await win.getByRole("button", { name: "Minimize" }).click()
+
+    // Remembered across a reload: minimized and 13px. The height is not: the
+    // log opens at the top again.
     await page.reload()
     await expect(win).toHaveAttribute("data-minimized", "true")
     await win.getByRole("button", { name: "Restore" }).click()
     await expect(log).toHaveCSS("font-size", "13px")
-    expect(Math.round((await win.boundingBox())!.height)).toBe(Math.round(after))
-
-    // Double-clicking the handle returns to the default height.
-    await win.getByRole("separator").dblclick()
     expect(Math.round((await win.boundingBox())!.height)).toBe(Math.round(before))
+    expect(await gapAbove(win)).toBe(0)
   })
 })
 
@@ -82,6 +102,32 @@ test.describe("Run page with many hosts", () => {
     const head = (await page.getByRole("heading", { name: "linux-upgrade" }).boundingBox())!
     expect(top.y).toBeGreaterThan(head.y + head.height)
     await expect(win.getByRole("separator")).toBeInViewport()
+  })
+
+  for (const hosts of [3, 17]) {
+    test(`the log opens just under a table of ${hosts} hosts`, async ({ page }) => {
+      await page.goto(await mockRun(page, { log: LOG, hosts }))
+      const win = page.getByTestId("log-window")
+      await expect(page.getByTestId("run-log")).toContainText("line 80")
+      // gap-3 between the table and the log, and every row of the page shown.
+      expect(await gapAbove(win)).toBe(12)
+      const last = page.getByText(`host-${String(Math.min(hosts, 10)).padStart(2, "0")}`, { exact: true })
+      await expect(last).toBeInViewport({ ratio: 1 })
+      const table = page.getByRole("table")
+      expect(await table.evaluate((el) => el.scrollHeight - el.clientHeight)).toBe(0)
+    })
+  }
+
+  test("a table taller than the page leaves the log its minimum", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 600 })
+    await page.goto(await mockRun(page, { log: LOG, hosts: 40 }))
+    await page.getByLabel("hosts per page").selectOption("0")
+    const win = page.getByTestId("log-window")
+    await expect(page.getByTestId("pager-range")).toHaveText("1–40 of 40")
+    expect(Math.round((await win.boundingBox())!.height)).toBeGreaterThanOrEqual(120)
+    await expect(win.getByRole("separator")).toBeInViewport()
+    // The table scrolls in what is left.
+    expect(await page.getByRole("table").evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true)
   })
 
   test("the host table is paged, at a size that is remembered", async ({ page }) => {

@@ -14,7 +14,6 @@ const TERMINAL = new Set(["succeeded", "failed", "partial", "cancelled"])
 
 // The log's height under a multi-host run's table, until the viewer drags
 // it; a single-host run has no table, so its log fills the page.
-const LOG_DEFAULT_HEIGHT = 420
 
 // Strip terminal control sequences from Ansible output.
 //
@@ -240,14 +239,15 @@ export function ActionRunDetail({ runId }: { runId: number }) {
         )}
       />
 
-      {/* No page scroll: the host table scrolls inside its share of the
-          column, and the log is docked at the bottom, growing upwards over it. */}
+      {/* No page scroll. The host table takes its own height and the log
+          the rest, so it starts just under the hosts (or at the top, with no
+          table). Dragging the log up shrinks the table, which then scrolls. */}
       <div className="flex min-h-0 flex-1 flex-col gap-3 p-3.5">
         {run?.error_message && <Banner tone="danger">{run.error_message}</Banner>}
         {run?.status === "pending" && run.pending_reason && <Banner tone="warn">Waiting: {run.pending_reason}</Banner>}
 
         {isMultiHost && run && (
-          <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex min-h-0 shrink flex-col">
             <Table<ActionHostRun>
               cols={[
                 { k: "host", label: "host", w: "minmax(140px,1fr)", sortable: false, cell: (hr) => <span className="mono trunc">{hostLabel(hr)}{hr.host_id === null && <span className="text-text-faint"> (deleted)</span>}</span> },
@@ -282,11 +282,13 @@ export function ActionRunDetail({ runId }: { runId: number }) {
         )}
 
         <Window
+          key={runId}
           storageKey="log"
           title={selectedLabel ? `ansible output — ${selectedLabel}` : "ansible output"}
-          defaultHeight={isMultiHost ? LOG_DEFAULT_HEIGHT : "fill"}
+          defaultHeight="fill"
           defaultFontSize={11}
           escRestores
+          rememberHeight={false}
           anchor="bottom"
           testId="log-window"
           actions={({ pref, update }) => (
