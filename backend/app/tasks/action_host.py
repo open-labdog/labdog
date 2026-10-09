@@ -492,10 +492,10 @@ async def _load_run_spec(ctx: _RunCtx) -> _RunSpec | None:
     from app.models.ssh_key import SSHKey
 
     async with task_session() as db:
-        # A key the bundled pack also has never misses, so the reload on a
-        # miss below never fired for one: a pool process that had not
-        # rebuilt ran the bundled definition whatever the operator pinned
-        # (BUG-105).
+        # A key this process knows from an older build never misses, so
+        # the reload on a miss below never fires for it: a pool process
+        # that had not rebuilt would run whichever pack won back then,
+        # whatever the operator has pinned since (BUG-105).
         await ensure_registry_current(db)
         hr: ActionHostRun = (
             await db.execute(select(ActionHostRun).where(ActionHostRun.id == ctx.host_run_id))

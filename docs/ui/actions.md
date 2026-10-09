@@ -21,15 +21,16 @@ The catalog comes from two sources:
   paths. The leading underscore is reserved; pack-supplied actions
   cannot register a key starting with `_`.
 - **Pack-supplied actions** come from **packs** — pluggable collections
-  of playbooks. LabDog ships with a bundled pack baked into the image;
-  admins add their own packs (from a git repo or a local directory) to
-  extend or override it.
+  of playbooks, from a git repository or a local directory. None is
+  built into LabDog: a fresh install registers the
+  [`labdog-playbooks`](#the-labdog-playbooks-pack) pack, and admins add
+  their own alongside it or instead of it.
 
 - [Running actions](#running-actions)
 - [Scheduled actions](#scheduled-actions)
 - [Group-dispatch actions](#group-dispatch-actions)
 - [Action packs](#action-packs)
-  - [Bundled pack](#bundled-pack)
+  - [The labdog-playbooks pack](#the-labdog-playbooks-pack)
   - [Adding a pack](#adding-a-pack)
   - [Pack precedence and resolving conflicts](#pack-precedence-and-resolving-conflicts)
   - [Provenance: which pack won?](#provenance-which-pack-won)
@@ -169,7 +170,7 @@ the rest of the cluster keeps serving traffic. Such actions declare
   the re-run skip already-succeeded hosts (k8s-upgrade detects
   already-on-target nodes via a `kubelet --version` probe).
 
-The bundled `k8s-upgrade` discovers control-plane vs worker by
+`labdog-playbooks`' `k8s-upgrade` discovers control-plane vs worker by
 probing each node for `/etc/kubernetes/manifests/kube-apiserver.yaml`
 in a setup play, then `serial: 1` upgrades control-plane nodes
 followed by workers. The action is currently **apt-only** — Debian
@@ -241,31 +242,38 @@ is unrunnable (see
 [below](#pack-precedence-and-resolving-conflicts)). There is no
 global pack ordering.
 
-### Bundled pack
+### The labdog-playbooks pack
 
-LabDog's container image includes a "bundled" pack with three baseline
-actions:
+A fresh install registers one pack, `labdog-playbooks`, on the git
+repository
+[`open-labdog/labdog-playbooks`](https://github.com/open-labdog/labdog-playbooks)
+(branch `main`). It syncs on startup like any other pack and supplies
+the baseline actions, among them:
 
 | Key | What it does |
 |---|---|
 | `linux-upgrade` | Upgrades all system packages; reboots if `/var/run/reboot-required`. |
 | `linux-os-upgrade` | Major-release upgrade (e.g. Debian 12 → 13, Ubuntu 22.04 → 24.04). |
 | `k8s-upgrade` | Drains, upgrades, and re-admits each node in a Kubernetes cluster. |
+| `alloy-install` | Installs and configures Grafana Alloy. |
+| `example`, `example-ai-verify` | Harmless probes that exercise snapshot → run → verify → rollback. |
 
-The bundled pack is built **at container build time** by cloning
-[`open-labdog/labdog-playbooks`](https://github.com/open-labdog/labdog-playbooks)
-at the SHA pinned in the labdog repo's `LABDOG_PLAYBOOKS_REF` file.
-The bundled pack content shipped with a particular labdog release
-therefore corresponds exactly to a labdog-playbooks commit — bumping
-labdog typically bumps the bundled pack as well. The bundled pack is
-immutable — you can't edit or delete it from the UI. It exists as a
-safety net so LabDog keeps working even if all other packs are
-unreachable. It appears as a read-only row in the **pack sources**
-panel on the Packs tab (no sync / edit / delete — just a **built-in**
-tag) so its always-present-candidate status is discoverable.
+Nothing about it is special. Edit, disable or delete it like any other
+pack. Until a pack has synced, only the built-in `_builtin.*` actions
+are available.
 
-To override a bundled action, add a pack that declares the same key
-and pin the per-key resolution to your pack on the Packs tab.
+- **No GitHub access** (an air-gapped site): edit the `labdog-playbooks`
+  repository under [Git Repos](gitops-ui.md) to point at an internal
+  mirror, or add a local-directory pack holding a copy.
+- **A private fork**: add your fork as a pack and pin its keys with **win
+  all keys**, or delete `labdog-playbooks` so your fork is the only
+  contributor.
+- **Deleted it by mistake**: add the repository again
+  (`https://github.com/open-labdog/labdog-playbooks`, branch `main`, no
+  credentials), then **Add pack…** on it with the path left blank.
+
+To override one of its actions, add a pack that declares the same key
+and pin that key to your pack on the Packs tab.
 
 ### Adding a pack
 
@@ -302,7 +310,7 @@ Packs** (Integrations → Action Packs) → **Add Pack**. Fields:
 
 | Field | What it is |
 |---|---|
-| Name | Admin-chosen label; must be unique. `bundled` is reserved. |
+| Name | Admin-chosen label; must be unique. |
 | Source | `Git repository` or `Local directory`. |
 | Git repository | Dropdown of configured `GitRepository` rows. Only shown for source = Git. If empty, add one under [Git Repos](gitops-ui.md) first. |
 | Path inside the repo | Subpath where the pack lives (e.g. `packs/labdog-default`). Leave empty when the pack is at the repo root. Only shown for source = Git. |
@@ -345,9 +353,11 @@ cases:
 The **Packs** tab (Operations → Actions → Packs) is two panels:
 
 1. **action registry** (primary surface). One row per action key:
-   action key, winner, status. A contested row expands under the table
-   into a choice of every candidate pack — pick one and it saves via
-   `POST /api/action-resolutions/{key}`. Uncontested rows have no picker
+   action key, winner, status. Click a contested row and it opens right
+   under itself into a choice of every candidate pack, with each one's
+   source, commit and last sync — pick one and it saves via
+   `PUT /api/action-resolutions/{key}`. A **frozen** row also offers
+   **Keep <pack>** to confirm the automatic pin. Uncontested rows have no picker
    because the key has only one contributor; if and when another pack
    appears later, freeze-on-fresh-conflict kicks in and you pin then.
 2. **pack sources** (management). **Add pack…** adds one; each row shows
@@ -356,8 +366,7 @@ The **Packs** tab (Operations → Actions → Packs) is two panels:
    every key the pack contributes via `POST
    /api/action-packs/{id}/claim-all-keys` — a confirmation dialog shows
    the diff (how many keys are already pinned here, how many would be
-   moved from other packs) before **Pin all keys** commits it. The
-   bundled pack is a read-only row here so its presence is discoverable.
+   moved from other packs) before **Pin all keys** commits it.
 
 #### Bulk-pin: "win all keys"
 
@@ -376,8 +385,8 @@ manifest that turns a previously-uncontested key into a contested
 one, the rebuild **freezes** the winner to whichever pack was
 previously serving that key by writing an `action_resolution` row
 pinning it. The row's `decided_by_user_id` is `NULL`, which the UI
-surfaces as a **frozen** status — you can confirm by re-pinning the
-same pack (which sets `decided_by_user_id` to you and clears the
+surfaces as a **frozen** status — you can confirm with **Keep <pack>**
+in the row's picker, which re-pins the same pack (and sets `decided_by_user_id` to you and clears the
 frozen tag) or switch to a different candidate. Without the
 freeze, an upstream sync could turn a working action into an
 unresolved one — frozen behaviour preserves status quo until you
@@ -406,7 +415,7 @@ multiple contributors and no winner pinned:
 
 The API exposes this at `GET /api/actions/` as `pack_name`,
 `winning_pack_id` (the `ActionPack.id` of the winner, `null` for
-unresolved keys and bundled-pack actions), `unresolved` (boolean),
+unresolved keys and built-in actions), `unresolved` (boolean),
 and `overridden_from` (every other contributor's name).
 
 ---
@@ -503,8 +512,8 @@ parameters:                  # passed as --extra-vars at run time
 
 Unknown fields are rejected (the manifest is validated with pydantic
 `extra="forbid"`), so typos fail loudly instead of silently doing
-nothing. The bundled pack's manifests in
-[`backend/app/ansible/actions/`](https://github.com/open-labdog/labdog/tree/main/backend/app/ansible/actions)
+nothing. The manifests in
+[`labdog-playbooks/actions/`](https://github.com/open-labdog/labdog-playbooks/tree/main/actions)
 are working examples of every field.
 
 ### Playbook conventions
@@ -531,7 +540,7 @@ are working examples of every field.
   ```
 
 - **Roles in your pack's `roles/`** are automatically on
-  `ANSIBLE_ROLES_PATH` alongside the bundled roles. `include_role: name:
+  `ANSIBLE_ROLES_PATH` alongside LabDog's own roles. `include_role: name:
   my-role` just works.
 
 ### Destructive actions and snapshot safety
@@ -616,7 +625,7 @@ under [`verify/`](https://github.com/open-labdog/labdog-playbooks/tree/main/veri
 — point `verify_playbook:` at one of them (e.g.
 `../../verify/post-upgrade.yml` — `../../` reaches the pack root from
 inside the action directory) and pass overrides through manifest
-parameters. The bundled `linux-upgrade` action in that repo uses
+parameters. The `linux-upgrade` action in that repo uses
 `verify/post-upgrade.yml` and is the reference implementation.
 
 ### AI verification

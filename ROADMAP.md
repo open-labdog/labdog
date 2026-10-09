@@ -14,16 +14,14 @@ match.
 
 ### `labdog-playbooks`
 
-The canonical Ansible action pack. Every build (image, `.deb` /
-`.rpm` / `.tar.gz`, dev) clones
+The canonical Ansible action pack. Nothing from it is built into
+LabDog: a fresh install registers
 [`labdog-playbooks`](https://github.com/open-labdog/labdog-playbooks)
-into `backend/app/ansible/` at the SHA pinned in
-[`LABDOG_PLAYBOOKS_REF`](LABDOG_PLAYBOOKS_REF), as the always-present
-bundled pack. A fresh install also registers it as a DB-backed pack
-tracking `main` (**Operations → Actions → Packs**), so deployed
-instances pick up newer playbooks than the image carries.
+as an ordinary git pack tracking `main` (**Operations → Actions →
+Packs**), which syncs on startup. Sites without GitHub access point it
+at a mirror or use a local-directory pack.
 
-Currently bundled:
+Currently in it:
 - `linux-upgrade` — apt/dnf system package upgrade with optional reboot
 - `linux-os-upgrade` — Debian major-version upgrade (e.g. 12 → 13)
   with NIC-rename safety

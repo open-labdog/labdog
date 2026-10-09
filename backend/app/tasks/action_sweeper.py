@@ -367,8 +367,8 @@ async def _sweep_stale_action_runs_async() -> dict:
     from app.actions.registry import ensure_registry_current  # noqa: PLC0415
 
     # Every deadline below reads the action's own timeouts from the
-    # registry. On a pool process still holding the bundled pack alone, a
-    # git-pack action with a long ``playbook_timeout_seconds`` got the
+    # registry. On a pool process still holding the built-ins alone, a
+    # pack action with a long ``playbook_timeout_seconds`` got the
     # global default instead, and was swept while it was still running
     # (BUG-105).
     async with task_session() as db:

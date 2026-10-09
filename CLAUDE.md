@@ -135,10 +135,21 @@ Network scanning is async via Celery tasks. Bulk-add requires SSH verification �
 
 ### Action packs (BYO playbooks)
 Action playbooks are supplied by pluggable packs, not the hardcoded
-registry. Bundled pack lives at `backend/app/ansible/` and is loaded at
-module import. DB-backed packs are configured from the UI at
-`/actions?tab=packs` (Operations → Actions → Packs), synced at FastAPI lifespan + Celery `worker_ready`, and
-can be git-backed (public, SSH-key, or HTTPS-PAT) or local-filesystem.
+registry. **Nothing pack-supplied ships with LabDog**: packs are
+`action_packs` rows, configured from the UI at `/actions?tab=packs`
+(Operations → Actions → Packs), synced at FastAPI lifespan + Celery
+`worker_ready`, and can be git-backed (public, SSH-key, or HTTPS-PAT) or
+local-filesystem. Until a pack has synced, the registry holds only the
+built-in pseudo-actions (`_builtin.*`, `app/actions/builtins.py`).
+
+A fresh install seeds one pack, `labdog-playbooks`, pointing at
+[`open-labdog/labdog-playbooks`](https://github.com/open-labdog/labdog-playbooks)
+`main` (git repo + pack rows in `alembic 0001`). It is an ordinary pack:
+operators edit, disable or delete it like any other, and re-add it by
+hand. A site without GitHub access points that repository at an internal
+mirror, or adds a local-directory pack. There used to be a "bundled"
+pack baked into the image at build time; it is gone (`alembic 0047`
+dropped its `pack_id NULL` pins), so every winner has a pack id.
 
 **Precedence is pure per-key pinning, no global ordering.** Each
 action key has at most one source pack. When multiple packs declare
@@ -152,57 +163,25 @@ The registry rebuild still applies **freeze-on-fresh-conflict**:
 when a sync introduces a new contestant for a previously-uncontested
 key, the previous winner is auto-pinned via a fresh
 `action_resolution` row (decided_by_user_id=NULL, surfaced as
-"Frozen" in the UI) so behaviour doesn't silently flip. The
+"Frozen" in the UI) so behaviour doesn't silently flip. Re-sending the
+same pick (`PUT /api/action-resolutions/{key}`) confirms it. The
 **Action Packs** page is the primary surface — top-level action
-registry table with per-row pickers + a demoted "Pack Sources"
-table that exposes `POST /api/action-packs/{id}/claim-all-keys` for
-bulk-pinning every key a pack contributes. The bundled pack appears
-as a read-only row in Pack Sources so its always-present-candidate
-status is discoverable.
+registry table whose contested rows expand into a winner picker + a
+demoted "Pack Sources" table that exposes
+`POST /api/action-packs/{id}/claim-all-keys` for bulk-pinning every
+key a pack contributes.
 
 See `app/packs/` for the subsystem, the user guide at
 `docs/ui/actions.md`, and starter packs at `docs/examples/action-packs/`.
-
-**Bundled pack is fetched from `labdog-playbooks` at build time.**
-`backend/app/ansible/` is **gitignored**; the content is cloned from
-[`open-labdog/labdog-playbooks`](https://github.com/open-labdog/labdog-playbooks)
-at the SHA pinned in the repo-root [`LABDOG_PLAYBOOKS_REF`](LABDOG_PLAYBOOKS_REF)
-file when the container image, `.deb` / `.rpm` / `.tar.gz` artefacts,
-or local dev environment are built. To bump the bundled pack: change
-one line in `LABDOG_PLAYBOOKS_REF` to the new SHA and commit. CI
-re-builds with the new content; no rsync, no drift gate.
-
-- **Docker**: `Dockerfile` has a `bundled-pack-fetcher` stage that
-  clones at the ref the CI passes via the `LABDOG_PLAYBOOKS_REF`
-  build-arg (read from the file). A local `docker build` without
-  overrides uses the in-stage default (`main`) — pass
-  `--build-arg LABDOG_PLAYBOOKS_REF=$(cat LABDOG_PLAYBOOKS_REF)`
-  for reproducible local builds.
-- **Packaging**: `packaging/Makefile` has a `fetch-bundled-pack`
-  target that the `build` target depends on. Reads the same file.
-- **Dev**: `./dev/dev.sh start` auto-fetches into
-  `backend/app/ansible/` on first start (when the dir is empty).
-  `./dev/dev.sh bundle` re-fetches on demand. Point at a sibling
-  working copy via `LABDOG_PLAYBOOKS_LOCAL=/path/to/labdog-playbooks`
-  to rsync from it instead of cloning — useful when iterating on
-  upstream playbooks.
-- **CI**: backend-test and ansible-lint jobs run the same fetch
-  before pytest / ansible-lint so the bundled pack is in place.
-
-All four sites (Dockerfile, packaging, dev, CI) delegate to
-`scripts/fetch-bundled-pack.sh` — single source of truth for the
-clone + SHA-fallback + `.git` strip logic. Edit that script for
-changes, not the call sites.
+Backend tests that need real actions use the `sample_pack` fixture
+(`tests/fixtures/packs/sample`, registered as a local pack). Dev:
+`LABDOG_PLAYBOOKS_LOCAL=/path/to/labdog-playbooks ./dev/dev.sh start`
+registers a working copy as a local pack (and disables the seeded git
+pack) for iterating on playbooks without pushing.
 
 The Python runtime that consumes packs (playbook generation,
-ansible-runner) lives separately at `backend/app/ansible_runtime/`
-and is **not** fetched — it's part of the labdog source tree.
-
-A fresh install also auto-registers `labdog-playbooks` as a
-DB-backed override pack (seeded in `alembic 0001`, points at
-`main`) so deployed instances pick up newer playbooks than the
-in-image snapshot. Operators that prefer a private fork delete the
-seeded row and add their own.
+ansible-runner) lives at `backend/app/ansible_runtime/` and is part of
+the labdog source tree.
 
 ### Celery workers and queues
 
@@ -359,9 +338,9 @@ in-flight scratchpad on work branches). See
 ## CI/CD
 
 GitHub Actions pipeline (`.github/workflows/ci.yml`):
-- **lint + test + scan**: ruff, bandit, ansible-lint, ESLint, pytest,
+- **lint + test + scan**: ruff, bandit, ESLint, pytest,
   frontend build check, docs build check, gitleaks, pip-audit, npm
-  audit, bundled-pack-mirror — runs on PRs to `dev` and `workflow_dispatch`
+  audit — runs on PRs to `dev` and `workflow_dispatch`
 - **build-test-image**: pushes a `:test-<sha>` Docker image and feeds
   trivy — runs on PRs to `dev` and `workflow_dispatch`
 - **build-image**: publishes `:latest` and `:<sha>` to Docker Hub —

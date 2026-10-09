@@ -56,7 +56,7 @@ test.describe("Overview page", () => {
       updated_at: "2026-10-01T00:00:00Z",
       target_name: null,
       action_name: name,
-      pack_name: "bundled",
+      pack_name: "labdog-playbooks",
       destructive,
       last_run: null,
     })

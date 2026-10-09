@@ -37,6 +37,25 @@ Each release notes in `CHANGELOG.md` whether it carries breaking
 schema changes, deprecated config fields, or non-reversible
 migrations. Read that section before upgrading.
 
+### Upgrading to the next release
+
+**The bundled action pack is gone.** The image and the `.deb` / `.rpm` /
+`.tar.gz` packages no longer carry a copy of `labdog-playbooks`. Actions
+come only from the packs under **Operations → Actions → Packs**, so:
+
+- If you still have the seeded `labdog-playbooks` pack, nothing changes:
+  it has been supplying the same actions all along, and the keys it
+  shared with the bundled copy stop being contested. The **pinned** and
+  **frozen** badges on them go away.
+- A pin that chose **bundled** is deleted by the upgrade. If another pack
+  declares that key, it now wins on its own; if two or more do, the key
+  needs a winner again and its actions can't run until you pick one.
+- If you deleted `labdog-playbooks`, or LabDog cannot reach GitHub, its
+  actions disappear until a pack provides them. Re-add it (repository
+  `https://github.com/open-labdog/labdog-playbooks`, branch `main`, then a
+  pack on that repository), point the repository at a mirror, or add a
+  local-directory pack.
+
 ### Upgrading to 0.11.0
 
 Nothing is required. Every new thing that can change a host or send mail
@@ -72,7 +91,7 @@ playbook using `import_tasks`, `include_tasks`, `vars_files` or
 `import_playbook` with a relative path never got past its first task. It
 is now refused when the pack loads: the action is missing from the
 library, and the log says `pack '<name>': failed to load manifest …`,
-naming the files. Move them into a role. No bundled action is affected.
+naming the files. Move them into a role. No `labdog-playbooks` action is affected.
 
 **4. If you rotated the encryption key on 0.10.0 or earlier**, re-enter
 each Git repository's webhook secret. The rotation script skipped that
@@ -223,13 +242,9 @@ There is no separate `git tag` step — the release artifacts on the
 GitHub Releases page are what you install from. See
 [CONTRIBUTING.md → Release process](pathname:///../CONTRIBUTING.md#release-process).
 
-The bundled action pack is fetched from `labdog-playbooks` at the
-SHA pinned in the repo-root [`LABDOG_PLAYBOOKS_REF`](https://github.com/open-labdog/labdog/blob/main/LABDOG_PLAYBOOKS_REF)
-file at build time, so the bundled pack content shipped with a
-LabDog release corresponds exactly to one `labdog-playbooks`
-commit. To ship newer playbook content, bump that file's SHA in
-the release PR; CI re-fetches as part of the image / artefact
-build.
+No action pack ships with a release. Actions come from packs synced
+at runtime, the seeded `labdog-playbooks` pack among them, so new
+playbooks arrive with a pack sync rather than an upgrade.
 
 ---
 

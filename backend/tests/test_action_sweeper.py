@@ -35,7 +35,7 @@ from tests.conftest import create_host, create_ssh_key
 pytestmark = pytest.mark.integration
 
 # A made-up action key: the sweeper falls back to fixed deadlines on a
-# registry miss, so we don't depend on the bundled pack being loaded.
+# registry miss, so we don't depend on any pack being loaded.
 STALE_KEY = "test.stale-action"
 
 

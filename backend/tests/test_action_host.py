@@ -28,7 +28,7 @@ from sqlalchemy import select
 from app.models.action_run import ActionHostRun, ActionRun
 from tests.conftest import create_host, create_ssh_key
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("sample_pack")]
 
 
 # ---------------------------------------------------------------------------
@@ -216,7 +216,7 @@ async def _make_destructive_run(
     await _seed_vm_mapping(db, host.id, pve_id, vmid=801)
     await db.flush()
 
-    # ``linux-upgrade`` is a bundled destructive action with
+    # ``linux-upgrade`` is the sample pack's destructive action with
     # ``supports_host: true``. Use it so the orchestrator's per-host
     # path actually executes the envelope.
     run = ActionRun(
@@ -344,7 +344,7 @@ async def test_auto_rollback_false_keeps_snapshot_on_failure(
 
 
 async def _make_simple_run(db):
-    """A non-destructive host-targeted run using a bundled action, so the
+    """A non-destructive host-targeted run using a sample-pack action, so the
     executor reaches the preflight step without needing a Proxmox mapping."""
     key = await create_ssh_key(db)
     host = await create_host(db, ssh_key_id=key.id, hostname="preflight-host")

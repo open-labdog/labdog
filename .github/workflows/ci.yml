@@ -135,40 +135,6 @@ jobs:
         working-directory: backend
         run: bandit -r app/ -l --baseline bandit-baseline.json
 
-  ansible-lint:
-    if: >-
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
-      (github.event_name == 'workflow_dispatch'
-       && github.ref != 'refs/heads/main'
-       && !startsWith(github.ref, 'refs/tags/'))
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-      - name: Install ansible-lint
-        # Upper-bounded so a floating major release can't silently start
-        # enforcing new rules and break CI (as ansible-lint 26.x did with
-        # role-name).
-        run: pip install -U pip "ansible-lint>=24,<27" "ansible-core>=2.16" -q
-      - name: Fetch bundled action pack
-        # backend/app/ansible/ is gitignored; ansible-lint targets a
-        # bundled action. Fetch the pinned ref via the shared script.
-        run: |
-          export LABDOG_PLAYBOOKS_REF="$(tr -d '[:space:]' < LABDOG_PLAYBOOKS_REF)"
-          ./scripts/fetch-bundled-pack.sh backend/app/ansible
-      - name: ansible-lint
-        # Run from inside the fetched pack so ansible-lint discovers the
-        # pack's own .ansible-lint (skip_list: role-name) and
-        # .ansible-lint-ignore baseline. Linting from the repo root
-        # bypassed them, so the pack's deliberate role-name convention
-        # tripped --strict once a newer ansible-lint enforced the rule.
-        working-directory: backend/app/ansible
-        run: ansible-lint --strict actions/k8s-upgrade
-
   frontend-lint:
     if: >-
       github.event_name == 'pull_request' ||
@@ -254,13 +220,6 @@ jobs:
           uv export --frozen --no-emit-project --extra dev --extra agent --format requirements-txt -o /tmp/req.txt
           uv pip install --system -r /tmp/req.txt
           uv pip install --system --no-deps .
-      - name: Fetch bundled action pack
-        # backend/app/ansible/ is gitignored; pytest expects the bundled
-        # pack to be present (tests reference linux-upgrade etc.).
-        # Delegates to the shared script used by Dockerfile + packaging.
-        run: |
-          export LABDOG_PLAYBOOKS_REF="$(tr -d '[:space:]' < LABDOG_PLAYBOOKS_REF)"
-          ./scripts/fetch-bundled-pack.sh backend/app/ansible
       - name: pytest
         working-directory: backend
         run: python -m pytest tests/ -v
@@ -374,10 +333,6 @@ jobs:
           uv export --frozen --no-emit-project --format requirements-txt -o /tmp/req.txt
           uv pip install --system -r /tmp/req.txt
           uv pip install --system --no-deps .
-      - name: Fetch bundled action pack
-        run: |
-          export LABDOG_PLAYBOOKS_REF="$(tr -d '[:space:]' < LABDOG_PLAYBOOKS_REF)"
-          ./scripts/fetch-bundled-pack.sh backend/app/ansible
       - name: Build frontend
         working-directory: frontend
         # No NEXT_PUBLIC_API_URL: it must stay empty so the bundle calls
@@ -472,7 +427,6 @@ jobs:
       - id: meta
         run: |
           echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
-          echo "playbooks_ref=$(tr -d '[:space:]' < LABDOG_PLAYBOOKS_REF)" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -484,7 +438,6 @@ jobs:
           build-args: |
             GIT_SHA=${{ github.sha }}
             BUILD_DATE=${{ steps.meta.outputs.build_date }}
-            LABDOG_PLAYBOOKS_REF=${{ steps.meta.outputs.playbooks_ref }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -520,7 +473,6 @@ jobs:
           echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
           echo "image_ref=${{ vars.DOCKER_HUB_REPO }}:test-$SHORT_SHA" >> "$GITHUB_OUTPUT"
           echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
-          echo "playbooks_ref=$(tr -d '[:space:]' < LABDOG_PLAYBOOKS_REF)" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -532,7 +484,6 @@ jobs:
           build-args: |
             GIT_SHA=${{ github.sha }}
             BUILD_DATE=${{ steps.meta.outputs.build_date }}
-            LABDOG_PLAYBOOKS_REF=${{ steps.meta.outputs.playbooks_ref }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -562,7 +513,6 @@ jobs:
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
           echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
-          echo "playbooks_ref=$(tr -d '[:space:]' < LABDOG_PLAYBOOKS_REF)" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -574,7 +524,6 @@ jobs:
           build-args: |
             GIT_SHA=${{ github.sha }}
             BUILD_DATE=${{ steps.meta.outputs.build_date }}
-            LABDOG_PLAYBOOKS_REF=${{ steps.meta.outputs.playbooks_ref }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -652,7 +601,7 @@ jobs:
             pull_request)
               BASE="${{ github.event.pull_request.base.sha }}"
               if git diff --name-only "$BASE" HEAD \
-                   | grep -qE '^(packaging/|backend/pyproject\.toml|backend/uv\.lock|scripts/fetch-bundled-pack\.sh|LABDOG_PLAYBOOKS_REF|VERSION|\.github/workflows/ci\.yml)'; then
+                   | grep -qE '^(packaging/|backend/pyproject\.toml|backend/uv\.lock|VERSION|\.github/workflows/ci\.yml)'; then
                 RUN=true
               fi ;;
           esac
@@ -808,11 +757,6 @@ jobs:
           uv export --frozen --no-emit-project --extra dev --extra agent --format requirements-txt -o /tmp/req.txt
           uv pip install --system -r /tmp/req.txt
           uv pip install --system --no-deps .
-      - name: Fetch bundled action pack
-        if: steps.decide.outputs.run == 'true'
-        run: |
-          export LABDOG_PLAYBOOKS_REF="$(tr -d '[:space:]' < LABDOG_PLAYBOOKS_REF)"
-          ./scripts/fetch-bundled-pack.sh backend/app/ansible
       - name: pytest
         if: steps.decide.outputs.run == 'true'
         working-directory: backend

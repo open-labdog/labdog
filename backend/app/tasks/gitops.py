@@ -41,8 +41,8 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
     try:
         async with task_session() as db:
             # The scheduled-actions importer checks each action key against
-            # the registry; a pool process still on the bundled pack alone
-            # rejected every git-pack key (BUG-105). First, so the rebuild's
+            # the registry; a pool process still on the built-ins alone
+            # rejected every pack key (BUG-105). First, so the rebuild's
             # commit lands before the import's transaction begins.
             await ensure_registry_current(db)
             result = await db.execute(select(GitRepository).where(GitRepository.id == repo_id))

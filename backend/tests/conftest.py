@@ -268,6 +268,37 @@ async def regular_user_client(app, db):
     await c.aclose()
 
 
+SAMPLE_PACK_DIR = Path(__file__).parent / "fixtures" / "packs" / "sample"
+
+
+@pytest.fixture
+async def sample_pack(db):
+    """Register ``tests/fixtures/packs/sample`` as a local pack and load it.
+
+    Nothing pack-supplied ships with LabDog, so a test that needs a real
+    action (``linux-upgrade``, ``k8s-upgrade``, ``linux-os-upgrade``,
+    ``example``) asks for this. The pack row lives in the test's
+    transaction, so a rebuild during the test (``ensure_registry_current``)
+    keeps it. Afterwards the registry goes back to the built-ins alone,
+    the way a process starts.
+    """
+    from app.actions import registry
+    from app.packs.models import ActionPack, PackSourceType
+
+    pack = ActionPack(
+        name="sample",
+        source_type=PackSourceType.LOCAL,
+        local_path=str(SAMPLE_PACK_DIR),
+        enabled=True,
+    )
+    db.add(pack)
+    await db.flush()
+    await registry.reload_registry_async(db)
+    yield pack
+    registry._load_builtins_only()
+    registry._BUILT_FROM = None
+
+
 @pytest.fixture
 def mock_celery_tasks():
     mock = MagicMock()

@@ -1,6 +1,6 @@
 // Grafana Alloy configuration for scraping LabDog's /metrics endpoint.
 //
-// Alloy is LabDog's house agent — the bundled `alloy-install` action already
+// Alloy is LabDog's house agent — the `alloy-install` action already
 // deploys it to managed hosts and points it at your Mimir/Loki endpoints — so
 // scraping LabDog itself is usually just this one extra block.
 //
@@ -32,7 +32,7 @@ prometheus.scrape "labdog" {
   scrape_timeout  = "10s"
 
   // Point this at whichever remote_write component you already have. If Alloy
-  // was configured by the bundled alloy-install action, that component is the
+  // was configured by the alloy-install action, that component is the
   // one already forwarding node_exporter metrics to Mimir.
   forward_to = [prometheus.remote_write.default.receiver]
 }

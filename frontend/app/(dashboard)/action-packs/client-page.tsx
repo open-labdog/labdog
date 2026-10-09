@@ -38,36 +38,17 @@ const emptyForm: PackFormState = {
   trusted: false,
 }
 
-// Synthetic row for the always-present bundled pack. The bundled pack
-// has no ``ActionPack`` DB row but it IS a candidate for every key it
-// contributes — surfacing it in the Pack Sources table makes that
-// reality discoverable.
-interface BundledPackRow {
-  id: number
-  name: string
-  isBundled: true
-}
-type PackRow = ActionPack | BundledPackRow
-
-function isBundledRow(p: PackRow): p is BundledPackRow {
-  return "isBundled" in p && p.isBundled === true
-}
-
-const BUNDLED_PACK_ROW: BundledPackRow = {
-  id: -1,
-  name: "bundled",
-  isBundled: true,
-}
-
 function syncTag(pack: ActionPack) {
   if (pack.last_sync_status === "ok") return <Tag tone="ok">synced</Tag>
   if (pack.last_sync_status === "failed") return <Tag tone="danger">failed</Tag>
   return <Tag>never synced</Tag>
 }
 
-function packLabel(pack: { pack_id: number | null; pack_name: string }): string {
-  if (pack.pack_id === null) return `${pack.pack_name} (bundled)`
-  return pack.pack_name
+/** Where a pack's content comes from, in one line. */
+function packSource(pack: ActionPack): string {
+  if (pack.source_type === "local") return pack.local_path ?? ""
+  const repo = pack.git_repository_name ?? "(missing repository)"
+  return pack.path ? `${repo} / ${pack.path}` : repo
 }
 
 /**
@@ -129,6 +110,12 @@ export default function ActionPacksPage() {
     return [...(packs ?? [])].sort((a, b) => a.name.localeCompare(b.name))
   }, [packs])
 
+  const packsById = useMemo(() => {
+    const m: Record<number, ActionPack> = {}
+    for (const p of packs ?? []) m[p.id] = p
+    return m
+  }, [packs])
+
   const contestedByKey = useMemo(() => {
     const m: Record<string, ContestedActionKey> = {}
     for (const c of contested ?? []) m[c.action_key] = c
@@ -151,7 +138,7 @@ export default function ActionPacksPage() {
 
   const upsertResolution = useApiMutation<
     unknown,
-    { action_key: string; pack_id: number | null }
+    { action_key: string; pack_id: number; pack_name: string }
   >({
     mutationFn: ({ action_key, pack_id }) =>
       apiFetch(`/api/action-resolutions/${encodeURIComponent(action_key)}`, {
@@ -159,6 +146,7 @@ export default function ActionPacksPage() {
         json: { pack_id },
       }),
     invalidateKeys: [["action-resolutions"], ["actions-catalog"], ["action-packs"]],
+    onSuccess: (_data, { action_key, pack_name }) => showSuccess(`${action_key} now runs from ${pack_name}`),
   })
 
   const deleteMutation = useApiMutation<unknown, number, ActionPack>({
@@ -355,6 +343,63 @@ export default function ActionPacksPage() {
     setFormError(null)
   }
 
+  /** The winner picker, rendered right under an expanded registry row. */
+  function renderPicker({ action, contested: c }: RegistryRow) {
+    if (!c) return null
+    const pin = c.resolution
+    const pending = upsertResolution.isPending
+    return (
+      <div className="flex flex-col gap-1.5 pl-[15px]">
+        {c.is_frozen && pin ? (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-text-3">
+            <span className="min-w-0 flex-1">
+              Pinned to <span className="mono text-text">{pin.pack_name}</span> automatically when another pack started declaring this action, so what runs didn&apos;t change on its own. Keep it, or
+              pick another pack.
+            </span>
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={pending}
+              onClick={() => upsertResolution.mutate({ action_key: action.key, pack_id: pin.pack_id, pack_name: pin.pack_name })}
+            >
+              Keep {pin.pack_name}
+            </button>
+          </div>
+        ) : c.is_unresolved ? (
+          <div className="text-[11.5px] text-warn">Several packs declare this action. Pick the one that runs it; until then it can&apos;t run.</div>
+        ) : (
+          <div className="text-[11.5px] text-text-3">Several packs declare this action. The one picked here runs it.</div>
+        )}
+        <div role="radiogroup" aria-label={`Pack that runs ${action.key}`} className="flex flex-col">
+          {c.candidates.map((cand) => {
+            const pack = packsById[cand.pack_id]
+            const checked = pin?.pack_id === cand.pack_id
+            return (
+              <label key={cand.pack_id} className="row-hover flex cursor-pointer items-center gap-2.5 rounded-r px-1.5 py-1 text-xs">
+                <input
+                  type="radio"
+                  name={`winner-${action.key}`}
+                  checked={checked}
+                  disabled={pending}
+                  onChange={() => upsertResolution.mutate({ action_key: action.key, pack_id: cand.pack_id, pack_name: cand.pack_name })}
+                />
+                <span className="mono w-[170px] shrink-0 trunc text-text">{cand.pack_name}</span>
+                <span className="min-w-0 flex-1 trunc text-text-3">{pack ? packSource(pack) : ""}</span>
+                {pack?.current_sha && <span className="mono shrink-0 text-[10.5px] text-text-faint">{pack.current_sha.slice(0, 8)}</span>}
+                {pack?.last_synced_at && (
+                  <span className="mono num w-[64px] shrink-0 text-right text-[11px] text-text-3" title={new Date(pack.last_synced_at).toLocaleString()}>
+                    {shortAgo(pack.last_synced_at)} ago
+                  </span>
+                )}
+                <span className="w-[52px] shrink-0 text-right">{checked && <Tag tone="ok">winner</Tag>}</span>
+              </label>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-3">
       <div className="text-[11.5px] text-text-3">
@@ -384,8 +429,11 @@ export default function ActionPacksPage() {
               w: "minmax(200px,1.2fr)",
               sortable: false,
               cell: ({ action, contested }) => (
-                <span className="flex items-center gap-1.5">
-                  {contested !== null && <span className="tt text-[8px] text-text-faint">{expandedRow === action.key ? "▼" : "▶"}</span>}
+                <span className="flex items-center gap-1.5" title={contested ? "several packs declare this action — click to choose which one runs it" : undefined}>
+                  {/* Fixed gutter on every row so the keys line up whether or not they expand. */}
+                  <span aria-hidden className="tt w-[9px] shrink-0 text-[8px] text-text-faint">
+                    {contested ? (expandedRow === action.key ? "▼" : "▶") : null}
+                  </span>
                   <span className="mono text-[11.5px] text-text">{action.key}</span>
                 </span>
               ),
@@ -396,14 +444,7 @@ export default function ActionPacksPage() {
               w: "minmax(140px,1fr)",
               sortable: false,
               cell: ({ action }) =>
-                action.unresolved ? (
-                  <span className="italic text-warn">no winner pinned</span>
-                ) : (
-                  <span className="text-text-2">
-                    {action.pack_name}
-                    {action.winning_pack_id === null && action.pack_name === "bundled" ? <span className="ml-1 text-[10px] text-text-faint">(bundled)</span> : null}
-                  </span>
-                ),
+                action.unresolved ? <span className="italic text-warn">no winner pinned</span> : <span className="text-text-2">{action.pack_name}</span>,
             },
             {
               k: "status",
@@ -421,45 +462,17 @@ export default function ActionPacksPage() {
                   <Tag tone="ok">ok</Tag>
                 ),
             },
-            {
-              k: "go",
-              label: "",
-              w: "84px",
-              right: true,
-              sortable: false,
-              cell: ({ action, contested }) => (contested ? <span className="tt text-ld-accent">{expandedRow === action.key ? "close" : "choose →"}</span> : null),
-            },
           ]}
           rows={registryRows}
           keyOf={(r) => r.action.key}
           activeKey={expandedRow ?? undefined}
+          expandedKey={expandedRow ?? undefined}
+          renderExpanded={renderPicker}
           onRowClick={(r) => r.contested && setExpandedRow(expandedRow === r.action.key ? null : r.action.key)}
           rowTone={(r) => (r.action.unresolved ? "warn" : undefined)}
           loading={catalogLoading}
           empty="No actions in the registry yet. Add and sync an action pack to populate this list."
         />
-        {expandedRow && (() => {
-          const row = registryRows.find((r) => r.action.key === expandedRow)
-          if (!row?.contested) return null
-          return (
-            <div className="border-t border-line bg-surface-2 px-[11px] py-2">
-              <div className="tt mb-1.5">
-                <span className="mono normal-case tracking-normal text-text">{row.action.key}</span> — which pack wins
-              </div>
-              <div className="flex flex-col gap-0.5">
-                {row.contested.candidates.map((c) => {
-                  const checked = row.contested?.resolution?.pack_id === c.pack_id
-                  return (
-                    <label key={`${row.action.key}-${c.pack_id ?? "bundled"}`} className="row-hover flex cursor-pointer items-center gap-2 rounded-r px-1.5 py-1 text-xs">
-                      <input type="radio" name={`winner-${row.action.key}`} checked={checked} disabled={upsertResolution.isPending} onChange={() => upsertResolution.mutate({ action_key: row.action.key, pack_id: c.pack_id })} />
-                      <span className="flex-1 text-text">{packLabel(c)}</span>
-                    </label>
-                  )
-                })}
-              </div>
-            </div>
-          )
-        })()}
       </Panel>
 
       {/* ---- Pack Sources — management-only ---- */}
@@ -473,19 +486,14 @@ export default function ActionPacksPage() {
         }
       >
         {error && <Banner tone="danger">Could not load action packs: {error.message}</Banner>}
-        <Table<PackRow>
+        <Table<ActionPack>
           cols={[
             {
               k: "name",
               label: "pack",
               w: "minmax(140px,1fr)",
               sortable: false,
-              cell: (p) => (
-                <span className="flex items-center gap-1.5">
-                  <span className="mono trunc font-medium text-text">{p.name}</span>
-                  {isBundledRow(p) && <Tag title="baked into the container image">built-in</Tag>}
-                </span>
-              ),
+              cell: (p) => <span className="mono trunc font-medium text-text">{p.name}</span>,
             },
             {
               k: "source",
@@ -493,7 +501,6 @@ export default function ActionPacksPage() {
               w: "minmax(220px,1.8fr)",
               sortable: false,
               cell: (p) => {
-                if (isBundledRow(p)) return <span className="text-text-faint">baked into the container image</span>
                 if (p.source_type === "local")
                   return (
                     <span className="flex min-w-0 flex-col">
@@ -517,23 +524,20 @@ export default function ActionPacksPage() {
               label: "enabled",
               w: "90px",
               sortable: false,
-              cell: (p) => (isBundledRow(p) ? <span className="text-text-faint">—</span> : p.enabled ? <Tag tone="ok">enabled</Tag> : <Tag tone="warn">disabled</Tag>),
+              cell: (p) => (p.enabled ? <Tag tone="ok">enabled</Tag> : <Tag tone="warn">disabled</Tag>),
             },
             {
               k: "sync",
               label: "last sync",
               w: "170px",
               sortable: false,
-              cell: (p) =>
-                isBundledRow(p) ? (
-                  <span className="text-text-faint">at build</span>
-                ) : (
-                  <span className="flex items-center gap-1.5" title={p.last_synced_at ? new Date(p.last_synced_at).toLocaleString() : undefined}>
-                    {syncTag(p)}
-                    {p.last_synced_at && <span className="mono num text-[11px]">{shortAgo(p.last_synced_at)} ago</span>}
-                    {p.current_sha && <span className="mono text-[10.5px] text-text-faint">{p.current_sha.slice(0, 8)}</span>}
-                  </span>
-                ),
+              cell: (p) => (
+                <span className="flex items-center gap-1.5" title={p.last_synced_at ? new Date(p.last_synced_at).toLocaleString() : undefined}>
+                  {syncTag(p)}
+                  {p.last_synced_at && <span className="mono num text-[11px]">{shortAgo(p.last_synced_at)} ago</span>}
+                  {p.current_sha && <span className="mono text-[10.5px] text-text-faint">{p.current_sha.slice(0, 8)}</span>}
+                </span>
+              ),
             },
             {
               k: "actions",
@@ -542,7 +546,6 @@ export default function ActionPacksPage() {
               right: true,
               sortable: false,
               cell: (pack) => {
-                if (isBundledRow(pack)) return <span className="text-text-faint">immutable</span>
                 const packKeyCount = packKeyCounts[pack.name] ?? 0
                 return (
                   <span className="flex flex-wrap justify-end gap-0.5">
@@ -569,10 +572,10 @@ export default function ActionPacksPage() {
               },
             },
           ]}
-          rows={[BUNDLED_PACK_ROW, ...orderedPacks]}
+          rows={orderedPacks}
           keyOf={(p) => p.id}
           loading={isLoading}
-          empty="No action packs. Add one to bring more actions into the library."
+          empty="No action packs, so only the built-in actions are available. Add one to bring actions into the library."
         />
       </Panel>
 

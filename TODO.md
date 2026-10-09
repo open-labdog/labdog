@@ -23,7 +23,7 @@ git log -- frontend/app/\(dashboard\)/groups/page.tsx
 
 ## k8s-upgrade — broaden OS support
 
-**Context:** The bundled `k8s-upgrade` action is currently apt-only;
+**Context:** The `k8s-upgrade` action in `labdog-playbooks` is currently apt-only;
 the role refuses to run on `ansible_os_family != "Debian"` with a
 clear error. RHEL / Rocky / Alma-family hosts are the obvious next
 target — `dnf` plus `dnf versionlock` instead of `apt` + `apt-mark

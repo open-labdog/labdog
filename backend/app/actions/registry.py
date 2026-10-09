@@ -1,16 +1,15 @@
 """Action registry.
 
-The registry is a dict of action_key → ActionDefinition built from two
-sources:
-
-- **Bundled pack**: hardcoded path at ``backend/app/ansible``. Loaded
-  at import time so the app has actions available even before the DB
-  is reachable.
-- **DB-backed packs**: configured via the admin UI at ``/action-packs``.
-  Materialised on disk under ``settings.ansible.packs_root_dir/<id>`` by
-  ``app.packs.service``. Loaded into the registry on FastAPI lifespan
-  startup, Celery worker startup, and any mutation to the ``action_packs``
-  table (via the router's call to ``reload_registry_async``).
+The registry is a dict of action_key → ActionDefinition built from the
+built-in pseudo-actions (``app.actions.builtins``) and the DB-backed
+packs. Packs are configured in the UI (Actions › Packs) and materialised
+on disk under ``settings.ansible.packs_root_dir/<id>`` by
+``app.packs.service``. They are loaded into the registry on FastAPI
+lifespan startup, Celery worker startup, and any mutation to the
+``action_packs`` table (via the router's call to
+``reload_registry_async``). Nothing pack-supplied ships in the image: a
+fresh install gets its actions from the seeded ``labdog-playbooks`` pack
+on first sync, and until then the registry holds the built-ins alone.
 
 Packs have **no inherent precedence**. Each rebuild reads
 ``action_resolution`` (operator picks) and ``action_registry_snapshot``
@@ -33,8 +32,8 @@ anything (BUG-96).
 
 A copy goes stale when another process changes what it was built from:
 the API syncs a pack or records a pin, and a worker's copy still says
-what it said at boot. And a Celery pool process starts with the bundled
-pack alone, from the import below. So worker code calls
+what it said at boot. And a Celery pool process starts with the
+built-ins alone, from the import below. So worker code calls
 :func:`ensure_registry_current` before it relies on the registry, which
 rebuilds whenever the database no longer matches what this copy was
 built from (BUG-105).
@@ -50,7 +49,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-from pathlib import Path
 
 from app.actions.types import ActionDefinition, ActionParameter
 
@@ -59,16 +57,11 @@ __all__ = [
     "ACTION_REGISTRY_CONTRIBUTORS",
     "ActionDefinition",
     "ActionParameter",
-    "ANSIBLE_DIR",
-    "BUNDLED_PACK_NAME",
     "ensure_registry_current",
     "reload_registry_async",
 ]
 
 logger = logging.getLogger(__name__)
-
-ANSIBLE_DIR = Path(__file__).parent.parent / "ansible"
-BUNDLED_PACK_NAME = "bundled"
 
 
 ACTION_REGISTRY: dict[str, ActionDefinition] = {}
@@ -81,22 +74,8 @@ ACTION_REGISTRY_CONTRIBUTORS: dict[str, list] = {}
 
 #: :func:`registry_inputs` as this process's registry was last built from
 #: them. ``None`` until it has been built from the database at all: the
-#: import-time registry is the bundled pack alone.
+#: import-time registry is the built-ins alone.
 _BUILT_FROM: str | None = None
-
-
-def _bundled_pack():
-    from app.actions.packs import Pack  # noqa: PLC0415
-
-    return Pack(
-        name=BUNDLED_PACK_NAME,
-        path=ANSIBLE_DIR,
-        pack_id=None,
-        # In-image content shipped with the release at the SHA pinned in
-        # LABDOG_PLAYBOOKS_REF — not a repository anyone pointed LabDog at,
-        # so it is already as trusted as the application itself.
-        trusted=True,
-    )
 
 
 def _install(result) -> None:
@@ -117,7 +96,7 @@ def _install(result) -> None:
 
 
 async def reload_registry_async(db) -> dict[str, ActionDefinition]:
-    """Rebuild ACTION_REGISTRY from the bundled pack and every enabled DB pack.
+    """Rebuild ACTION_REGISTRY from every enabled DB pack, plus the built-ins.
 
     Reads the packs' checkouts as they are on disk; syncing them is the
     caller's business (``app.packs.service``). Then records the outcome —
@@ -132,7 +111,7 @@ async def reload_registry_async(db) -> dict[str, ActionDefinition]:
     * It installs what it merged before it records anything. The snapshot
       is bookkeeping for the next rebuild; failing to write it must not
       cost this process its registry, which is how the API was left with
-      the bundled pack only.
+      the in-image actions only.
     * An enabled pack with nothing on disk — a fresh container before its
       first sync, a clone that failed — is treated as unknown rather than
       as contributing nothing. Its pins are not dropped as stale and its
@@ -154,8 +133,7 @@ async def reload_registry_async(db) -> dict[str, ActionDefinition]:
     # the two can only make this process rebuild once more than it needed
     # to, never once less.
     built_from = await registry_inputs(db)
-    db_packs, missing = await scan_db_packs(db)
-    packs = [_bundled_pack(), *db_packs]
+    packs, missing = await scan_db_packs(db)
 
     resolutions, prior_winners = await _load_resolutions_and_snapshot_async(db)
     # Off the loop (BUG-71). This walks every file in every enabled pack
@@ -214,11 +192,10 @@ async def ensure_registry_current(db) -> None:
     worker's copy went wrong, both BUG-105:
 
     * A Celery pool process is forked before its parent's boot rebuild and
-      imports this module itself, so its registry was the bundled pack
-      alone. Every git-pack action was missing from it, and a key the
-      bundled pack also has resolved to the bundled definition whatever
-      the operator had pinned. The scheduler skipped a git-pack schedule
-      as "unknown action" on every tick that landed on such a process.
+      imports this module itself, so its registry held only what ships in
+      the image. Every pack action was missing from it, and the scheduler
+      skipped a pack schedule as "unknown action" on every tick that
+      landed on such a process.
     * Nothing told a worker when the API rebuilt after a pack sync or a
       pin, so the worker went on running what it had loaded at boot.
 
@@ -294,7 +271,7 @@ async def registry_inputs(db) -> str:
 
 async def _load_resolutions_and_snapshot_async(
     db,
-) -> tuple[dict[str, int | None], dict[str, int | None]]:
+) -> tuple[dict[str, int], dict[str, int]]:
     from sqlalchemy import select  # noqa: PLC0415
 
     from app.packs.models import ActionRegistrySnapshot, ActionResolution  # noqa: PLC0415
@@ -312,8 +289,8 @@ async def _persist_merge_outcome_async(
     db,
     *,
     stale_keys,
-    fresh_freezes: dict[str, int | None],
-    snapshot: dict[str, int | None],
+    fresh_freezes: dict[str, int],
+    snapshot: dict[str, int],
 ) -> None:
     """Apply stale deletions and fresh freezes, and replace the snapshot.
 
@@ -345,14 +322,14 @@ async def _persist_merge_outcome_async(
         )
 
 
-# Populate with bundled pack + built-ins at import time so the registry
-# is never empty. DB-backed packs join on FastAPI startup / Celery
-# worker startup via reload_registry_async.
-def _load_bundled_only() -> None:
+# Populate with the built-ins at import time so the registry is never
+# empty. Packs join on FastAPI startup / Celery worker startup via
+# reload_registry_async.
+def _load_builtins_only() -> None:
     from app.actions.packs import load_packs_with_resolutions  # noqa: PLC0415
 
-    result = load_packs_with_resolutions([_bundled_pack()], resolutions={}, prior_winners={})
+    result = load_packs_with_resolutions([], resolutions={}, prior_winners={})
     _install(result)
 
 
-_load_bundled_only()
+_load_builtins_only()

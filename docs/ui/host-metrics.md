@@ -13,7 +13,7 @@ backend. These are single current values, not graphs — LabDog points you at
 Grafana for history; it just surfaces "what is this host doing right now"
 next to everything else it already shows about the host.
 
-It closes the loop with the bundled **Install Alloy agent** action: register
+It closes the loop with the **Install Alloy agent** action from `labdog-playbooks`: register
 your metrics backend once, run the action, and metrics flow back
 automatically.
 

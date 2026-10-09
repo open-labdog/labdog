@@ -7,7 +7,39 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Changed
+
+- **Picking which pack runs an action happens right under the action.**
+  On **Operations › Actions › Packs**, clicking a contested action key
+  used to open the pack choice below the whole registry table, away from
+  the row. It now opens directly under that row and shows each
+  candidate's source, commit and last sync, with the current winner
+  marked. Keys line up whether or not they expand, the chevron is the
+  only toggle, and every change is confirmed with a toast. A **frozen**
+  key, pinned automatically when a second pack started declaring it, can
+  now be confirmed with **Keep <pack>**. Before, the pin was already the
+  selected choice and clicking it did nothing.
+
+### Removed
+
+- **The bundled action pack.** The image and the `.deb` / `.rpm` /
+  `.tar.gz` packages carried a copy of `labdog-playbooks`, cloned at
+  build time from the SHA in `LABDOG_PLAYBOOKS_REF`, so that a site
+  without GitHub would still have actions. Every install also registers
+  `labdog-playbooks` as a git pack tracking `main`. So every one of its
+  actions was declared twice, and the Packs tab was mostly **pinned** and
+  **frozen** rows choosing between `bundled (bundled)` and
+  `labdog-playbooks`. Actions now come only from packs. The seeded
+  `labdog-playbooks` pack is an ordinary pack that can be edited,
+  disabled or deleted. A site without GitHub points its repository at a
+  mirror or adds a local-directory pack. The upgrade deletes pins that
+  chose **bundled**: a key one pack still declares wins on its own, and
+  a key several packs declare needs a winner again. See
+  [upgrade notes](docs/upgrade.md). `LABDOG_PLAYBOOKS_REF`,
+  `scripts/fetch-bundled-pack.sh`, `./dev/dev.sh bundle`, the
+  playbook-bump workflow and the ansible-lint job (the playbooks repo
+  lints itself) are gone. `LABDOG_PLAYBOOKS_LOCAL` now registers a
+  working copy as a local pack in the dev database.
 
 ## [0.11.0] — 2026-10-08
 

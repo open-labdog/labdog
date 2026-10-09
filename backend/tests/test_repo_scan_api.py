@@ -175,7 +175,7 @@ async def test_scan_endpoint_empty_registry_no_existing_winners(
 
     resp = await superuser_client.post(f"/api/git-repos/{repo.id}/scan")
     body = resp.json()
-    # The bundled pack might or might not have linux-upgrade depending
+    # A pack might or might not have linux-upgrade depending
     # on what's loaded into ACTION_REGISTRY at test time; what matters
     # is that the response shape is correct.
     assert isinstance(body["existing_key_winners"], dict)

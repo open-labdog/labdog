@@ -31,7 +31,7 @@ from app.models.action_run import ActionHostRun, ActionRun
 from app.tasks.action_orchestrator import _run_action_async
 from tests.conftest import create_group, create_host, create_ssh_key
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("sample_pack")]
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +97,7 @@ async def test_orchestrator_routes_group_target_with_supports_host_false(db, fak
     """When the action has ``supports_host=False`` AND the run targets a
     group, the orchestrator must hand off to the group dispatch task
     and NOT fan out per-host."""
-    # Use the bundled k8s-upgrade action — it's the canonical
+    # Use the sample pack's k8s-upgrade action — it's the canonical
     # ``supports_host: false`` action in the registry.
     assert "k8s-upgrade" in ACTION_REGISTRY
     assert ACTION_REGISTRY["k8s-upgrade"].supports_host is False

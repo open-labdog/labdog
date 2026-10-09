@@ -89,7 +89,7 @@ your fleet.
 ## Scraping
 
 Examples use **Grafana Alloy**, since LabDog already deploys it to managed hosts
-via the bundled `alloy-install` action — scraping LabDog itself is usually one
+via the `alloy-install` action from `labdog-playbooks` — scraping LabDog itself is usually one
 extra block. The endpoint serves standard Prometheus text exposition, so any
 compatible scraper works; point it at the same URL.
 

@@ -39,22 +39,26 @@ def empty_registry():
         yield
 
 
-@pytest.fixture
-def registry_with_bundled_linux_upgrade():
-    """ACTION_REGISTRY populated with one bundled action."""
-    from app.actions.registry import BUNDLED_PACK_NAME
+def _defn(key: str, pack_name: str, winning_pack_id: int | None):
     from app.actions.types import ActionDefinition
 
-    fake_defn = ActionDefinition(
-        key="linux-upgrade",
-        name="bundled linux-upgrade",
+    return ActionDefinition(
+        key=key,
+        name=key,
         description="",
         icon="",
         playbook_path=None,  # type: ignore[arg-type]
         version="1.0",
         estimated_duration="",
-        pack_name=BUNDLED_PACK_NAME,
+        pack_name=pack_name,
+        winning_pack_id=winning_pack_id,
     )
+
+
+@pytest.fixture
+def registry_with_linux_upgrade():
+    """ACTION_REGISTRY with ``linux-upgrade`` won by pack 3."""
+    fake_defn = _defn("linux-upgrade", "labdog-playbooks", 3)
     with patch("app.actions.registry.ACTION_REGISTRY", {"linux-upgrade": fake_defn}):
         yield
 
@@ -62,18 +66,7 @@ def registry_with_bundled_linux_upgrade():
 @pytest.fixture
 def registry_with_db_pack_action():
     """ACTION_REGISTRY populated with one DB-pack action."""
-    from app.actions.types import ActionDefinition
-
-    fake_defn = ActionDefinition(
-        key="custom-thing",
-        name="custom-thing",
-        description="",
-        icon="",
-        playbook_path=None,  # type: ignore[arg-type]
-        version="1.0",
-        estimated_duration="",
-        pack_name="my-installed-pack",
-    )
+    fake_defn = _defn("custom-thing", "my-installed-pack", 7)
     with patch("app.actions.registry.ACTION_REGISTRY", {"custom-thing": fake_defn}):
         yield
 
@@ -91,29 +84,25 @@ async def test_annotate_with_no_existing_keys_returns_empty(db, empty_registry):
     assert annotated.intra_repo_key_conflicts == []
 
 
-async def test_annotate_marks_bundled_collision(db, registry_with_bundled_linux_upgrade):
-    """A scanned pack contributing the same key as the bundled pack
-    is flagged with ``source="bundled"`` in existing_key_winners."""
-    result = ScanResult(packs=[_pack("actions/upgrade", "linux-upgrade")])
-    annotated = await annotate_scan(db, result)
-    assert "linux-upgrade" in annotated.existing_key_winners
-    owner = annotated.existing_key_winners["linux-upgrade"]
-    assert owner.source == "bundled"
-    assert owner.pack_id is None
-
-
 async def test_annotate_marks_db_pack_collision(db, registry_with_db_pack_action):
     result = ScanResult(packs=[_pack("packs/custom", "custom-thing")])
     annotated = await annotate_scan(db, result)
     owner = annotated.existing_key_winners["custom-thing"]
-    assert owner.source == "db_pack"
     assert owner.pack_name == "my-installed-pack"
+    assert owner.pack_id == 7
 
 
-async def test_annotate_only_decorates_keys_actually_scanned(
-    db, registry_with_bundled_linux_upgrade
-):
-    """Bundled pack has ``linux-upgrade`` but the scan didn't see it —
+async def test_annotate_leaves_out_an_unresolved_key(db):
+    """A key several packs declare with no pin has no owner to keep, so
+    the activation isn't asked to choose between it and the new pack."""
+    unresolved = _defn("contested", "a-pack", None)
+    with patch("app.actions.registry.ACTION_REGISTRY", {"contested": unresolved}):
+        annotated = await annotate_scan(db, ScanResult(packs=[_pack("p", "contested")]))
+    assert annotated.existing_key_winners == {}
+
+
+async def test_annotate_only_decorates_keys_actually_scanned(db, registry_with_linux_upgrade):
+    """The registry has ``linux-upgrade`` but the scan didn't see it —
     the winner map shouldn't include keys we don't care about."""
     result = ScanResult(packs=[_pack("actions/foo", "completely-different")])
     annotated = await annotate_scan(db, result)
@@ -179,9 +168,9 @@ async def test_annotate_multiple_independent_conflicts_each_listed(db, empty_reg
 
 
 async def test_annotate_intra_repo_and_existing_collision_independent(
-    db, registry_with_bundled_linux_upgrade
+    db, registry_with_linux_upgrade
 ):
-    """A scanned pack can both collide with bundled AND have an
+    """A scanned pack can both collide with an installed pack AND have an
     intra-repo duplicate. Both annotations must surface."""
     result = ScanResult(
         packs=[
@@ -191,7 +180,7 @@ async def test_annotate_intra_repo_and_existing_collision_independent(
     )
     annotated = await annotate_scan(db, result)
     assert "linux-upgrade" in annotated.existing_key_winners
-    assert annotated.existing_key_winners["linux-upgrade"].source == "bundled"
+    assert annotated.existing_key_winners["linux-upgrade"].pack_id == 3
     assert len(annotated.intra_repo_key_conflicts) == 1
     assert annotated.intra_repo_key_conflicts[0].key == "linux-upgrade"
 
@@ -211,7 +200,7 @@ async def test_annotated_result_is_frozen(db, empty_registry):
 
 
 async def test_key_owner_is_frozen():
-    owner = KeyOwner(key="x", source="bundled", pack_name="bundled")
+    owner = KeyOwner(key="x", pack_name="p", pack_id=1)
     try:
         owner.key = "mutated"  # type: ignore[misc]
     except Exception:

@@ -1,16 +1,16 @@
 """BUG-105: a worker's registry follows the database.
 
 Celery forks its pool before the worker's boot rebuild, and a pool
-process imports the registry module itself, so its registry was the
-bundled pack alone. It rebuilt only when a lookup missed, and two lookups
-never rebuilt at all. On lin-manager the ``labdog-private`` compose
-schedule went out 16 minutes, 18 minutes and two hours late on three of
-five nights, each after a restart, while ``linux-upgrade`` — a key the
-bundled pack also has — went out on time. Nothing told a worker about a
-pin or a pack sync made through the API either.
+process imports the registry module itself, so its registry held only
+what shipped in the image (then the bundled pack, now the built-ins). It
+rebuilt only when a lookup missed, and two lookups never rebuilt at all.
+On lin-manager the ``labdog-private`` compose schedule went out 16
+minutes, 18 minutes and two hours late on three of five nights, each
+after a restart. Nothing told a worker about a pin or a pack sync made
+through the API either.
 
 Each test starts from what a freshly forked pool process holds: the
-bundled pack, never built from the database.
+built-ins, never built from the database.
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ def as_a_fresh_pool_process():
     saved = dict(ACTION_REGISTRY)
     saved_contributors = dict(registry.ACTION_REGISTRY_CONTRIBUTORS)
     saved_built_from = registry._BUILT_FROM
-    registry._load_bundled_only()
+    registry._load_builtins_only()
     registry._BUILT_FROM = None
     yield
     ACTION_REGISTRY.clear()
@@ -125,9 +125,8 @@ class TestAPoolProcessThatNeverRebuilt:
         assert send.call_args.args[0] == "app.tasks.action_orchestrator.run_action"
 
     async def test_the_orchestrator_takes_the_dispatch_shape_from_the_pack(self, db, tmp_path):
-        """A ``supports_host: false`` action only a git pack has. From the
-        bundled pack alone the orchestrator could not see that, and fanned
-        the run out per host."""
+        """A ``supports_host: false`` action a pack supplies. From the
+        built-ins alone the orchestrator could not see that."""
         from app.tasks.action_orchestrator import _run_action_async
 
         db.add(
@@ -164,24 +163,9 @@ class TestAPoolProcessThatNeverRebuilt:
 
         assert sent == ["app.tasks.action_group.run_action_group"]
 
-    async def test_a_pin_to_a_git_pack_beats_the_bundled_copy(self, db, tmp_path):
-        """``example`` is in the bundled pack too, so a lookup never
-        missed and nothing rebuilt: the bundled definition ran whatever the
-        operator had pinned."""
-        pack = _local_pack("pinned-pack", _make_pack(tmp_path / "p", "example"))
-        db.add(pack)
-        await db.flush()
-        db.add(ActionResolution(action_key="example", pack_id=pack.id, decided_by_user_id=None))
-        await db.commit()
-        assert ACTION_REGISTRY["example"].pack_name == "bundled"
-
-        await ensure_registry_current(db)
-
-        assert ACTION_REGISTRY["example"].pack_name == "pinned-pack"
-
     async def test_the_sweeper_reads_the_actions_own_deadline(self, db, tmp_path):
         """With the global 1800s timeout the per-host deadline is 3000s; this
-        action declares 7200s of playbook. From the bundled pack alone the
+        action declares 7200s of playbook. From the built-ins alone the
         sweeper used the global one, and failed the host while it was still
         running."""
         from app.tasks.action_sweeper import _sweep_stale_action_runs_async

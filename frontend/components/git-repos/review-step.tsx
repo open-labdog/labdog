@@ -17,6 +17,7 @@ import {
 import type {
   ActivateKeyResolution,
   HostGroup,
+  KeyOwner,
   RepoActivateRequest,
   RepoActivateResponse,
   RepoScanResponse,
@@ -29,8 +30,7 @@ type SelectionsState = {
    * operator changed appear here — others fall back to the default
    * (the new pack contributing the key). Encoded as:
    *   "new:<pack_path>"   — a pack from this activation
-   *   "existing:<id>"     — an existing DB pack (the prior winner)
-   *   "bundled"           — the bundled pack
+   *   "existing:<id>"     — an existing pack (the prior winner)
    */
   keyOverrides: Record<string, string>
 }
@@ -46,9 +46,7 @@ function defaultKeyResolution(
   if (contributingPaths.length > 0) {
     return `new:${contributingPaths[0]}`
   }
-  const winner = scan.existing_key_winners[key]
-  if (!winner) return "bundled"
-  return winner.source === "bundled" ? "bundled" : `existing:${winner.pack_id}`
+  return `existing:${scan.existing_key_winners[key]?.pack_id}`
 }
 
 function computeDefaultSelections(
@@ -100,16 +98,12 @@ function computeContestedKeys(
 ): Array<{
   key: string
   contributingPaths: string[]
-  existingWinner: { source: "bundled" | "db_pack"; pack_id: number | null; pack_name: string }
+  existingWinner: KeyOwner
 }> {
   const out: Array<{
     key: string
     contributingPaths: string[]
-    existingWinner: {
-      source: "bundled" | "db_pack"
-      pack_id: number | null
-      pack_name: string
-    }
+    existingWinner: KeyOwner
   }> = []
   for (const [key, owner] of Object.entries(scan.existing_key_winners)) {
     const contributors = scan.packs.filter(
@@ -318,13 +312,7 @@ function ReviewStepInner({
           winner_pack_path: choice.slice("new:".length),
         }
       }
-      if (choice?.startsWith("existing:")) {
-        return {
-          action_key: c.key,
-          winner_existing_pack_id: Number(choice.slice("existing:".length)),
-        }
-      }
-      return { action_key: c.key, winner_is_bundled: true }
+      return { action_key: c.key, winner_existing_pack_id: c.existingWinner.pack_id }
     })
   }
 
@@ -399,7 +387,7 @@ function ReviewStepInner({
             <div className="text-[11.5px] text-text-3">For each key that already has an owner and would be contributed by a new pack, choose which pack wins.</div>
             {contested.map((c) => {
               const choice = keyResolutions[c.key]
-              const existingValue = c.existingWinner.source === "bundled" ? "bundled" : `existing:${c.existingWinner.pack_id}`
+              const existingValue = `existing:${c.existingWinner.pack_id}`
               return (
                 <div key={c.key} className="rounded-r border border-line bg-surface-2 px-2.5 py-2" data-testid="contested-key-row" data-action-key={c.key}>
                   <div className="mono text-xs text-text">{c.key}</div>
@@ -419,7 +407,7 @@ function ReviewStepInner({
                     <label className="row-hover flex cursor-pointer items-center gap-2 rounded-r px-1.5 py-1 text-xs">
                       <input type="radio" name={`winner-${c.key}`} checked={choice === existingValue} onChange={() => setKeyResolution(c.key, existingValue)} />
                       <span className="flex-1 text-text">
-                        {c.existingWinner.pack_name} <span className="text-[11px] text-text-3">(existing — {c.existingWinner.source === "bundled" ? "bundled" : "DB pack"})</span>
+                        {c.existingWinner.pack_name} <span className="text-[11px] text-text-3">(current winner)</span>
                       </span>
                     </label>
                   </div>

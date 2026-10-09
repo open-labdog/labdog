@@ -55,12 +55,12 @@ rest redirect to their new homes.
 | [Email](notifications.md) | `/notifications` — the mail server, and which alerts, approvals and automatic fixes each person is emailed about (Settings · Integrations) |
 | [Assistant](assistant.md) | Hand an investigation to a connected LLM; it works through LabDog's tools with every command classified, bounded, and audited |
 | [Actions](actions.md) | Ad-hoc playbook runs on hosts or groups; includes snapshot-wrapped destructive actions |
-| [Action Packs](actions.md#action-packs) | Configure the pack sources that supply actions (bundled, git, local) — a tab of Operations · Actions |
+| [Action Packs](actions.md#action-packs) | Configure the pack sources that supply actions (git, local) — a tab of Operations · Actions |
 | [SSH Keys](admin.md#ssh-keys) | Manage SSH private keys used to connect to hosts |
 | [Git Repos](gitops-ui.md) | Connect Git repositories for GitOps-driven configuration |
 | [Proxmox](settings.md#proxmox-settings) | `/hypervisors` — connect Proxmox VE nodes (TLS verification, per-node CA certificate) and discover host↔VM mappings for snapshot/rollback |
 | [Drift detection](drift-detection.md) | What a drift check does, why it is off by default on every host, and the two independent `drift_check_enabled` flags — host-level (firewall only) versus per-module (the other six) |
-| [Grafana](host-metrics.md) | Two directions on one page. **Metrics in:** register a Mimir/Loki (Prometheus-compatible) backend to show instant CPU/memory/disk on the host page; ties into the bundled Alloy install action. **Metrics out:** the [Prometheus scrape endpoint](../metrics-export.md) — status, scrape URL and config snippet |
+| [Grafana](host-metrics.md) | Two directions on one page. **Metrics in:** register a Mimir/Loki (Prometheus-compatible) backend to show instant CPU/memory/disk on the host page; ties into the Alloy install action from `labdog-playbooks`. **Metrics out:** the [Prometheus scrape endpoint](../metrics-export.md) — status, scrape URL and config snippet |
 | [AI Providers](assistant.md#ai-providers) | Connect a local or hosted LLM, set per-token pricing, and cap spend with daily/monthly budgets |
 | [Audit Log](operations.md#audit) | Append-only record of every change, with SSH session transcripts |
 | [Users](admin.md#users) | LabDog user accounts (superuser only) |
