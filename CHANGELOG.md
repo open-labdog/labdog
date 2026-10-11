@@ -7,6 +7,14 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+### Changed
+
+- **A quiet Git repository is no longer marked stale.** On **Settings ›
+  Git repositories**, a repository that had not synced for 24 hours got a
+  *stale* tag and an amber row. A repository syncs when something is
+  pushed to it, so a quiet one is healthy. The tag now reads *synced* or
+  *never synced*, with how long ago beside it.
+
 ## [1.0.0] — 2026-10-09
 
 The first stable release. From here LabDog follows Semantic Versioning:
