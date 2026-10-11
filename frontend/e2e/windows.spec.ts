@@ -118,6 +118,31 @@ test.describe("Run page with many hosts", () => {
     })
   }
 
+  test("picking a host keeps the table's size; the log header leads back", async ({ page }) => {
+    await page.goto(await mockRun(page, { log: LOG, hosts: 6 }))
+    const win = page.getByTestId("log-window")
+    await expect(page.getByTestId("run-log")).toContainText("line 80")
+    const table = page.getByRole("table")
+    const before = (await table.boundingBox())!.height
+    await expect(win.getByText("ansible output", { exact: true })).toBeVisible()
+
+    await page.getByText("host-06", { exact: true }).click()
+    await expect(win.getByText("ansible output — host-06")).toBeVisible()
+    expect((await table.boundingBox())!.height).toBe(before)
+    await expect(page.getByRole("button", { name: "show all hosts" })).toHaveCount(0)
+    await expect(page.getByText("host-06", { exact: true })).toBeInViewport({ ratio: 1 })
+
+    await win.getByRole("button", { name: "← all hosts" }).click()
+    await expect(win.getByText("ansible output", { exact: true })).toBeVisible()
+    await expect(page.getByTestId("run-log")).toContainText("===== host-01")
+
+    // A second click on the picked host also goes back.
+    await page.getByText("host-02", { exact: true }).click()
+    await expect(win.getByText("ansible output — host-02")).toBeVisible()
+    await page.getByText("host-02", { exact: true }).click()
+    await expect(win.getByText("ansible output", { exact: true })).toBeVisible()
+  })
+
   test("a table taller than the page leaves the log its minimum", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 600 })
     await page.goto(await mockRun(page, { log: LOG, hosts: 40 }))
