@@ -71,12 +71,13 @@ and in [Runs](operations.md#runs).
 
 For a multi-host run (a group, fleet, or scheduled run), the run screen
 shows a table of hosts, each with its own status. Click a host to filter
-the output to just that host's log; **show all hosts** returns to the
-combined view, which prefixes each host's section with a
-`===== hostname =====` header. A table of more than ten hosts is paged:
-**‹ ›** in its footer step through the pages, and the menu beside them
-shows 10, 25 or 50 hosts per page, or all of them. The choice is remembered
-in this browser.
+the output to just that host's log; **← all hosts** in the log's header, or
+a second click on the host, returns to the combined view, which prefixes
+each host's section with a `===== hostname =====` header. Picking a host
+does not change the table's size. A table of more than ten hosts is
+paged: **‹ ›** in its footer step through the pages, and the menu beside
+them shows 10, 25 or 50 hosts per page, or all of them. The choice is
+remembered in this browser.
 
 The log is docked at the bottom of the run screen. It opens just under the
 host table, which shows its whole page of hosts, or at the top of the

@@ -47,7 +47,10 @@ source of actions; see [Upgrading to 1.0.0](docs/upgrade.md#upgrading-to-100).
   the remote terminal so full-screen programs redraw to fit. **Esc**
   leaves a maximized log but not the terminal, where it belongs to the
   shell. A multi-host run's host table is paged, ten hosts at a time by
-  default, with 25, 50 or all a choice away and remembered.
+  default, with 25, 50 or all a choice away and remembered. Picking a host
+  no longer adds a **show all hosts** row under the table, which could
+  push hosts out of view; the way back to every host's output is
+  **← all hosts** in the log's header, or a second click on the host.
 
 - **LabDog checks an automatic fix afterwards, and rolls back one that
   made the host worse.** `ai.alert_remediation_check_minutes` (default

@@ -257,10 +257,11 @@ export function ActionRunDetail({ runId }: { runId: number }) {
               keyOf={(hr) => hr.id}
               onRowClick={(hr) => selectHostRun(hr.id)}
               activeKey={selectedHostRunId ?? undefined}
+              // Only the pager lives here, so picking a host never changes the
+              // table's height; the way back to every host is on the log.
               footer={
-                (selectedHostRunId !== null || run.host_runs.length > 10) && (
+                run.host_runs.length > 10 && (
                   <div className="flex items-center gap-2">
-                    {selectedHostRunId !== null && <button type="button" className="btn btn-sm btn-ghost" onClick={() => setSelectedHostRunId(null)}>show all hosts</button>}
                     <div className="ml-auto">
                       <Pager
                         noun="hosts"
@@ -285,6 +286,11 @@ export function ActionRunDetail({ runId }: { runId: number }) {
           key={runId}
           storageKey="log"
           title={selectedLabel ? `ansible output — ${selectedLabel}` : "ansible output"}
+          meta={selectedLabel && (
+            <button type="button" className="btn btn-sm btn-ghost" title="back to every host's output (or click the host again)" onClick={() => setSelectedHostRunId(null)}>
+              ← all hosts
+            </button>
+          )}
           defaultHeight="fill"
           defaultFontSize={11}
           escRestores
