@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { shortAgo } from "@/lib/fleet"
-import type { AIProvider, AIUsageSummary, EmailSettings, GitRepository, GrafanaInstance, MetricsStatus, ProxmoxNode, SSHKey } from "@/lib/types"
+import type { AIProvider, AIUsageSummary, AlertIntakeStatus, EmailSettings, GitRepository, GrafanaInstance, MetricsStatus, ProxmoxNode, SSHKey } from "@/lib/types"
 import { MetricsScrapeCard } from "@/components/metrics-scrape-card"
 import { Dot, PageHead, Panel, Tabs, type Tone } from "@/components/ld"
 
@@ -73,19 +73,24 @@ export default function SettingsPage() {
   )
 }
 
-function Card({ name, state, status, detail, meta, href, action }: { name: string; state: Tone; status?: string; detail: string; meta: string; href: string; action: string }) {
+function Card({ name, state, status, detail, meta, href, action, more }: { name: string; state: Tone; status?: string; detail: string; meta: string; href: string; action: string; more?: { href: string; label: string } }) {
   return (
     <Panel title={name} meta={status ?? (state === "ok" ? "connected" : state === "warn" ? "needs attention" : "not configured")}>
       <div className="flex flex-col gap-2 p-[11px]">
         <div className="flex items-center gap-2">
           <Dot tone={state} />
-          <span className="mono trunc text-[11.5px]">{detail}</span>
+          <span className="mono trunc text-[11.5px]" title={detail}>{detail}</span>
         </div>
         <span className="text-[11.5px] text-text-3">{meta}</span>
         <div className="flex gap-1.5">
           <Link href={href} className="btn btn-sm hover:no-underline">
             {action}
           </Link>
+          {more && (
+            <Link href={more.href} className="btn btn-sm btn-ghost hover:no-underline">
+              {more.label}
+            </Link>
+          )}
         </div>
       </div>
     </Panel>
@@ -100,9 +105,13 @@ function Integrations() {
   const { data: providers } = useQuery<AIProvider[]>({ queryKey: ["ai-providers"], queryFn: () => apiFetch<AIProvider[]>("/api/ai/providers"), ...q })
   const { data: metrics } = useQuery<MetricsStatus>({ queryKey: ["metrics-status"], queryFn: () => apiFetch<MetricsStatus>("/api/metrics/status"), ...q })
   const { data: email } = useQuery<EmailSettings>({ queryKey: ["notification-email"], queryFn: () => apiFetch<EmailSettings>("/api/notifications/email"), ...q })
+  const { data: intake } = useQuery<AlertIntakeStatus>({ queryKey: ["alert-intake"], queryFn: () => apiFetch<AlertIntakeStatus>("/api/ai/alert-intake"), ...q })
 
   const enabledProviders = (providers ?? []).filter((p) => p.enabled)
   const lastGit = repos?.map((r) => r.last_sync_at).filter(Boolean).sort().at(-1) ?? null
+  // A push is refused without the repository's webhook secret.
+  const pushable = repos?.filter((r) => r.has_webhook_secret).length ?? 0
+  const alertCard = intakeCard(intake)
 
   return (
     <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
@@ -126,7 +135,7 @@ function Integrations() {
         name="Git remotes"
         state={repos?.length ? (repos.every((r) => r.last_sync_at) ? "ok" : "warn") : "idle"}
         detail={repos?.length ? repos.map((r) => r.name).join(", ") : "no repositories"}
-        meta={repos?.length ? `last sync ${lastGit ? `${shortAgo(lastGit)} ago` : "never"} · GitOps + action packs` : "import desired state and action packs from a repo"}
+        meta={repos?.length ? `last sync ${lastGit ? `${shortAgo(lastGit)} ago` : "never"} · push webhooks on ${pushable} of ${repos.length}` : "import desired state and action packs from a repo"}
         href="/git-repos"
         action="Configure…"
       />
@@ -154,17 +163,35 @@ function Integrations() {
         href="/settings?section=system"
         action="Details"
       />
-      <Card
-        name="Webhooks"
-        state="idle"
-        status="inbound endpoints"
-        detail="/api/webhooks/{github,gitlab,gitea,grafana-alerts}"
-        meta="inbound: Git pushes trigger a GitOps sync; Grafana alerts land in Pending"
-        href="/git-repos"
-        action="Git remotes"
-      />
+      <Card name="Alert intake" {...alertCard} href="/settings?section=ai" action="Configure…" more={{ href: "/alerts", label: "Alerts" }} />
     </div>
   )
+}
+
+/**
+ * Grafana alerts coming in. The webhook token is in labdog.toml, not a
+ * setting, so this card is the one place the UI says that an intake which
+ * is on is refusing every webhook for want of one. Git push webhooks are
+ * on the Git remotes card, per repository.
+ */
+function intakeCard(s: AlertIntakeStatus | undefined): { state: Tone; status?: string; detail: string; meta: string } {
+  if (!s) return { state: "idle", detail: "…", meta: "Grafana alerts in, for the assistant to investigate" }
+  if (!s.intake_enabled) return { state: "idle", status: "off", detail: "intake off", meta: "turn on ai.alert_intake_enabled to record Grafana alerts" }
+  const origin = typeof window !== "undefined" ? window.location.origin : ""
+  const last = [s.last_webhook_alert_at, s.last_poll_alert_at].filter((t): t is string => !!t).sort().at(-1)
+  const weakForFullAuto = s.full_auto_alertnames > 0 && !s.token_long_enough_for_full_auto
+  const meta = [
+    last ? `last alert ${shortAgo(last)} ago` : "no alert received yet",
+    s.poll_minutes > 0 && `polls Alertmanager every ${s.poll_minutes} min`,
+    !s.token_set && "set [alerts] webhook_token in labdog.toml",
+    s.token_set && weakForFullAuto && "token under 32 characters: no full auto",
+  ].filter(Boolean).join(" · ")
+  return {
+    state: (!s.token_set && s.poll_minutes === 0) || weakForFullAuto ? "warn" : "ok",
+    status: s.token_set ? undefined : s.poll_minutes > 0 ? "polling only" : undefined,
+    detail: s.token_set ? `POST ${origin}${s.webhook_path}` : "the webhook refuses every alert: no token",
+    meta,
+  }
 }
 
 function ProvidersRow() {

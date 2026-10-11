@@ -7,7 +7,7 @@ Settings has five sections, each a tab with its own URL
 
 | Section | What is in it |
 |---------|---------------|
-| **Integrations** | A registry of what LabDog is connected to — Proxmox, Grafana / Mimir / Loki, Git remotes, AI providers, the Prometheus export and the inbound webhooks — each with its state and a link to configure it. |
+| **Integrations** | A registry of what LabDog is connected to — Proxmox, Grafana / Mimir / Loki, Git remotes, AI providers, email, the Prometheus export and alert intake — each with its state and a link to configure it. See [Integrations](#integrations). |
 | **AI** | The AI providers, then every `ai.*` setting. See [AI](#ai). |
 | **Access** | [SSH keys](admin.md#ssh-keys), [Users](admin.md#users) (superusers only) and your own account — change password, sign out. |
 | **Fleet defaults** | How LabDog talks to hosts: drift checks, SSH, Ansible, actions, workflows and discovery. |
@@ -34,6 +34,26 @@ while AI is on; `ai.enabled` is pinned above it, so the master switch is
 always visible.
 
 ---
+
+## Integrations
+
+Each card says what is connected and opens the page where it is set up.
+Two of them cover what comes *in* to LabDog:
+
+- **Git remotes** shows the repositories, when one was last synced, and
+  **push webhooks on N of M**: how many of them have a webhook secret. A
+  push to a repository without one is refused, so only those repositories
+  pick up a push straight away. Each row's **webhooks** on the
+  [Git repositories](gitops-ui.md) page has the URLs to paste into GitHub,
+  GitLab or Gitea.
+- **Alert intake** shows whether Grafana alerts can reach LabDog, with the
+  URL to give a Grafana contact point and when the last alert arrived.
+  It says **needs attention** when intake is on but the webhook would
+  refuse everything because `[alerts] webhook_token` is not set in
+  `labdog.toml`, and when alerts are listed for full auto but the token is
+  shorter than 32 characters. **Configure…** opens Settings › AI, where
+  intake is switched on; **Alerts** opens the [Alerts](alerts.md) page.
+  The token itself is never shown.
 
 ## Fleet defaults
 

@@ -401,6 +401,28 @@ class AIUsageSummary(BaseModel):
 # --- alerts --------------------------------------------------------------
 
 
+class AlertIntakeStatus(BaseModel):
+    """Whether alerts can reach LabDog, for the Settings › Integrations card.
+
+    Says whether the webhook token is set, and whether it is long enough
+    for full auto, never what it is: the token is a shared secret kept in
+    the config file precisely so that no API returns it.
+    """
+
+    intake_enabled: bool
+    webhook_path: str
+    #: An unset token makes the webhook refuse every request.
+    token_set: bool
+    #: At least MIN_WEBHOOK_TOKEN_CHARS: below it, a webhook alert is never
+    #: allowed to run at full auto.
+    token_long_enough_for_full_auto: bool
+    full_auto_alertnames: int
+    poll_minutes: int
+    #: When the newest alert first reached LabDog by each route.
+    last_webhook_alert_at: datetime | None
+    last_poll_alert_at: datetime | None
+
+
 class AlertEventResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

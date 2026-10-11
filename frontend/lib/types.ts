@@ -1251,6 +1251,19 @@ export interface AIUsageSummary {
 }
 
 /** One alert as LabDog received it, deduplicated by fingerprint. */
+/** GET /api/ai/alert-intake — whether alerts can reach LabDog. The token
+ *  itself is never returned, only whether it is set and long enough. */
+export interface AlertIntakeStatus {
+  intake_enabled: boolean
+  webhook_path: string
+  token_set: boolean
+  token_long_enough_for_full_auto: boolean
+  full_auto_alertnames: number
+  poll_minutes: number
+  last_webhook_alert_at: string | null
+  last_poll_alert_at: string | null
+}
+
 export interface AlertEvent {
   id: number
   source: "grafana_webhook" | "alertmanager_poll"
