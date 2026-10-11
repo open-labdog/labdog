@@ -24,7 +24,7 @@ Every connected repository — used for GitOps and for git-backed
 | branch | The branch LabDog tracks |
 | auth | `ssh`, `https` (token) or `public` |
 | groups | How many groups are bound to it |
-| last sync | *synced*, *stale* (over a day ago) or *never synced*, with how long ago. It counts the last GitOps import and the last successful sync of any action pack on the repository, whichever is newer |
+| last sync | *synced* or *never synced*, with how long ago. A repository with no recent pushes is not flagged. It counts the last GitOps import and the last successful sync of any action pack on the repository, whichever is newer |
 
 Each row has **webhooks**, **edit** and **delete**; the row itself opens the
 repository's page. **webhooks** shows the three push URLs —

@@ -19,19 +19,12 @@ const CRUMBS = [
   { label: "integrations", href: "/settings" },
 ]
 
-type SyncHealth = "healthy" | "stale" | "never"
-
-function syncHealth(repo: GitRepository): SyncHealth {
-  if (!repo.last_sync_at) return "never"
-  const age = Date.now() - new Date(repo.last_sync_at).getTime()
-  return age > 24 * 60 * 60 * 1000 ? "stale" : "healthy"
-}
-
-const HEALTH: Record<SyncHealth, { label: string; tone: Tone }> = {
-  healthy: { label: "synced", tone: "ok" },
-  stale: { label: "stale", tone: "warn" },
+// A repository syncs when something is pushed to it, so a quiet one is not a
+// stale one — the age is shown, but never judged.
+const HEALTH = {
+  synced: { label: "synced", tone: "ok" },
   never: { label: "never synced", tone: "idle" },
-}
+} satisfies Record<string, { label: string; tone: Tone }>
 
 const AUTH: Record<string, { label: string; tone?: Tone }> = {
   ssh_key: { label: "ssh", tone: "accent" },
@@ -244,7 +237,7 @@ export default function GitReposPage() {
             label: "last sync",
             w: "130px",
             cell: (r) => {
-              const h = HEALTH[syncHealth(r)]
+              const h = r.last_sync_at ? HEALTH.synced : HEALTH.never
               return (
                 <span className="flex items-center gap-1.5" title={r.last_sync_at ? new Date(r.last_sync_at).toLocaleString() : undefined}>
                   <Tag tone={h.tone}>{h.label}</Tag>
@@ -279,7 +272,6 @@ export default function GitReposPage() {
         sort={sort}
         onSort={(k) => setSort((s) => ({ k, dir: s.k === k ? ((-s.dir) as 1 | -1) : 1 }))}
         onRowClick={(r) => router.push(`/git-repos/${r.id}`)}
-        rowTone={(r) => (syncHealth(r) === "stale" ? "warn" : undefined)}
         loading={isLoading}
         empty={
           all.length === 0 ? (
