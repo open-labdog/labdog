@@ -79,7 +79,7 @@ function Card({ name, state, status, detail, meta, href, action, more }: { name:
       <div className="flex flex-col gap-2 p-[11px]">
         <div className="flex items-center gap-2">
           <Dot tone={state} />
-          <span className="mono trunc text-[11.5px]">{detail}</span>
+          <span className="mono trunc text-[11.5px]" title={detail}>{detail}</span>
         </div>
         <span className="text-[11.5px] text-text-3">{meta}</span>
         <div className="flex gap-1.5">
