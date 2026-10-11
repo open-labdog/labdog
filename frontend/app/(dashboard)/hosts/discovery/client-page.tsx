@@ -184,7 +184,7 @@ export default function ScansPage() {
               const s = runStatus(r)
               const tone = s === "ok" ? "ok" : s === "error" ? "danger" : s === "running" ? "sync" : undefined
               return (
-                <span className="flex flex-col gap-0.5">
+                <span className="flex flex-col items-start gap-0.5">
                   <Tag tone={tone}>{s === "running" ? "running…" : s}</Tag>
                   {s !== "never" && r.last_run_at && <span className="text-[10px] text-text-faint">{shortAgo(r.last_run_at)} ago</span>}
                 </span>
