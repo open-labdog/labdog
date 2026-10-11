@@ -77,8 +77,10 @@ files.
 | Gitea | Settings → Webhooks |
 
 Set the payload URL to the matching URL from **webhooks**, the content type
-to `application/json`, and the secret to the repository's webhook secret if
-you set one. Only `push` events are needed.
+to `application/json`, and the secret to the repository's webhook secret.
+The secret is required: LabDog refuses a push to a repository that has
+none, and the Git remotes card under Settings › Integrations counts how
+many repositories have one. Only `push` events are needed.
 
 > **A webhook is required.** Imports run only when a push arrives — LabDog
 > does not poll the repository, and there is no import button. A group

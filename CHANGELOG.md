@@ -185,6 +185,19 @@ source of actions; see [Upgrading to 1.0.0](docs/upgrade.md#upgrading-to-100).
 
 ### Changed
 
+- **Settings › Integrations shows whether alerts and pushes can get in.**
+  The Webhooks card listed four endpoint paths, with a grey dot that never
+  changed and a button to the same Git repositories page as the Git remotes
+  card. It is replaced by **Alert intake**, which shows whether intake is
+  on, the URL for a Grafana contact point and when the last alert arrived.
+  It warns when the webhook would refuse every alert because
+  `[alerts] webhook_token` is not set, and when alerts listed for full auto
+  can't get it because the token is shorter than 32 characters. The token
+  itself is never shown. The Git remotes card now says how many
+  repositories accept push webhooks, which is the ones with a webhook
+  secret. The docs said that secret was optional, but LabDog refuses a
+  push without one. New `GET /api/ai/alert-intake`.
+
 - **Picking which pack runs an action happens right under the action.**
   On **Operations › Actions › Packs**, clicking a contested action key
   used to open the pack choice below the whole registry table, away from

@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import service
@@ -52,6 +52,7 @@ from app.ai.schemas import (
     AIUsageDayResponse,
     AIUsageSummary,
     AlertEventResponse,
+    AlertIntakeStatus,
     provider_to_response,
     session_to_response,
 )
@@ -1064,6 +1065,45 @@ async def _with_investigation(db: AsyncSession, rows: list[AlertEvent]) -> list[
             response.rollback_detail = rollback.detail
         out.append(response)
     return out
+
+
+@router.get("/alert-intake", response_model=AlertIntakeStatus)
+async def alert_intake_status(
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Whether alerts can reach LabDog, and when the last one did.
+
+    The intake switch and the poll interval are settings; the webhook token
+    is in the config file and has no other way to show up in the UI, so an
+    intake that is on but refusing every webhook for want of a token looked
+    exactly like one that was working and quiet.
+    """
+    from app.ai.alert_autonomy import MIN_WEBHOOK_TOKEN_CHARS, parse_alertnames
+    from app.config import settings
+
+    token = settings.alerts.webhook_token
+    last = dict(
+        (
+            await db.execute(
+                select(AlertEvent.source, func.max(AlertEvent.created_at)).group_by(
+                    AlertEvent.source
+                )
+            )
+        ).all()
+    )
+    return AlertIntakeStatus(
+        intake_enabled=bool(int(await get_setting_typed("ai.alert_intake_enabled", db))),
+        webhook_path="/api/webhooks/grafana-alerts",
+        token_set=bool(token),
+        token_long_enough_for_full_auto=len(token) >= MIN_WEBHOOK_TOKEN_CHARS,
+        full_auto_alertnames=len(
+            parse_alertnames(str(await get_setting_typed("ai.alert_full_auto_alertnames", db)))
+        ),
+        poll_minutes=int(await get_setting_typed("ai.alertmanager_poll_minutes", db)),
+        last_webhook_alert_at=last.get("grafana_webhook"),
+        last_poll_alert_at=last.get("alertmanager_poll"),
+    )
 
 
 @router.get("/alerts", response_model=list[AlertEventResponse])

@@ -40,7 +40,8 @@ webhook_token = "a-long-random-string"
 ```
 
 or `LABDOG_ALERTS__WEBHOOK_TOKEN`. **An unset token refuses every
-request.** An alert receiver that accepted unauthenticated POSTs would let
+request**, and the **Alert intake** card under Settings › Integrations
+says so. An alert receiver that accepted unauthenticated POSTs would let
 anyone on the network write rows LabDog might then spend money
 investigating.
 
