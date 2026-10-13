@@ -1258,10 +1258,23 @@ export interface AlertIntakeStatus {
   webhook_path: string
   token_set: boolean
   token_long_enough_for_full_auto: boolean
-  full_auto_alertnames: number
+  /** Off: the labdog_automate=true label decides; on: the rules. */
+  full_auto_rules_enabled: boolean
+  /** Rules in force: 1 (the label) while the rules are off. */
+  full_auto_rules: number
   poll_minutes: number
   last_webhook_alert_at: string | null
   last_poll_alert_at: string | null
+}
+
+/** GET /api/ai/full-auto/hosts/{id} — which alerts may fix a host without
+ *  asking: the rules whose host and group conditions allow it, and the
+ *  safeguards that would hold every alert back on it. */
+export interface HostFullAuto {
+  ai_enabled: boolean
+  rules_enabled: boolean
+  rules: string[]
+  blockers: string[]
 }
 
 export interface AlertEvent {

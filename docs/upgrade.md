@@ -73,9 +73,10 @@ that used to work, in any release. Its upgrade notes say so.
 Nothing is required unless you deleted the seeded `labdog-playbooks`
 pack or LabDog cannot reach GitHub (see 1). Every new thing that can
 change a host or send mail is off until you turn it on: alert
-investigations stay read-only, no alert is on the full-auto list, no
-mail server is configured and nobody is subscribed, and schedules keep
-reading their cron expressions in UTC. Five things are worth checking.
+investigations stay read-only, no alert runs at full auto unless its
+Grafana rule is labelled `labdog_automate=true` (see 6), no mail server is
+configured and nobody is subscribed, and schedules keep
+reading their cron expressions in UTC. Six things are worth checking.
 
 **1. The bundled action pack is gone.** The image and the `.deb` / `.rpm` /
 `.tar.gz` packages no longer carry a copy of `labdog-playbooks`. Actions
@@ -129,6 +130,16 @@ column, so signed push webhooks have answered 500 since, and GitOps has
 not imported a push. See
 [encryption-key-rotation.md](encryption-key-rotation.md).
 
+**6. If alert investigations already run, an alert can now be labelled
+to fix its host unattended.** An alert whose Grafana rule carries the label
+`labdog_automate=true` runs at full auto, behind the safeguards in
+[Alerts](ui/alerts.md#full-auto-safeguards). Nobody adds that label by
+accident. But anyone who can post to the alert webhook with its token
+could send an alert carrying it, and the webhook token of at least 32
+characters is the only lock. To keep that decision in LabDog, turn on
+`ai.alert_full_auto_rules_enabled` and list in `ai.alert_full_auto_rules`
+what may act. An empty list allows nothing.
+
 Smaller things to know:
 
 - **The `security.allowed_origins` workaround for the web terminal** from
@@ -137,10 +148,12 @@ Smaller things to know:
 - **Email** needs `notifications.public_url` set before it sends anything
   with a link; LabDog will not build links from a request's `Host`
   header. See [Notifications](ui/notifications.md).
-- **Full auto for named alerts** needs Grafana's contact point to send
-  resolved notifications, or every fix is judged as not working, and it is
-  refused on the machine LabDog itself runs on. See
-  [Alerts](ui/alerts.md#full-auto-for-named-alerts).
+- **Full auto** is for alerts whose Grafana rule is labelled
+  `labdog_automate=true`, or, with `ai.alert_full_auto_rules_enabled` on,
+  those matching `ai.alert_full_auto_rules`. It needs Grafana's contact
+  point to send resolved notifications, or every fix is judged as not
+  working, and it is refused on the machine LabDog itself runs on. See
+  [Alerts](ui/alerts.md#which-alerts-may-run-at-full-auto).
 - **Setting `scheduling.timezone`** keeps every schedule's clock time and
   moves it to the new zone: `0 3 * * *` then runs at 03:00 there. Check
   existing schedules after changing it.

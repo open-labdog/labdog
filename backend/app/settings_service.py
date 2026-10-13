@@ -8,10 +8,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.alert_autonomy import BASE_LEVELS as ALERT_BASE_LEVELS
-from app.ai.alert_autonomy import validate_alertnames
 from app.ai.alert_mission import DEFAULT_TEMPLATE as DEFAULT_ALERT_MISSION
 from app.ai.alert_mission import FIELDS as ALERT_MISSION_FIELDS
 from app.ai.alert_mission import validate_template as validate_alert_mission
+from app.ai.full_auto_rules import DEFAULT_RULES as DEFAULT_FULL_AUTO_RULES
+from app.ai.full_auto_rules import check_rules as check_full_auto_rules
+from app.ai.full_auto_rules import rules_warnings as full_auto_rules_warnings
+from app.ai.full_auto_rules import validate_rules as validate_full_auto_rules
 from app.cron_walk import TIMEZONE_SETTING, timezone_names, validate_timezone
 from app.models.app_setting import AppSetting
 from app.notifications.urls import validate_public_url
@@ -346,23 +349,48 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "help": (
             "read_only: it only looks. approval: each change it wants to make waits in the "
             "approvals queue — LabDog sends no notification yet, so a request nobody opens the "
-            "page to see expires after ai.approval_expiry_hours. Alerts named in "
-            "ai.alert_full_auto_alertnames may go further."
+            "page to see expires after ai.approval_expiry_hours. Alerts labelled "
+            "labdog_automate=true in Grafana, or matching ai.alert_full_auto_rules when the rules "
+            "are on, may go further."
         ),
     },
-    "ai.alert_full_auto_alertnames": {
-        "type": "text",
-        "default": "",
-        "max_length": 4000,
-        "validator": validate_alertnames,
-        "description": "Alerts that may change the host without asking, one name per line.",
+    "ai.alert_full_auto_rules_enabled": {
+        "type": "int",
+        "default": 0,
+        "min": 0,
+        "max": 1,
+        "description": (
+            "Decide which alerts may change the host without asking by rules, not the label."
+        ),
         "help": (
-            "Exact alert names, no wildcards. Their investigations run at full auto — changes are "
-            "made with nobody approving them — but only while every safeguard holds: the alert "
-            "is firing and names a LabDog host, the webhook token is at least 32 characters, a "
-            "snapshot can be taken first, no other automatic fix is running on the host, and the "
-            "cooldown and daily cap allow it. Otherwise the alert runs at "
-            "ai.alert_autonomy_level, and its row on the Alerts page says why."
+            "Off: an alert may run at full auto when Grafana labels it labdog_automate=true — put "
+            "the label on the alert rule, with a template if only some hosts should qualify. On: "
+            "ai.alert_full_auto_rules decides, matching alert names, labels, and LabDog hosts and "
+            "groups. Either way an alert runs at full auto — changes made with nobody approving "
+            "them — only while every safeguard holds: it is firing and names a LabDog host, the "
+            "webhook token is at least 32 characters, a snapshot can be taken first, no other "
+            "automatic fix is running on the host, and the cooldown and daily cap allow it. "
+            "Otherwise it runs at ai.alert_autonomy_level, and its row on the Alerts page says why."
+        ),
+    },
+    "ai.alert_full_auto_rules": {
+        "type": "text",
+        "default": DEFAULT_FULL_AUTO_RULES,
+        "max_length": 4000,
+        "validator": validate_full_auto_rules,
+        "db_validator": check_full_auto_rules,
+        "warnings": full_auto_rules_warnings,
+        "description": (
+            "Alerts that may change the host without asking, one rule per line "
+            "(used while ai.alert_full_auto_rules_enabled is on)."
+        ),
+        "help": (
+            "A rule is conditions separated by commas, all of which must hold; an alert qualifies "
+            "when any rule does. NginxDown is the alert's name; key=value and key!=value are its "
+            "labels; host:web-1 or host:web-1|web-2 is the LabDog host it resolved to; group:web a "
+            "LabDog group that host is in; !host: and !group: exclude. Example: "
+            "'NginxDown, group:web, !host:web-legacy'. Lines starting with # are comments. The "
+            "default keeps the label rule; an empty list lets no alert run at full auto."
         ),
     },
     "ai.alert_full_auto_requires_snapshot": {
@@ -590,10 +618,11 @@ async def get_all_settings(db: AsyncSession) -> list[dict]:
     settings = []
     for key, defn in SETTING_DEFINITIONS.items():
         db_row = db_settings.get(key)
+        value = db_row.value if db_row else str(defn["default"])
         settings.append(
             {
                 "key": key,
-                "value": db_row.value if db_row else str(defn["default"]),
+                "value": value,
                 "value_type": defn["type"],
                 "description": defn["description"],
                 "help": defn.get("help"),
@@ -603,6 +632,9 @@ async def get_all_settings(db: AsyncSession) -> list[dict]:
                 "choices": defn.get("choices"),
                 "suggestions": defn["suggestions"]() if "suggestions" in defn else None,
                 "max_length": defn.get("max_length"),
+                # Problems a saved value has now that it did not have when
+                # it was saved, such as a rule naming a host since deleted.
+                "warnings": await defn["warnings"](value, db) if "warnings" in defn else None,
                 "updated_at": db_row.updated_at.isoformat()
                 if db_row and db_row.updated_at
                 else None,
@@ -614,6 +646,14 @@ async def get_all_settings(db: AsyncSession) -> list[dict]:
 async def update_setting(key: str, value: str, user_id: int, db: AsyncSession) -> str:
     """Validate and update a setting. Returns the normalized value."""
     normalized = _validate(key, value)
+    # A check that needs the database, such as whether the hosts a rule
+    # names exist. Raises ValueError like the ones above.
+    db_validator = SETTING_DEFINITIONS[key].get("db_validator")
+    if db_validator is not None:
+        try:
+            await db_validator(normalized, db)
+        except ValueError as exc:
+            raise ValueError(f"{key}: {exc}") from exc
 
     result = await db.execute(select(AppSetting).where(AppSetting.key == key))
     setting = result.scalar_one_or_none()

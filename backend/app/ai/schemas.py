@@ -416,11 +416,31 @@ class AlertIntakeStatus(BaseModel):
     #: At least MIN_WEBHOOK_TOKEN_CHARS: below it, a webhook alert is never
     #: allowed to run at full auto.
     token_long_enough_for_full_auto: bool
-    full_auto_alertnames: int
+    #: Off: the labdog_automate=true label decides full auto. On: the rules.
+    full_auto_rules_enabled: bool
+    #: How many rules are in force: 1 (the label) while the rules are off.
+    full_auto_rules: int
     poll_minutes: int
     #: When the newest alert first reached LabDog by each route.
     last_webhook_alert_at: datetime | None
     last_poll_alert_at: datetime | None
+
+
+class HostFullAutoResponse(BaseModel):
+    """Which alerts may fix one host without asking, for its page.
+
+    Worked out from the rules rather than stored: ``rules`` are the ones
+    whose host and group conditions allow this host (their alert-name
+    and label conditions still have to match an alert). ``blockers`` are
+    safeguards that would hold every alert back on this host whatever
+    matched, as far as they can be known without an alert.
+    """
+
+    #: The host page shows nothing about alerts while the AI is off.
+    ai_enabled: bool
+    rules_enabled: bool
+    rules: list[str]
+    blockers: list[str]
 
 
 class AlertEventResponse(BaseModel):

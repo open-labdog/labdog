@@ -1311,7 +1311,8 @@ class TestTheTasks:
 @pytest.fixture
 async def full_auto_ready(db, monkeypatch):
     monkeypatch.setattr(settings.alerts, "webhook_token", TOKEN)
-    await _set(db, "ai.alert_full_auto_alertnames", ALERT)
+    await _set(db, "ai.alert_full_auto_rules_enabled", "1")
+    await _set(db, "ai.alert_full_auto_rules", ALERT)
     await _set(db, "ai.alert_full_auto_requires_snapshot", "0")
 
 
@@ -1352,7 +1353,7 @@ class TestNewSafeguards:
     ) -> None:
         """Two unattended fixes on one host before the first is judged, and
         the check could not tell which one the host's state is down to."""
-        await _set(db, "ai.alert_full_auto_alertnames", f"{ALERT}\nOtherAlert")
+        await _set(db, "ai.alert_full_auto_rules", f"{ALERT}\nOtherAlert")
         host = await create_host(db)
         earlier, _, _ = await _fix(db, ai_provider, host, finished_ago=timedelta(minutes=2))
         earlier.remediation_outcome = pending
@@ -1364,7 +1365,7 @@ class TestNewSafeguards:
     async def test_a_judged_fix_does_not_hold_the_next_one(
         self, db, ai_provider, full_auto_ready
     ) -> None:
-        await _set(db, "ai.alert_full_auto_alertnames", f"{ALERT}\nOtherAlert")
+        await _set(db, "ai.alert_full_auto_rules", f"{ALERT}\nOtherAlert")
         host = await create_host(db)
         earlier, _, _ = await _fix(db, ai_provider, host, finished_ago=timedelta(minutes=12))
         earlier.remediation_outcome = "fixed"
@@ -1648,7 +1649,8 @@ class TestFromAlertToRollback:
             "ai.enabled": "1",
             "ai.alert_intake_enabled": "1",
             "ai.auto_investigate_enabled": "1",
-            "ai.alert_full_auto_alertnames": ALERT,
+            "ai.alert_full_auto_rules_enabled": "1",
+            "ai.alert_full_auto_rules": ALERT,
         }.items():
             await _set(db, key, value)
         host = await _mapped_host(db)

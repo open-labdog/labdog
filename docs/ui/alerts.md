@@ -144,7 +144,7 @@ it asks.
 
 **There is no rate limit on investigations, and that is deliberate.**
 (Automatic *fixes* have one — see
-[Full auto](#full-auto-for-named-alerts).) LabDog does not own
+[Full auto](#full-auto-safeguards).) LabDog does not own
 your alerts; Grafana or Alertmanager does. A rule that fires, resolves
 and fires again every few minutes passes every check above each time,
 because each firing is genuinely new — and the fix belongs where the
@@ -228,13 +228,14 @@ By default, **only look**. Two settings let it do more:
 | Setting | Default | Effect |
 |---|---|---|
 | `ai.alert_autonomy_level` | `read_only` | What every alert's session may change: `read_only`, or `approval` — each change it wants to make waits for someone to approve it |
-| `ai.alert_full_auto_alertnames` | empty | Alerts, one exact name per line, whose session may change the host **without asking** |
+| `ai.alert_full_auto_rules_enabled` | `0` | Which alerts may change the host **without asking**: off, those Grafana labels `labdog_automate=true`; on, those matching `ai.alert_full_auto_rules` — see [below](#which-alerts-may-run-at-full-auto) |
 
 There is no `full_auto` choice on the level, and that is deliberate. An
 alert is a machine's opinion that something is wrong, and you are the one
 who knows which opinions are specific enough to act on unattended — a
 "service down" alert with an obvious fix, say, rather than "disk fills in
-four hours". Naming them one by one keeps that judgement yours.
+four hours". Marking them one by one, on the alert rule or in a rule here,
+keeps that judgement yours.
 
 **At `approval`, subscribe to the email.** The request sits in the
 approvals queue on the [Assistant](assistant.md) page and in the
@@ -257,10 +258,71 @@ A row whose session could change something carries a second tag beside
 the investigation one — **approval required** or **full auto**. Hover it
 for why.
 
-### Full auto for named alerts
+### Which alerts may run at full auto
 
-An alert on `ai.alert_full_auto_alertnames` runs at full auto only while
-every one of these holds. The first that fails drops the session to
+**By default, the ones Grafana labels `labdog_automate=true`.** Put the
+label on the alert rule. To make it depend on the host, give it a
+template. The [alloy-install action](actions.md) stamps `labdog_hostname`
+(and `labdog_host_id`) on every series it ships, so the template can use
+LabDog's own names:
+
+```
+labdog_automate = {{ if match "^(web-1|web-2)$" $labels.labdog_hostname }}true{{ else }}false{{ end }}
+```
+
+The value must be exactly `true`. Write the `false` branch too rather than
+leaving the label empty. With this, the decision lives with the alert
+rule, and whoever can edit alert rules in Grafana decides which alerts may
+change your hosts unattended.
+
+**With `ai.alert_full_auto_rules_enabled` on, `ai.alert_full_auto_rules`
+decides instead.** One rule per line. A rule is conditions separated by
+commas, all of which must hold, and an alert qualifies when any rule
+does. There is no order and no "deny" line, so no rule overrides another.
+
+| Condition | Holds when |
+|---|---|
+| `NginxDown` | the alert's name is exactly this (spaces allowed, no wildcards) |
+| `severity=critical` | the alert has this label value; quote a value with a comma: `team="a, b"` |
+| `severity!=info` | the label has another value, or is missing |
+| `host:web-1`, `host:web-1\|web-2` | the LabDog host the alert resolved to is one of these (by hostname, any case) |
+| `group:web` | that host is in this LabDog group |
+| `!host:…`, `!group:…` | that host is not one of these, or in none of these groups |
+
+Lines starting with `#` are comments. The default list is the single rule
+`labdog_automate=true`, so turning the rules on changes nothing until you
+edit it, and an empty list lets **no** alert run at full auto. Two alerts
+that both hosts can raise, each allowed on one host only:
+
+```
+NginxDown, host:web-1
+DiskFull, host:db-1
+```
+
+| Alert on | NginxDown | DiskFull |
+|---|---|---|
+| web-1 | full auto | the base level |
+| db-1 | the base level | full auto |
+
+Groups keep a long list short, and `!` makes an exception:
+`DiskFull, group:db, !host:db-legacy`. Labels and hosts combine:
+`labdog_automate=true, group:lab` trusts Grafana's label, but only for
+hosts in `lab`.
+
+Saving a rule that names a host or group LabDog does not have is refused.
+If one is renamed or deleted later, the setting shows a warning beside the
+list, because the rule would otherwise silently match nothing.
+
+**Where to see it.** An alert that ran at full auto says which rule it
+matched on its row, for example *Full auto: matched NginxDown, host:web-1*.
+A host's Overview has an **automatic fixes** panel listing the rules that
+can cover it, and anything that would hold every alert back on it right
+now: intake off, a short token, no snapshot possible.
+
+### Full auto safeguards
+
+An alert marked for full auto runs at it only while every one of these
+holds. The first that fails drops the session to
 `ai.alert_autonomy_level` — the alert is still investigated — and the
 row's tag says which:
 
@@ -386,14 +448,17 @@ it from the address each host sees it connect from:
   its interfaces over SSH to tell.
 
 A container on a **macvlan** network has a LAN address of its own and
-looks like any other machine. Do not put that host's alerts on the
-full-auto list.
+looks like any other machine. Do not mark that host's alerts for full
+auto.
 
 ### Scope
 
 The session is scoped to the host LabDog resolved from the alert's
-labels — it checks `nodename`, `hostname`, `host`, `node`, then
-`instance` (stripping any port). If none of them match a managed host the
+labels. It checks `labdog_host_id` first: the alloy-install action stamps
+it on every series, so an alert on those metrics names its host exactly.
+An id that is no longer a host is skipped. Then it tries `labdog_hostname`,
+`nodename`, `hostname`, `host`, `node`, and last `instance` (stripping any
+port). If none of them match a managed host the
 session runs with **no host in scope**, because putting an investigation
 on the wrong host is worse than putting it on none: it would read a
 healthy machine and report that nothing is wrong.
@@ -453,11 +518,12 @@ LabDog deletes the session's own, but not anyone else's: when a newer
 snapshot belongs to an action run or someone else, it refuses before
 deleting anything, and names the snapshot in the way.
 
-**An alert on the full-auto list ran read-only (or at approval).** Hover
-the level tag on its row. It names the safeguard that held it back — see
-[Full auto for named alerts](#full-auto-for-named-alerts). Names are
-matched exactly, so check the spelling against the alert name on the row
-if there is no tag at all.
+**An alert marked for full auto ran read-only (or at approval).** Hover
+the level tag on its row. It names the rule it matched and the safeguard
+that held it back — see [Full auto safeguards](#full-auto-safeguards).
+With no tag at all, nothing matched. Names and label values are matched
+exactly, so check the spelling against the row, check that the label's
+value is exactly `true`, and check which host the row resolved to.
 
 **The poller reports "No Alertmanager API at this endpoint".** Mimir
 serves Alertmanager under `/alertmanager` on the same host as its query

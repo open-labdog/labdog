@@ -30,7 +30,7 @@ live test also cannot run against a host LabDog cannot reach — but then
 the assistant cannot change that host either.
 
 **The live test's answer is kept for a while, per host and address.**
-Every full-auto decision asks it, and the alerts on the full-auto list are
+Every full-auto decision asks it, and the alerts marked for full auto are
 often fired by hosts that are down, so an uncached test would make each
 decision wait out a connect timeout. Where LabDog runs changes with a
 redeploy, not between two alerts; "could not ask" is kept for less, as

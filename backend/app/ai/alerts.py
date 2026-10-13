@@ -51,6 +51,11 @@ _NULL_TIME_YEAR = 1
 #: :func:`meets_severity`.
 SEVERITY_ORDER = ("info", "warning", "critical")
 
+#: Labels the alloy-install action stamps on every series it ships: LabDog's
+#: own host id and hostname. Exact, so they are tried before anything else.
+LABDOG_HOST_ID_LABEL = "labdog_host_id"
+LABDOG_HOSTNAME_LABEL = "labdog_hostname"
+
 #: Labels that conventionally carry the host, most specific first.
 #: ``instance`` is last because it is the noisiest — it usually carries a
 #: port, and sometimes an address that is a scrape target rather than the
@@ -205,8 +210,20 @@ async def resolve_host(db: AsyncSession, labels: dict[str, Any]) -> int | None:
     would put an investigation on the wrong host — worse than putting it
     on none, because the session would then read a healthy host and
     report that nothing is wrong.
+
+    ``labdog_host_id`` comes first: an alert on a metric Alloy shipped
+    names the host exactly, while the conventional labels are matched
+    against a hostname or address and may carry a port. An id that is not
+    a host any more (the host was deleted; ids are not reused) falls
+    through to the names.
     """
-    for key in HOST_LABELS:
+    raw_id = str(labels.get(LABDOG_HOST_ID_LABEL) or "").strip()
+    if raw_id.isdigit():
+        found = await db.execute(select(Host.id).where(Host.id == int(raw_id)))
+        host_id = found.scalar_one_or_none()
+        if host_id is not None:
+            return host_id
+    for key in (LABDOG_HOSTNAME_LABEL, *HOST_LABELS):
         raw = labels.get(key)
         if not raw:
             continue

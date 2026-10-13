@@ -9,7 +9,59 @@ import { plural } from "@/lib/fleet"
 import { Banner, Facts, Panel, Status, Table, Tag } from "@/components/ld"
 import { HostMetricsSection } from "@/components/host-metrics-section"
 import { FirewallBackendTag } from "./config/shared"
-import type { Host, HostGroup, ModuleCurrentState, VMMapping } from "@/lib/types"
+import type { Host, HostFullAuto, HostGroup, ModuleCurrentState, VMMapping } from "@/lib/types"
+
+/**
+ * Which alerts may change this host without asking — the host's side of
+ * the full-auto rules, worked out by the server, plus what would hold
+ * every alert back here right now. Hidden while the AI is off.
+ */
+function FullAutoSection({ hostId }: { hostId: number }) {
+  const { data } = useQuery<HostFullAuto>({
+    queryKey: ["host-full-auto", hostId],
+    queryFn: () => apiFetch<HostFullAuto>(`/api/ai/full-auto/hosts/${hostId}`),
+    retry: false,
+  })
+  if (!data?.ai_enabled) return null
+  const any = data.rules.length > 0
+  return (
+    <Panel
+      title="automatic fixes"
+      meta={any ? (data.blockers.length ? "held back" : `${plural(data.rules.length, "rule")}`) : "none"}
+      actions={<Link href="/settings?section=ai" className="btn btn-sm btn-ghost hover:no-underline">rules</Link>}
+      pad={11}
+    >
+      <div className="flex flex-col gap-2 text-[11.5px]" data-testid="host-full-auto">
+        {!any ? (
+          <span className="text-text-3">
+            No alert may change this host without asking{data.rules_enabled ? ": no full-auto rule covers it." : "."}
+          </span>
+        ) : (
+          <>
+            <span className="text-text-3">
+              {data.rules_enabled ? "Alerts matching these rules may change this host without asking:" : "Alerts Grafana labels like this may change this host without asking:"}
+            </span>
+            <ul className="m-0 flex list-none flex-col gap-1 p-0">
+              {data.rules.map((r) => (
+                <li key={r} className="mono">{r}</li>
+              ))}
+            </ul>
+          </>
+        )}
+        {any && data.blockers.length > 0 && (
+          <div className="flex flex-col gap-1" style={{ color: "var(--warn)" }}>
+            <span>None can right now:</span>
+            <ul className="m-0 flex list-disc flex-col gap-0.5 pl-4">
+              {data.blockers.map((b) => (
+                <li key={b}>{b}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </Panel>
+  )
+}
 
 function ProxmoxVMSection({ hostId }: { hostId: number }) {
   const [expanded, setExpanded] = useState<boolean | null>(null)
@@ -156,6 +208,7 @@ export function OverviewTab({ hostId, host, groups }: { hostId: number; host: Ho
       </Panel>
 
       <ProxmoxVMSection hostId={hostId} />
+      <FullAutoSection hostId={hostId} />
       <SyncStatusMessage host={host} modules={currentState} />
 
       <Panel title="group memberships" meta={`${plural(members.length, "group")}`} actions={!picking && avail.length > 0 && <button type="button" className="btn btn-sm" onClick={() => setPicking(true)}>+ add to group</button>} pad={0}>
