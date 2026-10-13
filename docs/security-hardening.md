@@ -380,10 +380,16 @@ at the reverse proxy as well if Grafana reaches LabDog over an untrusted
 network.
 
 Alert-driven sessions are **read-only by default**.
-`ai.alert_autonomy_level` can raise every alert to `approval`, and only
-alerts named one by one in `ai.alert_full_auto_alertnames` can reach full
-auto — there is no instance-wide full auto for alerts. Once one is named,
-the webhook is a way to make LabDog run commands as root, so the
+`ai.alert_autonomy_level` can raise every alert to `approval`. Full auto
+is reached only by an alert marked for it: by default one carrying the
+label `labdog_automate=true`, or, with `ai.alert_full_auto_rules_enabled`
+on, one matching a rule in `ai.alert_full_auto_rules`. There is no
+instance-wide full auto for alerts. Under the label default, that label
+is all an alert needs. Whoever can edit alert rules in Grafana, or post
+to the webhook with its token, can mark any alert, on any host, for full
+auto. To keep that decision in LabDog, turn the rules on and list what
+may act; an empty list allows nothing. Once any alert can reach full
+auto, the webhook is a way to make LabDog run commands as root, so the
 safeguards matter:
 
 - **The webhook token is the trigger's only lock.** A webhook-delivered
@@ -403,7 +409,7 @@ safeguards matter:
   per-alert cooldown, a per-host daily cap and lower command and time
   caps bound how much it can do before a person looks.
 
-See [Alerts](ui/alerts.md#full-auto-for-named-alerts) for the full list.
+See [Alerts](ui/alerts.md#full-auto-safeguards) for the full list.
 
 **Residual risk worth naming.** The classifier parses commands rather
 than executing them symbolically, so a sufficiently creative shell

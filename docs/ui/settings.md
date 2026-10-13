@@ -181,7 +181,8 @@ safeguards a named alert must pass.
 | Setting | Key | Default | Range | Description |
 |---------|-----|---------|-------|-------------|
 | Alert Autonomy | `ai.alert_autonomy_level` | `read_only` | read_only / approval | What every alert's session may change. At `approval` each change waits in the approvals queue, and a request nobody sees expires after `ai.approval_expiry_hours` — subscribe to [email](notifications.md) for it. |
-| Full-Auto Alerts | `ai.alert_full_auto_alertnames` | empty | up to 4000 characters | Alerts, one exact name per line, whose session may change the host without asking. No wildcards. |
+| Full-Auto by Rules | `ai.alert_full_auto_rules_enabled` | `0` | 0 – 1 | Off: an alert may change the host without asking when Grafana labels it `labdog_automate=true`. On: `ai.alert_full_auto_rules` decides. |
+| Full-Auto Rules | `ai.alert_full_auto_rules` | `labdog_automate=true` | up to 4000 characters | One rule per line; comma-separated conditions that must all hold — an alert name, `key=value` / `key!=value` labels, `host:` and `group:` (LabDog's), `!host:` / `!group:` exceptions. A rule naming a host or group LabDog does not have is refused on save and flagged afterwards. See [Alerts](alerts.md#which-alerts-may-run-at-full-auto). |
 | Full Auto Needs Snapshot | `ai.alert_full_auto_requires_snapshot` | `1` (on) | 0 – 1 | Allow full auto only on hosts LabDog can snapshot first. Off allows it on bare metal and unmapped hosts, whose changes then have no rollback point. |
 | Remediation Cooldown | `ai.alert_remediation_cooldown_minutes` | `60` | 0 – 10080 min | After a full-auto session for an alert changes a host, how long before that alert may change it again (0 = no cooldown). |
 | Remediation Daily Cap | `ai.alert_remediation_daily_cap` | `3` | 1 – 100 | Most full-auto sessions that may change one host in 24 hours, across all alerts. |

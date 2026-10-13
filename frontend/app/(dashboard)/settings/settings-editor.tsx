@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { apiFetch } from "@/lib/api"
+import { apiFetch, ApiError } from "@/lib/api"
 import { Help, Panel, Picker, Tag } from "@/components/ld"
 
 interface AppSetting {
@@ -30,6 +30,12 @@ interface AppSetting {
   suggestions?: string[] | null
   /** Character cap for `text` settings. Absent on every other type. */
   max_length?: number | null
+  /**
+   * What is wrong with the saved value now that was not when it was saved,
+   * such as a full-auto rule naming a host since deleted. Null on settings
+   * with nothing to check.
+   */
+  warnings?: string[] | null
   updated_at: string | null
 }
 
@@ -104,7 +110,8 @@ const CATEGORIES: Record<string, Category> = {
       "ai.alert_mission_template",
       // Alert remediation.
       "ai.alert_autonomy_level",
-      "ai.alert_full_auto_alertnames",
+      "ai.alert_full_auto_rules_enabled",
+      "ai.alert_full_auto_rules",
       "ai.alert_full_auto_requires_snapshot",
       "ai.alert_remediation_cooldown_minutes",
       "ai.alert_remediation_daily_cap",
@@ -385,9 +392,10 @@ export function SettingsEditor({
         return next
       })
     } catch (e: unknown) {
-      const msg = e && typeof e === "object" && "detail" in (e as Record<string, unknown>)
-        ? String((e as Record<string, unknown>).detail)
-        : "Failed to save"
+      // apiFetch throws ApiError carrying the server's detail as its
+      // message; looking for a `detail` field on it never found one, so
+      // every refusal read "Failed to save" without saying why.
+      const msg = e instanceof ApiError && e.message ? e.message : "Failed to save"
       setErrors(prev => ({ ...prev, [key]: msg }))
     }
     setSaving(prev => ({ ...prev, [key]: false }))
@@ -418,6 +426,7 @@ export function SettingsEditor({
         <div className="flex w-full flex-col gap-2">
           <textarea
             rows={12}
+            data-testid={`setting-${setting.key}`}
             className="inp mono text-[11.5px]"
             spellCheck={false}
             value={currentValue}
@@ -547,6 +556,11 @@ export function SettingsEditor({
               {errors[key]}
             </div>
           )}
+          {setting.warnings?.map((w) => (
+            <div key={w} className="mt-1 text-[11px]" style={{ color: "var(--warn)" }} data-testid={`setting-warning-${key}`}>
+              {w}
+            </div>
+          ))}
         </div>
         <div className={stacked ? "" : "shrink-0"}>{renderInput(setting)}</div>
       </div>

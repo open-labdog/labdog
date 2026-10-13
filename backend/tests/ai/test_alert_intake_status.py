@@ -58,7 +58,8 @@ async def test_off_by_default_and_refusing_without_a_token(regular_user_client, 
         "webhook_path": "/api/webhooks/grafana-alerts",
         "token_set": False,
         "token_long_enough_for_full_auto": False,
-        "full_auto_alertnames": 0,
+        "full_auto_rules_enabled": False,
+        "full_auto_rules": 1,
         "poll_minutes": 0,
         "last_webhook_alert_at": None,
         "last_poll_alert_at": None,
@@ -69,7 +70,8 @@ async def test_reports_the_token_without_returning_it(regular_user_client, db, m
     monkeypatch.setattr(settings.alerts, "webhook_token", STRONG_TOKEN)
     await _set(db, "ai.alert_intake_enabled", "1")
     await _set(db, "ai.alertmanager_poll_minutes", "5")
-    await _set(db, "ai.alert_full_auto_alertnames", "HostDown\nDiskFull\n")
+    await _set(db, "ai.alert_full_auto_rules_enabled", "1")
+    await _set(db, "ai.alert_full_auto_rules", "HostDown\nDiskFull\n")
 
     resp = await regular_user_client.get("/api/ai/alert-intake")
     assert STRONG_TOKEN not in resp.text
@@ -77,7 +79,8 @@ async def test_reports_the_token_without_returning_it(regular_user_client, db, m
     assert data["intake_enabled"] is True
     assert data["token_set"] is True
     assert data["token_long_enough_for_full_auto"] is True
-    assert data["full_auto_alertnames"] == 2
+    assert data["full_auto_rules_enabled"] is True
+    assert data["full_auto_rules"] == 2
     assert data["poll_minutes"] == 5
 
 

@@ -1,19 +1,22 @@
 """What an alert investigation may change, and the guards on full auto.
 
 An alert investigation used to be read-only by construction. This module
-decides the level instead, from two settings:
+decides the level instead:
 
 * ``ai.alert_autonomy_level`` — ``read_only`` or ``approval``. What every
   alert gets.
-* ``ai.alert_full_auto_alertnames`` — the alerts that may go further and
-  change the host with nobody asked.
+* Which alerts may go further and change the host with nobody asked:
+  those labelled ``labdog_automate=true`` in Grafana, or, with
+  ``ai.alert_full_auto_rules_enabled`` on, those matching
+  ``ai.alert_full_auto_rules`` — see :mod:`app.ai.full_auto_rules`.
 
 **Full auto is per alert, never instance-wide.** There is deliberately no
 ``full_auto`` choice on the level. An alert is a machine's opinion that
 something is wrong, and the operator is the one who knows which of those
 opinions are specific enough that acting on them unattended is safe — a
 "service down" alert with an obvious fix, say, rather than "disk will
-fill in four hours". Naming them one by one keeps that judgement theirs.
+fill in four hours". Marking them one by one, on the alert rule or in a
+rule here, keeps that judgement theirs.
 
 **A guard downgrades; it never stops the investigation.** A listed alert
 that fails any check below still gets a session, at the base level, and
@@ -21,7 +24,7 @@ the reason is recorded on the alert row. The checks are about whether a
 change may be made without a person, not about whether the alert is worth
 looking at — that was already decided by the investigation policy.
 
-The settings layer imports :func:`validate_alertnames`, so nothing at
+The settings layer imports this module, so nothing at
 module level may import :mod:`app.settings_service` or anything that does
 (the snapshot module, the models' service layer). Those imports are made
 inside the functions that need them, the same arrangement as
@@ -41,7 +44,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 logger = logging.getLogger(__name__)
 
 #: The levels ``ai.alert_autonomy_level`` may take. ``full_auto`` is
-#: reached only through the alertname list — see the module docstring.
+#: reached only by an alert marked for it — see the module docstring.
 BASE_LEVELS = ("read_only", "approval")
 
 #: Shortest webhook token that may let an alert change a host.
@@ -83,38 +86,9 @@ class AlertAutonomy:
 
     level: str
     #: Shown on the alert row. Empty when there is nothing to explain — an
-    #: alert that is not on the list simply runs at the base level, and
+    #: alert not marked for full auto simply runs at the base level, and
     #: saying so on every row would bury the rows where it matters.
     note: str = ""
-
-
-def parse_alertnames(raw: str | None) -> list[str]:
-    """The names in ``ai.alert_full_auto_alertnames``, one per line."""
-    names: list[str] = []
-    for line in (raw or "").splitlines():
-        name = line.strip()
-        if name and name not in names:
-            names.append(name)
-    return names
-
-
-def validate_alertnames(raw: str) -> str:
-    """Normalise the list, or raise ``ValueError`` saying what is wrong.
-
-    Names are matched exactly, so a wildcard would match nothing and the
-    operator would believe they had enabled full auto for a family of
-    alerts. Refused rather than accepted silently.
-    """
-    names = parse_alertnames(raw)
-    for name in names:
-        if "*" in name or "?" in name:
-            raise ValueError(
-                f"{name!r}: names are matched exactly and wildcards are not supported. "
-                f"List each alert by its full name, one per line."
-            )
-        if len(name) > 255:
-            raise ValueError(f"{name[:40]!r}…: an alert name is at most 255 characters.")
-    return "\n".join(names)
 
 
 def is_unattended_remediation(session: Any) -> bool:
@@ -145,17 +119,19 @@ async def resolve(db: AsyncSession, event: Any) -> AlertAutonomy:
         # towards the level that cannot change anything.
         base = "read_only"
 
-    listed = parse_alertnames(str(await get_setting_typed("ai.alert_full_auto_alertnames", db)))
-    if event.alertname not in listed:
+    from app.ai.full_auto_rules import first_match
+
+    rule = await first_match(db, event)
+    if rule is None:
         return AlertAutonomy(base)
 
     refusal = await _full_auto_refusal(db, event)
     if refusal:
         return AlertAutonomy(
             base,
-            f"On the full-auto list, but ran {_LEVEL_LABEL[base]}: {refusal}.",
+            f"Matched {rule.text}, but ran {_LEVEL_LABEL[base]}: {refusal}.",
         )
-    return AlertAutonomy("full_auto", f"Full auto: {event.alertname} is on the full-auto list.")
+    return AlertAutonomy("full_auto", f"Full auto: matched {rule.text}.")
 
 
 async def _full_auto_refusal(db: AsyncSession, event: Any) -> str | None:
@@ -185,7 +161,7 @@ async def _full_auto_refusal(db: AsyncSession, event: Any) -> str | None:
         )
 
     if int(await get_setting_typed("ai.alert_full_auto_requires_snapshot", db)):
-        refusal = await _snapshot_refusal(db, event.host_id)
+        refusal = await snapshot_refusal(db, event.host_id)
         if refusal:
             return refusal
 
@@ -243,7 +219,7 @@ async def _full_auto_refusal(db: AsyncSession, event: Any) -> str | None:
     return None
 
 
-async def _snapshot_refusal(db: AsyncSession, host_id: int) -> str | None:
+async def snapshot_refusal(db: AsyncSession, host_id: int) -> str | None:
     """Why there would be no rollback point before a change, if there wouldn't.
 
     Only the precondition. A host that maps to a VM can still fail to

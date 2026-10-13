@@ -135,12 +135,23 @@ source of actions; see [Upgrading to 1.0.0](docs/upgrade.md#upgrading-to-100).
 - **Alert investigations can fix what they find.** They were read-only
   with no way to raise them. `ai.alert_autonomy_level` now sets what every
   alert's session may change — `read_only` (the default, so nothing
-  changes on upgrade) or `approval` — and `ai.alert_full_auto_alertnames`
-  names alerts, one per line, whose session may change the host without
-  asking. There is no instance-wide full auto for alerts: you name each
-  one whose fix you trust to run unattended.
+  changes on upgrade) or `approval`. An alert marked for it may go
+  further and change the host without asking. By default that is an alert
+  whose Grafana rule carries the label `labdog_automate=true`, set with a
+  template if only some hosts should qualify. With
+  `ai.alert_full_auto_rules_enabled` on, `ai.alert_full_auto_rules`
+  decides instead, one rule per line, matching the alert's name, its
+  labels, and the LabDog host it resolved to or that host's groups. For
+  example, `NginxDown, host:web-1` or `DiskFull, group:db, !host:db-legacy`.
+  A rule naming a host or group LabDog does not have is refused on save,
+  and flagged beside the list if one disappears later. There is no
+  instance-wide full auto for alerts: each one whose fix you trust to run
+  unattended is marked, on the alert rule or in a rule. The alert's row
+  quotes the rule it matched. A host's Overview has an **automatic
+  fixes** panel listing the rules that can cover it and anything that
+  would hold every alert back there.
 
-  A named alert runs at full auto only while every safeguard holds: it is
+  A marked alert runs at full auto only while every safeguard holds: it is
   firing and names a LabDog host, which is the only host it may touch; a
   webhook-delivered alert needs a webhook token of at least 32
   characters; the host can be snapshotted first
@@ -184,6 +195,14 @@ source of actions; see [Upgrading to 1.0.0](docs/upgrade.md#upgrading-to-100).
   new host.
 
 ### Changed
+
+- **An alert on a metric Alloy shipped is matched to its host by id.**
+  The alloy-install action stamps `labdog_host_id` and `labdog_hostname`
+  on every series, and the host page's metrics already used them, but
+  alert intake looked only at `nodename`, `hostname`, `host`, `node` and
+  `instance`, matching by name or address. It now tries `labdog_host_id`
+  first, then `labdog_hostname`, then those. An id that is no longer a
+  host is skipped.
 
 - **Settings › Integrations shows whether alerts and pushes can get in.**
   The Webhooks card listed four endpoint paths, with a grey dot that never
@@ -520,6 +539,11 @@ source of actions; see [Upgrading to 1.0.0](docs/upgrade.md#upgrading-to-100).
   had no caller since the wizard moved onto `Steps`.
 
 ### Fixed
+
+- **A setting the server refuses says why.** Saving a value the server
+  rejected, such as a wildcard in a full-auto rule, showed only "Failed to
+  save". The editor looked for the reason in the wrong place. It now shows
+  the server's message under the setting.
 
 - **Settings › Git repositories shows when a repository last synced.** A
   repository that only feeds action packs read *never synced*, though its

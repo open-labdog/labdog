@@ -36,7 +36,7 @@ const INVESTIGATION_LABEL: Record<string, string> = {
 }
 
 /** What the investigation was allowed to change. Shown when that is more
- *  than looking, or when the alert is on the full-auto list and a
+ *  than looking, or when the alert is marked for full auto and a
  *  safeguard held it back — a plain read-only row says nothing, because
  *  that is every row until remediation is switched on. The note (why this
  *  level) is on hover, like the outcome detail beside it. */

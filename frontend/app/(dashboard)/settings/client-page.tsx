@@ -179,15 +179,21 @@ function intakeCard(s: AlertIntakeStatus | undefined): { state: Tone; status?: s
   if (!s.intake_enabled) return { state: "idle", status: "off", detail: "intake off", meta: "turn on ai.alert_intake_enabled to record Grafana alerts" }
   const origin = typeof window !== "undefined" ? window.location.origin : ""
   const last = [s.last_webhook_alert_at, s.last_poll_alert_at].filter((t): t is string => !!t).sort().at(-1)
-  const weakForFullAuto = s.full_auto_alertnames > 0 && !s.token_long_enough_for_full_auto
+  // With the rules off, any alert Grafana labels labdog_automate=true may
+  // act, so a short token always costs something; with them on, only when
+  // the list has rules.
+  const fullAutoPossible = !s.full_auto_rules_enabled || s.full_auto_rules > 0
+  const weakForFullAuto = s.token_set && !s.token_long_enough_for_full_auto && fullAutoPossible
   const meta = [
     last ? `last alert ${shortAgo(last)} ago` : "no alert received yet",
     s.poll_minutes > 0 && `polls Alertmanager every ${s.poll_minutes} min`,
     !s.token_set && "set [alerts] webhook_token in labdog.toml",
-    s.token_set && weakForFullAuto && "token under 32 characters: no full auto",
+    weakForFullAuto && "token under 32 characters: no full auto",
   ].filter(Boolean).join(" · ")
   return {
-    state: (!s.token_set && s.poll_minutes === 0) || weakForFullAuto ? "warn" : "ok",
+    // A short token only needs attention once someone has written rules
+    // that expect full auto; under the label default it is a note.
+    state: (!s.token_set && s.poll_minutes === 0) || (weakForFullAuto && s.full_auto_rules_enabled) ? "warn" : "ok",
     status: s.token_set ? undefined : s.poll_minutes > 0 ? "polling only" : undefined,
     detail: s.token_set ? `POST ${origin}${s.webhook_path}` : "the webhook refuses every alert: no token",
     meta,

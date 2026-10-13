@@ -53,6 +53,7 @@ from app.ai.schemas import (
     AIUsageSummary,
     AlertEventResponse,
     AlertIntakeStatus,
+    HostFullAutoResponse,
     provider_to_response,
     session_to_response,
 )
@@ -1079,10 +1080,12 @@ async def alert_intake_status(
     intake that is on but refusing every webhook for want of a token looked
     exactly like one that was working and quiet.
     """
-    from app.ai.alert_autonomy import MIN_WEBHOOK_TOKEN_CHARS, parse_alertnames
+    from app.ai.alert_autonomy import MIN_WEBHOOK_TOKEN_CHARS
+    from app.ai.full_auto_rules import active_rules
     from app.config import settings
 
     token = settings.alerts.webhook_token
+    rules_enabled, rules = await active_rules(db)
     last = dict(
         (
             await db.execute(
@@ -1097,12 +1100,56 @@ async def alert_intake_status(
         webhook_path="/api/webhooks/grafana-alerts",
         token_set=bool(token),
         token_long_enough_for_full_auto=len(token) >= MIN_WEBHOOK_TOKEN_CHARS,
-        full_auto_alertnames=len(
-            parse_alertnames(str(await get_setting_typed("ai.alert_full_auto_alertnames", db)))
-        ),
+        full_auto_rules_enabled=rules_enabled,
+        full_auto_rules=len(rules),
         poll_minutes=int(await get_setting_typed("ai.alertmanager_poll_minutes", db)),
         last_webhook_alert_at=last.get("grafana_webhook"),
         last_poll_alert_at=last.get("alertmanager_poll"),
+    )
+
+
+@router.get("/full-auto/hosts/{host_id}", response_model=HostFullAutoResponse)
+async def host_full_auto(
+    host_id: int,
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Which alerts may fix ``host_id`` without asking.
+
+    The per-host view of the full-auto rules, so a host's page answers
+    "can an alert change this machine unattended?" without reading the
+    whole list. Only the safeguards that hold for every alert are listed
+    as blockers; the cooldown, the daily cap and the rest depend on the
+    alert and the moment, and its row on the Alerts page reports them.
+    """
+    from app.ai.alert_autonomy import MIN_WEBHOOK_TOKEN_CHARS, snapshot_refusal
+    from app.ai.full_auto_rules import active_rules, host_context
+    from app.config import settings
+    from app.models.host import Host
+
+    if await db.get(Host, host_id) is None:
+        raise HTTPException(status_code=404, detail="Host not found")
+    rules_enabled, rules = await active_rules(db)
+    hostname, groups = await host_context(db, host_id)
+    applicable = [r.text for r in rules if hostname and r.applies_to_host(hostname, groups)]
+
+    blockers: list[str] = []
+    if not int(await get_setting_typed("ai.alert_intake_enabled", db)):
+        blockers.append("alert intake is off (ai.alert_intake_enabled)")
+    if len(settings.alerts.webhook_token) < MIN_WEBHOOK_TOKEN_CHARS:
+        blockers.append(
+            f"the alert webhook token is shorter than {MIN_WEBHOOK_TOKEN_CHARS} characters, "
+            f"so alerts that arrive by webhook cannot run at full auto"
+        )
+    if int(await get_setting_typed("ai.alert_full_auto_requires_snapshot", db)):
+        refusal = await snapshot_refusal(db, host_id)
+        if refusal:
+            blockers.append(refusal)
+    return HostFullAutoResponse(
+        ai_enabled=bool(int(await get_setting_typed("ai.enabled", db))),
+        rules_enabled=rules_enabled,
+        rules=applicable,
+        blockers=blockers,
     )
 
 

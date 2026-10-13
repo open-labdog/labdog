@@ -1,6 +1,6 @@
 """Alert remediation: what an alert investigation may change.
 
-Full auto is reached only by naming an alert, and every safeguard on it
+Full auto is reached only by an alert marked for it, and every safeguard on it
 downgrades rather than refuses — the alert is still investigated, at the
 base level, with the reason on its row. These tests pin both halves: that
 each safeguard holds, and that holding it costs the investigation nothing.
@@ -18,9 +18,7 @@ from sqlalchemy import select
 from app.ai.alert_autonomy import (
     MIN_WEBHOOK_TOKEN_CHARS,
     busy_refusal,
-    parse_alertnames,
     resolve,
-    validate_alertnames,
 )
 from app.ai.loop import ALERT_TURNS_BEYOND_COMMANDS, AgentLoop, LoopCaps, build_system_prompt
 from app.ai.models import AISession, AIToolCall, AlertEvent
@@ -61,13 +59,14 @@ def strong_token(monkeypatch):
 
 @pytest.fixture
 async def full_auto_ready(db, strong_token):
-    """``ALERT`` on the list, and the snapshot precondition off.
+    """``ALERT`` the one rule, and the snapshot precondition off.
 
     The snapshot requirement is the one safeguard that needs Proxmox rows
     to satisfy, so most tests switch it off and the tests about it turn it
     back on. Everything else is at its default.
     """
-    await _set(db, "ai.alert_full_auto_alertnames", ALERT)
+    await _set(db, "ai.alert_full_auto_rules_enabled", "1")
+    await _set(db, "ai.alert_full_auto_rules", ALERT)
     await _set(db, "ai.alert_full_auto_requires_snapshot", "0")
 
 
@@ -144,41 +143,18 @@ async def _past_remediation(
 
 
 # ---------------------------------------------------------------------------
-# The list
+# The settings
 # ---------------------------------------------------------------------------
 
 
-class TestAlertnameList:
-    def test_one_name_per_line_trimmed_and_deduplicated(self) -> None:
-        assert parse_alertnames("  NginxDown \n\nDiskFull\nNginxDown\n") == [
-            "NginxDown",
-            "DiskFull",
-        ]
-
-    def test_saving_normalises_it(self) -> None:
-        assert validate_alertnames(" NginxDown\n\n DiskFull ") == "NginxDown\nDiskFull"
-
-    def test_an_empty_list_is_allowed(self) -> None:
-        assert validate_alertnames("") == ""
-
-    @pytest.mark.parametrize("name", ["Nginx*", "Disk?ull", "*"])
-    def test_a_wildcard_is_refused(self, name: str) -> None:
-        """Names match exactly, so a wildcard would match nothing while the
-        operator believed a whole family of alerts could now act."""
-        with pytest.raises(ValueError, match="wildcards are not supported"):
-            validate_alertnames(name)
-
-    def test_a_name_longer_than_an_alertname_can_be_is_refused(self) -> None:
-        with pytest.raises(ValueError, match="255"):
-            validate_alertnames("x" * 256)
-
-    def test_the_setting_runs_the_validator_on_save(self) -> None:
+class TestSettings:
+    def test_the_rules_run_their_validator_on_save(self) -> None:
         with pytest.raises(ValueError, match="wildcards"):
-            _validate("ai.alert_full_auto_alertnames", "Nginx*")
+            _validate("ai.alert_full_auto_rules", "Nginx*")
 
     def test_the_base_level_has_no_full_auto_choice(self) -> None:
-        """Full auto for every alert is exactly the state the per-alert list
-        exists to rule out."""
+        """Full auto for every alert is exactly the state marking alerts one
+        by one exists to rule out."""
         with pytest.raises(ValueError, match="must be one of"):
             _validate("ai.alert_autonomy_level", "full_auto")
 
@@ -266,7 +242,7 @@ class TestFullAuto:
         host = await create_host(db)
         decided = await resolve(db, await _alert(db, host.id))
         assert decided.level == "full_auto"
-        assert ALERT in decided.note
+        assert decided.note == f"Full auto: matched {ALERT}."
 
     async def test_names_match_exactly(self, db, full_auto_ready) -> None:
         host = await create_host(db)
@@ -277,7 +253,7 @@ class TestFullAuto:
         await _set(db, "ai.alert_autonomy_level", "approval")
         decided = await resolve(db, await _alert(db, None))
         assert decided.level == "approval"
-        assert decided.note.startswith("On the full-auto list, but ran approval:")
+        assert decided.note.startswith(f"Matched {ALERT}, but ran approval:")
 
     async def test_a_resolved_alert_does_not(self, db, full_auto_ready) -> None:
         host = await create_host(db)

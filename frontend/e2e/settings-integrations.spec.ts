@@ -10,7 +10,8 @@ type Intake = {
   intake_enabled: boolean
   token_set: boolean
   token_long_enough_for_full_auto: boolean
-  full_auto_alertnames: number
+  full_auto_rules_enabled: boolean
+  full_auto_rules: number
   poll_minutes: number
   last_webhook_alert_at: string | null
   last_poll_alert_at: string | null
@@ -20,7 +21,8 @@ const OFF: Intake = {
   intake_enabled: false,
   token_set: false,
   token_long_enough_for_full_auto: false,
-  full_auto_alertnames: 0,
+  full_auto_rules_enabled: false,
+  full_auto_rules: 1,
   poll_minutes: 0,
   last_webhook_alert_at: null,
   last_poll_alert_at: null,
@@ -59,9 +61,15 @@ test.describe("Alert intake card", () => {
     await expect(card).toContainText("last alert 3h ago")
   })
 
-  test("a short token with alerts on the full-auto list", async ({ page }) => {
-    const card = await open(page, { intake_enabled: true, token_set: true, full_auto_alertnames: 2 })
+  test("a short token with full-auto rules written needs attention", async ({ page }) => {
+    const card = await open(page, { intake_enabled: true, token_set: true, full_auto_rules_enabled: true, full_auto_rules: 2 })
     await expect(card).toContainText("needs attention")
+    await expect(card).toContainText("token under 32 characters: no full auto")
+  })
+
+  test("under the label default a short token is a note, not a warning", async ({ page }) => {
+    const card = await open(page, { intake_enabled: true, token_set: true })
+    await expect(card).toContainText("connected")
     await expect(card).toContainText("token under 32 characters: no full auto")
   })
 })
