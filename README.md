@@ -65,9 +65,15 @@ parser, bounded by a host allowlist, redacted, and written to the audit log.
 - **AI verification** — a destructive action can ask an LLM whether it left
   the host healthy, judged on evidence LabDog collected rather than anything
   the model went looking for.
-- **Alert-driven investigation** — point a Grafana contact point at LabDog
-  and eligible alerts get a read-only investigation on their own, gated by
-  severity and budget. The prompt it starts from is yours to edit.
+- **Alert-driven investigation and fixes** — point a Grafana contact point
+  at LabDog and eligible alerts get an investigation on their own, gated by
+  severity and budget. It only looks unless you allow more. It can ask
+  for approval for each change. Alerts you mark, with a `labdog_automate`
+  label in Grafana or with rules naming alerts, hosts and groups, may fix
+  the host unattended. Every unattended fix is snapshotted first and
+  checked afterwards, and one that made the host worse is rolled back.
+- **Email** — fired alerts, approvals waiting and automatic fixes, for
+  whoever subscribes.
 
 Runs against OpenAI-compatible endpoints (Ollama, vLLM, OpenRouter), the
 Anthropic API, or a Claude subscription. See the
@@ -113,7 +119,7 @@ All technical content lives under **[the documentation site](https://open-labdog
 
 - **Concepts** — [how config is applied](https://open-labdog.github.io/labdog/#how-configuration-is-applied) · [precedence (worked examples)](https://open-labdog.github.io/labdog/examples/precedence/)
 - **Operations** — [installation](https://open-labdog.github.io/labdog/#installation) · [local development](https://open-labdog.github.io/labdog/#local-development) · [API reference](https://open-labdog.github.io/labdog/#api-endpoints)
-- **Guides** — [GitOps](https://open-labdog.github.io/labdog/examples/gitops/) · [Actions & packs](https://open-labdog.github.io/labdog/ui/actions/) · [example packs](https://open-labdog.github.io/labdog/examples/action-packs/) · [Scheduled actions](https://open-labdog.github.io/labdog/ui/scheduled-actions/) · [AI assistant](https://open-labdog.github.io/labdog/ui/assistant/) · [Alerts](https://open-labdog.github.io/labdog/ui/alerts/) · [Live host metrics](https://open-labdog.github.io/labdog/ui/metrics/) · [Metrics export](https://open-labdog.github.io/labdog/metrics-export/)
+- **Guides** — [GitOps](https://open-labdog.github.io/labdog/examples/gitops/) · [Actions & packs](https://open-labdog.github.io/labdog/ui/actions/) · [example packs](https://open-labdog.github.io/labdog/examples/action-packs/) · [Scheduled actions](https://open-labdog.github.io/labdog/ui/scheduled-actions/) · [AI assistant](https://open-labdog.github.io/labdog/ui/assistant/) · [Alerts](https://open-labdog.github.io/labdog/ui/alerts/) · [Live host metrics](https://open-labdog.github.io/labdog/ui/host-metrics/) · [Metrics export](https://open-labdog.github.io/labdog/metrics-export/)
 
 ## 🐛 Found a bug?
 
