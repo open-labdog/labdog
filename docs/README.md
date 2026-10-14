@@ -580,6 +580,8 @@ See [ui/assistant.md](./ui/assistant.md) for autonomy levels, approvals, snapsho
 | `POST` | `/api/webhooks/grafana-alerts` | Grafana contact-point receiver (bearer or basic auth against `[alerts] webhook_token`; an unset token refuses every request) |
 | `GET` | `/api/ai/alerts` | Alerts received, with the investigation each one did or did not get |
 | `POST` | `/api/ai/alerts/{id}/investigate` | Start an investigation by hand, bypassing only the severity threshold |
+| `GET` | `/api/ai/alert-intake` | Whether alerts can get in: intake on, whether the webhook token is set and long enough for full auto (never the token), the full-auto mode, and the last alert by each route (drives the Settings › Integrations card) |
+| `GET` | `/api/ai/full-auto/hosts/{id}` | The full-auto rules that can cover one host, and what would hold every alert back on it (drives the host page's panel) |
 
 See [ui/alerts.md](./ui/alerts.md) for the intake paths, deduplication, and the auto-investigation policy.
 
