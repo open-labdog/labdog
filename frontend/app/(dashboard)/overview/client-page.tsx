@@ -480,7 +480,7 @@ export default function OverviewPage() {
               </button>
             }
           >
-            {(schedules ?? []).length === 0 ? <Empty title="Nothing scheduled" note="Schedules are actions with a cron. Create one from Operations · Actions." /> : (schedules ?? []).map((s) => <SchedRow key={s.id} s={s} radius={radius(s)} fleet={all.length} />)}
+            {(schedules ?? []).length === 0 ? <Empty title="Nothing scheduled" note="Schedules are actions on a cron or on an alert. Create one from Operations · Actions." /> : (schedules ?? []).map((s) => <SchedRow key={s.id} s={s} radius={radius(s)} fleet={all.length} />)}
             <div className="px-[11px] py-[9px] text-[11.5px] text-text-3">Scheduled runs apply unattended. Snapshot-backed ones are reversible.</div>
           </Panel>
           <IntegrationHealth />

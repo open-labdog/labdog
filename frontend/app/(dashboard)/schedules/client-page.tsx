@@ -25,7 +25,7 @@ export default function SchedulesPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <Toolbar actions={<button type="button" className="btn btn-sm btn-primary" onClick={() => setCreateOpen(true)}>+ New</button>}>
-        <span className="tt">cron-driven runs of any registered action across hosts, groups, or the entire fleet</span>
+        <span className="tt">runs of any registered action on a cron or when an alert fires, across hosts, groups, or the entire fleet</span>
       </Toolbar>
 
       {error && <Banner tone="danger" flush>Could not load schedules: {error.message}</Banner>}
