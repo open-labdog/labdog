@@ -55,7 +55,7 @@ One row per schedule:
 |--------|-------------|
 | action | The action's name, with a **built-in** tag or its pack |
 | target | The host or group (linked to its page), or *All hosts* for the fleet |
-| schedule | The cron expression, with a plain-English reading |
+| when | The cron expression, with a plain-English reading — or **on alert** and the alerts it reacts to |
 | last run | The last run's status and how long ago |
 | enabled | Whether it fires |
 | options | **snap**, **verify** and **rollback** tags — on or off — for destructive actions |
@@ -63,7 +63,9 @@ One row per schedule:
 Each row has **edit · runs · delete**. **runs** opens the schedule's run
 history in a dialog — the latest 20 `action_runs` for that schedule, each
 linking to its run screen — with **Run now** in the footer (disabled while
-a run is already in flight). Delete asks first.
+a run is already in flight). An alert trigger has no **Run now**: it runs
+on the host an alert names, so there is nothing to run it against by
+hand; its runs say which host the alert was on. Delete asks first.
 
 The same list, without the target column, is on each host's and group's
 Activity tab › Schedules.
@@ -88,18 +90,19 @@ The dialog is a four-step wizard — the steps across the top, **Back** and
 
 | Step | What |
 |------|------|
-| **Action & target** | Action picker (pack-supplied actions only — `_builtin.*` pseudo-actions have their own UI surfaces and are hidden here), target choice (Host / Group / Fleet — Fleet disabled when the action doesn't `supports_fleet`), and the host or group selector. |
+| **Action & target** | **Runs**: *on a schedule* or *when an alert fires on a host*. Action picker (pack-supplied actions only — `_builtin.*` pseudo-actions have their own UI surfaces and are hidden here), target choice (Host / Group / Fleet — Fleet disabled when the action doesn't `supports_fleet`; for an alert trigger any kind is allowed when the action runs on hosts, since the run is on one host), and the host or group selector. |
 | **Parameters** | Form generated from the action's manifest. String / int / bool / choice — same shape as the ad-hoc run dialog. |
-| **Schedule** | 5-field cron input, read in the [scheduling timezone](#timezone). Live `cronToHuman` preview, the next three run times as the scheduler computes them (shown in that timezone, not the browser's), plus quick picks (*Every 15 minutes*, *Hourly*, *Nightly (03:00)*, *Weekdays 03:00*, *Weekly Sun 03:00*, *Monthly 1st 03:00* …). |
-| **Review** | Read-only summary. **Destructive options block** is shown only when `action.destructive=true`: snapshot, verify, auto_rollback toggles + batch_size for non-host targets. |
+| **When** | For an alert trigger: the **alerts** it reacts to, one rule per line, with the recent recorded alerts the rules and target would have fired on listed underneath as you type; the **cooldown**; and **If the action does not fix the alert, hand it to the AI**. See [When an alert fires](#when-an-alert-fires). For a schedule: 5-field cron input, read in the [scheduling timezone](#timezone). Live `cronToHuman` preview, the next three run times as the scheduler computes them (shown in that timezone, not the browser's), plus quick picks (*Every 15 minutes*, *Hourly*, *Nightly (03:00)*, *Weekdays 03:00*, *Weekly Sun 03:00*, *Monthly 1st 03:00* …). |
+| **Review** | Read-only summary. **Destructive options block** is shown only when `action.destructive=true`: snapshot, verify, auto_rollback toggles + batch_size for non-host targets (not for an alert trigger, whose run is always one host). |
 
 Submit creates the row via `POST /api/scheduled-actions`. On success
 the dialog closes, the list (and any per-target Schedules view)
 refreshes, and the row appears immediately.
 
-`action_key` and `target_*` are **immutable on edit** — re-creating is
-the right path for "I want a different action against this target."
-The backend rejects edits that change them with `422`.
+`action_key`, `target_*` and whether it runs on a schedule or on alerts
+are **immutable on edit** — re-creating is the right path for "I want a
+different action against this target." The backend rejects edits that
+change them with `422`.
 
 Changing a schedule's cron expression, or switching it on, starts it
 afresh: the first run is the expression's next time after the edit.

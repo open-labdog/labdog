@@ -5,7 +5,7 @@ import type { Page } from "@playwright/test"
  *  web1; more make it a group run of host-01, host-02, … */
 export async function mockRun(
   page: Page,
-  { id = 9301, log, status = "succeeded", hosts = 1 }: { id?: number; log: string; status?: string; hosts?: number },
+  { id = 9301, log, status = "succeeded", hosts = 1, alert }: { id?: number; log: string; status?: string; hosts?: number; alert?: { id: number; name: string } },
 ) {
   const hostRuns = Array.from({ length: hosts }, (_, i) => ({
     id: id * 100 + i,
@@ -29,6 +29,8 @@ export async function mockRun(
     target_kind: hosts === 1 ? "host" : "group",
     target_label: hosts === 1 ? "web1" : "group: web",
     scheduled_action_id: null,
+    alert_event_id: alert?.id ?? null,
+    alertname: alert?.name ?? null,
     parameters: {},
     parallelism: 1,
     snapshot_enabled: true,

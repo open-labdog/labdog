@@ -109,7 +109,7 @@ function SchedRow({ s, radius, fleet }: { s: ScheduledAction; radius: number; fl
       <div className="min-w-0 flex-1">
         <div className="trunc text-xs text-text">{s.action_name ?? s.action_key}</div>
         <div className="mono trunc text-[10.5px] text-text-3">
-          {s.schedule_cron ?? "manual"} · {s.target_kind === "fleet" ? "all hosts" : `${s.target_kind}: ${s.target_name ?? s.target_id}`}
+          {s.trigger === "alert" ? "on alert" : s.schedule_cron ?? "manual"} · {s.target_kind === "fleet" ? "all hosts" : `${s.target_kind}: ${s.target_name ?? s.target_id}`}
         </div>
       </div>
       {!s.enabled && <Tag>paused</Tag>}

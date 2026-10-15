@@ -372,3 +372,75 @@ test.describe("Schedules", () => {
     await expect(page.getByTestId("scheduled-action-row")).toHaveCount(2)
   })
 })
+
+test.describe("Alert triggers", () => {
+  test("a schedule that fires on alerts: wizard → POST body", async ({ page }) => {
+    const captured: { lastBody?: unknown } = {}
+    await setupCommonMocks(page, { captureCreate: captured })
+    const preview: { lastBody?: Record<string, unknown> } = {}
+    await page.route("**/api/scheduled-actions/preview-matches", (r) => {
+      preview.lastBody = JSON.parse(r.request().postData() || "{}")
+      return fulfillJSON(r, [
+        { alert_event_id: 41, alertname: "NginxDown", status: "resolved", host_id: FAKE_HOST_ID, hostname: "e2e-host", created_at: "2026-10-14T13:23:13Z" },
+      ])
+    })
+
+    await page.goto("/schedules")
+    await page.getByRole("button", { name: "+ New" }).click()
+    await page.getByTestId("trigger-alert").check()
+    // linux-upgrade cannot run on the fleet on a clock, but an alert
+    // trigger runs on one host, so any scope is fine.
+    await page.getByTestId("action-picker").selectOption("linux-upgrade")
+    await expect(page.getByTestId("target-fleet")).toBeEnabled()
+    await page.getByTestId("target-fleet").click()
+    await page.getByRole("button", { name: "Continue" }).click()
+    await page.getByRole("button", { name: "Continue" }).click()
+
+    // When: the alerts, a preview of what they would have matched, the options.
+    await expect(page.getByRole("button", { name: "Continue" })).toBeDisabled()
+    await page.getByTestId("alert-match").fill("NginxDown, severity=critical")
+    await expect(page.getByTestId("alert-preview")).toContainText("Would have run for 1 recorded alert")
+    await expect(page.getByTestId("alert-preview")).toContainText("NginxDown on e2e-host")
+    expect(preview.lastBody).toMatchObject({ target_kind: "fleet", target_id: null, alert_match: "NginxDown, severity=critical" })
+    await page.getByLabel("cooldown (minutes)").fill("30")
+    await page.getByTestId("alert-investigate-on-failure").uncheck()
+    await page.getByRole("button", { name: "Continue" }).click()
+
+    await expect(page.getByText("the host the alert names")).toBeVisible()
+    // One host per run, so there is no batch size to pick.
+    await expect(page.locator("#schedule-batch-size")).toHaveCount(0)
+    await page.getByTestId("schedule-submit").click()
+
+    await expect.poll(() => captured.lastBody).toMatchObject({
+      action_key: "linux-upgrade",
+      target_kind: "fleet",
+      target_id: null,
+      trigger: "alert",
+      alert_match: "NginxDown, severity=critical",
+      schedule_cron: null,
+      alert_cooldown_minutes: 30,
+      investigate_on_failure: false,
+      batch_size: 1,
+    })
+  })
+
+  test("the list shows an alert trigger, and its history has no Run now", async ({ page }) => {
+    const row = {
+      ...makeSchedule({ id: 9100, action_key: "linux-upgrade", action_name: "Upgrade Linux packages", schedule_cron: null as unknown as string }),
+      trigger: "alert",
+      alert_match: "NginxDown\n# a comment\nlabdog_action=upgrade",
+      alert_cooldown_minutes: 60,
+      investigate_on_failure: true,
+    }
+    await setupCommonMocks(page, { schedules: [row as unknown as ScheduleRow] })
+    await page.route("**/api/scheduled-actions/9100/runs**", (r) => fulfillJSON(r, []))
+
+    await page.goto("/schedules")
+    const tableRow = page.getByRole("row").filter({ hasText: "Upgrade Linux packages" })
+    await expect(tableRow.getByText("on alert")).toBeVisible()
+    await expect(tableRow.getByText("NginxDown · labdog_action=upgrade")).toBeVisible()
+    await tableRow.getByRole("button", { name: "runs" }).click()
+    await expect(page.getByText("run history")).toBeVisible()
+    await expect(page.getByTestId("run-now-button")).toHaveCount(0)
+  })
+})

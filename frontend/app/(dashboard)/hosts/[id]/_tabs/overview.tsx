@@ -22,17 +22,44 @@ function FullAutoSection({ hostId }: { hostId: number }) {
     queryFn: () => apiFetch<HostFullAuto>(`/api/ai/full-auto/hosts/${hostId}`),
     retry: false,
   })
-  if (!data?.ai_enabled) return null
-  const any = data.rules.length > 0
+  if (!data || (!data.ai_enabled && data.alert_actions.length === 0)) return null
+  const any = data.ai_enabled && data.rules.length > 0
   return (
     <Panel
       title="automatic fixes"
-      meta={any ? (data.blockers.length ? "held back" : `${plural(data.rules.length, "rule")}`) : "none"}
-      actions={<Link href="/settings?section=ai" className="btn btn-sm btn-ghost hover:no-underline">rules</Link>}
+      meta={
+        [
+          data.alert_actions.length > 0 ? plural(data.alert_actions.length, "alert action") : null,
+          data.ai_enabled ? (any ? (data.blockers.length ? "full auto held back" : `full auto: ${plural(data.rules.length, "rule")}`) : "no full auto") : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      }
+      actions={
+        <>
+          {data.alert_actions.length > 0 && <Link href="/actions?tab=schedules" className="btn btn-sm btn-ghost hover:no-underline">schedules</Link>}
+          {data.ai_enabled && <Link href="/settings?section=ai" className="btn btn-sm btn-ghost hover:no-underline">rules</Link>}
+        </>
+      }
       pad={11}
     >
       <div className="flex flex-col gap-2 text-[11.5px]" data-testid="host-full-auto">
-        {!any ? (
+        {data.alert_actions.length > 0 && (
+          <div className="flex flex-col gap-1" data-testid="host-alert-actions">
+            <span className="text-text-3">Alerts on this host run these actions:</span>
+            <ul className="m-0 flex list-none flex-col gap-1 p-0">
+              {data.alert_actions.map((a) => (
+                <li key={a.id} className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-text">{a.action_name ?? a.action_key}</span>
+                  <span className="text-text-faint">when</span>
+                  <span className="mono">{a.alert_match.split("\n").filter((l) => l.trim() && !l.trim().startsWith("#")).join(" · ")}</span>
+                  {!a.enabled && <Tag>disabled</Tag>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {!data.ai_enabled ? null : !any ? (
           <span className="text-text-3">
             No alert may change this host without asking{data.rules_enabled ? ": no full-auto rule covers it." : "."}
           </span>
