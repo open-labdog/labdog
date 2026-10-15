@@ -23,11 +23,12 @@ without anyone asking. Both are off by default.
 
 ## Turning it on
 
-Two settings, in [Settings](settings.md):
+Two settings, in [Settings](settings.md): intake under Fleet defaults,
+investigation under AI.
 
 | Setting | Default | Effect |
 |---|---|---|
-| `ai.alert_intake_enabled` | `0` | Accept alerts at all |
+| `alerts.intake_enabled` | `0` | Accept alerts at all |
 | `ai.auto_investigate_enabled` | `0` | Start a session when an eligible alert arrives |
 
 Plus a token in the config file — **not** in the UI settings, because
@@ -65,7 +66,7 @@ Grafana version.
 ### Alertmanager poll (catch-up)
 
 ```
-ai.alertmanager_poll_minutes = 5     # 0 = never poll — the default
+alerts.poll_minutes = 5     # 0 = never poll — the default
 ```
 
 LabDog reads the Alertmanager API of your default Mimir instance — the
@@ -86,7 +87,7 @@ Grafana stack:
 A Grafana-managed setup is the common case, and for it the poller is not
 merely unnecessary — it is **silently useless**: the endpoint answers
 `200` with an empty list, so the poll looks healthy and records nothing,
-forever. Leave `ai.alertmanager_poll_minutes` at `0` and use the webhook
+forever. Leave `alerts.poll_minutes` at `0` and use the webhook
 alone.
 
 If it does apply, run both. The webhook is immediate but only works while
@@ -498,7 +499,7 @@ context, which is your call to make.
 ## Troubleshooting
 
 **Nothing appears.** The page shows what arrived, not what fired. Check
-`ai.alert_intake_enabled`, then that the contact point's token matches —
+`alerts.intake_enabled`, then that the contact point's token matches —
 a wrong token is a 401 at LabDog and a delivery error in Grafana's own
 logs.
 
@@ -527,7 +528,7 @@ value is exactly `true`, and check which host the row resolved to.
 
 **The poller reports "No Alertmanager API at this endpoint".** Mimir
 serves Alertmanager under `/alertmanager` on the same host as its query
-API. If your deployment does not, leave `ai.alertmanager_poll_minutes` at
+API. If your deployment does not, leave `alerts.poll_minutes` at
 `0` and use the webhook alone.
 
 **The poll runs cleanly but never records anything.** Almost always

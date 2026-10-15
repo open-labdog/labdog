@@ -244,7 +244,7 @@ class TestAlertFired:
 
     async def test_the_webhook_queues_it(self, db, smtp_on, external_client, monkeypatch) -> None:
         await _user(db, events=("alert_fired",))
-        await _set(db, "ai.alert_intake_enabled", "1")
+        await _set(db, "alerts.intake_enabled", "1")
         monkeypatch.setattr(settings.alerts, "webhook_token", "t" * 40)
         payload = {
             "status": "firing",

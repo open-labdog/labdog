@@ -68,8 +68,8 @@ async def test_off_by_default_and_refusing_without_a_token(regular_user_client, 
 
 async def test_reports_the_token_without_returning_it(regular_user_client, db, monkeypatch):
     monkeypatch.setattr(settings.alerts, "webhook_token", STRONG_TOKEN)
-    await _set(db, "ai.alert_intake_enabled", "1")
-    await _set(db, "ai.alertmanager_poll_minutes", "5")
+    await _set(db, "alerts.intake_enabled", "1")
+    await _set(db, "alerts.poll_minutes", "5")
     await _set(db, "ai.alert_full_auto_rules_enabled", "1")
     await _set(db, "ai.alert_full_auto_rules", "HostDown\nDiskFull\n")
 

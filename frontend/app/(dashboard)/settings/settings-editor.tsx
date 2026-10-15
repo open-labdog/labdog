@@ -102,9 +102,7 @@ const CATEGORIES: Record<string, Category> = {
       "ai.snapshot_before_mutating",
       "ai.snapshot_retention_days",
       "ai.approval_expiry_hours",
-      // Alert intake.
-      "ai.alert_intake_enabled",
-      "ai.alertmanager_poll_minutes",
+      // Alert investigation. Intake itself is alerts.*, under Fleet defaults.
       "ai.auto_investigate_enabled",
       "ai.auto_investigate_min_severity",
       "ai.alert_mission_template",
@@ -144,6 +142,10 @@ const CATEGORIES: Record<string, Category> = {
   workflow: {
     label: "Workflows",
     keys: ["workflow.snapshot_max_age_hours"],
+  },
+  alerts: {
+    label: "Alert intake",
+    keys: ["alerts.intake_enabled", "alerts.poll_minutes"],
   },
   discovery: {
     label: "Discovery",

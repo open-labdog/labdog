@@ -41,7 +41,7 @@ test.describe("Alert intake card", () => {
     const card = await open(page, {})
     await expect(card).toContainText("off")
     await expect(card).toContainText("intake off")
-    await expect(card.getByRole("link", { name: "Configure…" })).toHaveAttribute("href", /\/settings\/?\?section=ai/)
+    await expect(card.getByRole("link", { name: "Configure…" })).toHaveAttribute("href", /\/settings\/?\?section=fleet/)
     await expect(card.getByRole("link", { name: "Alerts" })).toHaveAttribute("href", /\/alerts\/?$/)
     await expect(page.getByText("Webhooks", { exact: true })).toHaveCount(0)
   })

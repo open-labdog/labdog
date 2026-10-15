@@ -289,7 +289,7 @@ class TestHostView:
         assert data["rules_enabled"] is True
         assert data["rules"] == ["NginxDown, group:web", "labdog_automate=true"]
         blockers = " | ".join(data["blockers"])
-        assert "ai.alert_intake_enabled" in blockers
+        assert "alerts.intake_enabled" in blockers
         assert f"shorter than {MIN_WEBHOOK_TOKEN_CHARS}" in blockers
         assert "no rollback point" in blockers
 

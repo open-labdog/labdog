@@ -188,6 +188,13 @@ source of actions; see [Upgrading to 1.0.0](docs/upgrade.md#upgrading-to-100).
 
 ### Changed
 
+- **Alert intake settings are `alerts.*`.** `ai.alert_intake_enabled` is
+  now `alerts.intake_enabled`, and `ai.alertmanager_poll_minutes` is
+  `alerts.poll_minutes`, under **Settings › Fleet defaults › Alert
+  intake**. Recording alerts never needed the AI, and with 1.0.0 setting
+  names stop changing outside major versions. Stored values are carried
+  over by the upgrade.
+
 - **A quiet Git repository is no longer marked stale.** On **Settings ›
   Git repositories**, a repository that had not synced for 24 hours got a
   *stale* tag and an amber row. A repository syncs when something is

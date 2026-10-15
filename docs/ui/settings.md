@@ -51,8 +51,8 @@ Two of them cover what comes *in* to LabDog:
   It says **needs attention** when intake is on but the webhook would
   refuse everything because `[alerts] webhook_token` is not set in
   `labdog.toml`, and when alerts are listed for full auto but the token is
-  shorter than 32 characters. **Configure…** opens Settings › AI, where
-  intake is switched on; **Alerts** opens the [Alerts](alerts.md) page.
+  shorter than 32 characters. **Configure…** opens Settings › Fleet
+  defaults, where intake is switched on; **Alerts** opens the [Alerts](alerts.md) page.
   The token itself is never shown.
 
 ## Fleet defaults
@@ -94,6 +94,18 @@ Two of them cover what comes *in* to LabDog:
 | Setting | Key | Default | Range | Description |
 |---------|-----|---------|-------|-------------|
 | Snapshot Max Age | `workflow.snapshot_max_age_hours` | `24` | 1 – 168 hours | Proxmox VM snapshots taken before a destructive scheduled action are automatically cleaned up after this many hours when the action completes successfully. |
+
+### Alert intake
+
+Whether LabDog records alerts at all. Recording costs nothing and starts
+nothing; an AI investigation is `ai.auto_investigate_enabled` under
+[AI](#ai). The webhook also needs `[alerts] webhook_token` in
+`labdog.toml`; see [Alerts](alerts.md).
+
+| Setting | Key | Default | Range | Description |
+|---------|-----|---------|-------|-------------|
+| Alert Intake | `alerts.intake_enabled` | `0` (off) | 0 – 1 | Accept alerts from Grafana and Alertmanager. |
+| Alertmanager Poll | `alerts.poll_minutes` | `0` (never) | 0 – 1440 min | Poll the default Mimir instance's Alertmanager API, as a fallback for alerts that arrived while LabDog was unreachable. **Only useful when your alert rules live in Mimir's ruler** — Grafana-managed rules go to Grafana's own Alertmanager, which this cannot see, and the poll then records nothing while looking healthy. See [Alerts](alerts.md#alertmanager-poll-catch-up). |
 
 ### Discovery
 
@@ -160,15 +172,14 @@ what it established, so the work is not wasted.
 | Max Tokens | `ai.max_tokens_total` | `200000` | 1000 – 5000000 | Prompt + completion tokens in one session. |
 | Wall Clock | `ai.wall_clock_seconds` | `900` | 30 – 21600 s | Run time for one session. Time spent waiting for an approval does not count. |
 
-**Alert intake.** Recording alerts and investigating them are separate
-switches — recording costs nothing, investigating spends money without
-anyone asking. The webhook token lives in the config file rather than
-here; see [Alerts](alerts.md).
+**Alert investigation.** Recording alerts is [Alert intake](#alert-intake),
+under Fleet defaults. Investigating them is a separate switch here, because
+recording costs nothing and investigating spends money without anyone
+asking. The webhook token lives in the config file rather than here; see
+[Alerts](alerts.md).
 
 | Setting | Key | Default | Range | Description |
 |---------|-----|---------|-------|-------------|
-| Alert Intake | `ai.alert_intake_enabled` | `0` (off) | 0 – 1 | Accept alerts from Grafana and Alertmanager. |
-| Alertmanager Poll | `ai.alertmanager_poll_minutes` | `0` (never) | 0 – 1440 min | Poll the default Mimir instance's Alertmanager API, as a fallback for alerts that arrived while LabDog was unreachable. **Only useful when your alert rules live in Mimir's ruler** — Grafana-managed rules go to Grafana's own Alertmanager, which this cannot see, and the poll then records nothing while looking healthy. See [Alerts](alerts.md#alertmanager-poll-catch-up). |
 | Auto Investigate | `ai.auto_investigate_enabled` | `0` (off) | 0 – 1 | Start an investigation when an eligible alert arrives. What it may change is set under *Alert remediation* below. |
 | Minimum Severity | `ai.auto_investigate_min_severity` | `critical` | info / warning / critical | Lowest severity that triggers one. An alert whose severity is missing or not one of these is **skipped and says so**, rather than being guessed either way. |
 | Investigation Prompt | `ai.alert_mission_template` | built-in wording | up to 8000 characters | The prompt an alert investigation starts from. See below. |
