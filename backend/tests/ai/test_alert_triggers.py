@@ -437,7 +437,8 @@ class TestCheck:
         assert ai_policy.await_args.args == (event.id,)
         tried = ai_policy.await_args.kwargs["already_tried"]
         assert f"as run #{run.id}" in tried
-        assert "the alert is still firing" in tried
+        assert "The run succeeded, but the alert is still firing." in tried
+        assert tried.count("The run succeeded") == 1
         assert "all done" in tried
 
     async def test_a_failed_run_goes_to_the_ai_at_once(self, db, tasks_use_test_db, ai_policy):

@@ -124,14 +124,15 @@ async def _tried(db, dispatch, run, event, verdict: str, host: str) -> str:  # n
     name = f"{action.name} ({dispatch.action_key})" if action else dispatch.action_key
     if run is None:
         return f"An alert-triggered schedule ran the action {name} on {host}, but its run is gone."
+    if verdict == "not_effective":
+        ending = "The run succeeded, but the alert is still firing."
+    else:
+        why = f": {run.error_message}" if run.error_message else ""
+        ending = f"The run {run.status}{why}."
     text = [
         f"When this alert fired, an alert-triggered schedule ran the action {name} on {host} "
-        f"as run #{run.id}. The run {run.status}"
-        + (f": {run.error_message}" if run.error_message else "")
-        + ".",
+        f"as run #{run.id}. {ending}"
     ]
-    if verdict == "not_effective":
-        text.append("The run succeeded, but the alert is still firing.")
     tail = await _output_tail(db, run.id)
     if tail:
         text += ["", "The end of its output:", "", "```", tail, "```"]
