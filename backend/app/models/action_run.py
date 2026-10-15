@@ -67,6 +67,13 @@ class ActionRun(Base):
         nullable=True,
         index=True,
     )
+    # Set when an alert-triggered schedule dispatched the run: the alert
+    # that fired. ``SET NULL`` so pruning old alerts keeps the run.
+    alert_event_id: Mapped[int | None] = mapped_column(
+        ForeignKey("alert_events.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     parameters: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     parallelism: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     # Universal columns mirrored from ScheduledAction at dispatch time so

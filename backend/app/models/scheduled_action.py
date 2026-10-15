@@ -1,5 +1,10 @@
 """Scheduled-action model.
 
+A schedule fires on a cron expression, by hand (no cron), or — with
+``trigger = "alert"`` — when an alert matching ``alert_match`` fires on a
+host inside its target. An alert-triggered run is always a single-host
+run on the host the alert names; see :mod:`app.alerts.triggers`.
+
 A ``ScheduledAction`` row pairs a registered action key with a target
 (host / group / fleet), parameters, and a cron schedule. The unified
 scheduler at ``app.tasks.scheduled_action_schedule.check_due`` walks
@@ -22,6 +27,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -44,6 +50,21 @@ class ScheduledAction(Base):
     action_key: Mapped[str] = mapped_column(String(64), nullable=False)
     parameters: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     schedule_cron: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # ``"cron"`` (a cron expression, or none for run-by-hand) or ``"alert"``.
+    trigger: Mapped[str] = mapped_column(String(8), nullable=False, server_default="cron")
+    # Alert triggers only: which alerts, one rule per line — alert names
+    # and labels, parsed by app.alerts.triggers. Hosts come from the target.
+    alert_match: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Alert triggers only: no second alert-triggered run of this schedule
+    # on the same host within this many minutes.
+    alert_cooldown_minutes: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="60"
+    )
+    # Alert triggers only: hand the alert to the AI if the run fails or the
+    # alert is still firing afterwards. Off means the action alone handles it.
+    investigate_on_failure: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="true"
+    )
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
 
     # Universal columns. See module docstring.
@@ -84,12 +105,21 @@ class ScheduledAction(Base):
             "(target_kind IN ('host','group') AND target_id IS NOT NULL)",
             name="ck_scheduled_actions_target",
         ),
+        # An alert trigger has rules and no cron; a cron row has no rules.
+        CheckConstraint(
+            "(trigger = 'cron' AND alert_match IS NULL) OR "
+            "(trigger = 'alert' AND alert_match IS NOT NULL AND schedule_cron IS NULL)",
+            # The naming convention prefixes ck_scheduled_actions_.
+            name="trigger",
+        ),
         # No double-scheduling the same work on the same target. Two
-        # distinct schedules on the same target need distinct action keys.
+        # distinct schedules on the same target need distinct action keys,
+        # except that one may run on cron and one on alerts.
         UniqueConstraint(
             "target_kind",
             "target_id",
             "action_key",
+            "trigger",
             name="uq_scheduled_actions_target_action",
         ),
         Index("ix_scheduled_actions_due", "action_key", "enabled"),

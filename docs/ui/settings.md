@@ -105,6 +105,7 @@ nothing; an AI investigation is `ai.auto_investigate_enabled` under
 | Setting | Key | Default | Range | Description |
 |---------|-----|---------|-------|-------------|
 | Alert Intake | `alerts.intake_enabled` | `0` (off) | 0 – 1 | Accept alerts from Grafana and Alertmanager. |
+| Action Check | `alerts.action_check_minutes` | `10` | 1 – 1440 min | How long after an [alert-triggered](scheduled-actions.md#when-an-alert-fires) run finishes LabDog waits for the alert to resolve before judging that the action did not fix it. |
 | Alertmanager Poll | `alerts.poll_minutes` | `0` (never) | 0 – 1440 min | Poll the default Mimir instance's Alertmanager API, as a fallback for alerts that arrived while LabDog was unreachable. **Only useful when your alert rules live in Mimir's ruler** — Grafana-managed rules go to Grafana's own Alertmanager, which this cannot see, and the poll then records nothing while looking healthy. See [Alerts](alerts.md#alertmanager-poll-catch-up). |
 
 ### Discovery

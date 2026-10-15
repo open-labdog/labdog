@@ -19,6 +19,27 @@ source of actions; see [Upgrading to 1.0.0](docs/upgrade.md#upgrading-to-100).
 
 ### Added
 
+- **An alert can run an action on its host.** A schedule now fires on
+  cron, by hand, or when an alert fires. An alert trigger names its alerts
+  by name and labels, one rule per line, such as `NginxDown` or
+  `labdog_action=restart-nginx`. Its target (a host, a group, or the
+  fleet) says whose alerts count. When a new firing alert matches on a
+  host in the target, LabDog runs the action on that one host, with the
+  schedule's parameters and its snapshot, verify and rollback choices.
+  This needs no AI.
+
+  It runs only for a new firing alert on a managed host, with the
+  32-character webhook token, one run at a time per host, and a cooldown
+  (60 minutes by default). The AI investigation waits for the action.
+  When the run finishes, LabDog checks whether it fixed the alert: the
+  alert resolved, or is still firing `alerts.action_check_minutes` (10)
+  later, or the run failed. If not, it hands the alert to the AI, with
+  what was tried added to the prompt, unless the schedule is set to
+  handle the alert alone. The Alerts page shows what each trigger did, a
+  run page names the alert that started it, and a host's Overview lists
+  the triggers that cover it. Each outcome is emailed under **Actions
+  run by alerts**.
+
 - **The run log is coloured, and can be searched.** Ansible's output is
   stored as plain text, so a `fatal:` line looked like an `ok:` line and a
   failure had to be read for. The log now colours each line by what it

@@ -74,7 +74,8 @@ Nothing is required unless you deleted the seeded `labdog-playbooks`
 pack or LabDog cannot reach GitHub (see 1). Every new thing that can
 change a host or send mail is off until you turn it on: alert
 investigations stay read-only, no alert runs at full auto unless its
-Grafana rule is labelled `labdog_automate=true` (see 6), no mail server is
+Grafana rule is labelled `labdog_automate=true` (see 6), no schedule fires
+on alerts until you create one, no mail server is
 configured and nobody is subscribed, and schedules keep
 reading their cron expressions in UTC. Six things are worth checking.
 
