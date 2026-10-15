@@ -142,6 +142,11 @@ what may act. An empty list allows nothing.
 
 Smaller things to know:
 
+- **Two alert settings were renamed**: `ai.alert_intake_enabled` is now
+  `alerts.intake_enabled`, and `ai.alertmanager_poll_minutes` is
+  `alerts.poll_minutes`, under Settings › Fleet defaults › Alert intake.
+  The upgrade carries their values over; only scripts that set them
+  through `/api/settings` need the new names.
 - **The `security.allowed_origins` workaround for the web terminal** from
   the 0.10.0 notes can go: the terminal accepts its own origin again. Keep
   the setting only for a frontend served from another host.

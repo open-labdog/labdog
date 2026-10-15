@@ -272,7 +272,7 @@ async def grafana_alerts_webhook(
     if not _authorized(request):
         raise HTTPException(status_code=401, detail="Invalid or missing webhook token")
 
-    if not int(await get_setting_typed("ai.alert_intake_enabled", db)):
+    if not int(await get_setting_typed("alerts.intake_enabled", db)):
         return {"status": "ignored", "reason": "alert intake is disabled"}
 
     try:

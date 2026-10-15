@@ -164,6 +164,33 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
     # Defaults are deliberately closed: AI is off until an operator turns it
     # on, and cloud providers stay blocked until separately allowed, so
     # installing a release never starts sending host data anywhere.
+    # --- Alert intake. Not AI settings: recording an alert costs nothing
+    # and starts nothing on its own. What happens next is decided by the
+    # alert-triggered schedules and, separately, by ai.auto_investigate_*.
+    "alerts.intake_enabled": {
+        "type": "int",
+        "default": 0,
+        "min": 0,
+        "max": 1,
+        "description": "Accept alerts from Grafana and Alertmanager.",
+        "help": (
+            "Recording alerts costs nothing and starts nothing. An AI investigation is a separate "
+            "switch, ai.auto_investigate_enabled. The webhook also needs [alerts] webhook_token in "
+            "labdog.toml."
+        ),
+    },
+    "alerts.poll_minutes": {
+        "type": "int",
+        "default": 0,
+        "min": 0,
+        "max": 1440,
+        "description": "How often to poll Mimir's Alertmanager API for alerts (0 = never).",
+        "help": (
+            "Only useful when your alert rules live in Mimir's ruler. Grafana-managed rules are "
+            "routed to Grafana's own Alertmanager, which this cannot see, and the poll then "
+            "records nothing while appearing healthy."
+        ),
+    },
     "ai.enabled": {
         "type": "int",
         "default": 0,
@@ -281,29 +308,6 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "help": (
             "Hosts with no VM mapping are unaffected. When on, a snapshot that fails blocks the "
             "command."
-        ),
-    },
-    "ai.alert_intake_enabled": {
-        "type": "int",
-        "default": 0,
-        "min": 0,
-        "max": 1,
-        "description": "Accept alerts from Grafana and Alertmanager.",
-        "help": (
-            "Recording alerts costs nothing and starts nothing — auto investigation is a separate "
-            "switch below."
-        ),
-    },
-    "ai.alertmanager_poll_minutes": {
-        "type": "int",
-        "default": 0,
-        "min": 0,
-        "max": 1440,
-        "description": "How often to poll Mimir's Alertmanager API for alerts (0 = never).",
-        "help": (
-            "Only useful when your alert rules live in Mimir's ruler. Grafana-managed rules are "
-            "routed to Grafana's own Alertmanager, which this cannot see, and the poll then "
-            "records nothing while appearing healthy."
         ),
     },
     "ai.auto_investigate_enabled": {

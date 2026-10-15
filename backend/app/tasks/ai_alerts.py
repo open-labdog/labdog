@@ -205,7 +205,7 @@ async def _poll() -> dict:
     from app.settings_service import get_setting_typed
 
     async with task_session() as db:
-        if not int(await get_setting_typed("ai.alert_intake_enabled", db)):
+        if not int(await get_setting_typed("alerts.intake_enabled", db)):
             return {"polled": 0, "reason": "alert intake disabled"}
 
         client = await get_default_client(db, kind="mimir")
@@ -265,7 +265,7 @@ def _register_beat_schedule() -> None:
 
     async def _interval() -> int:
         async with task_session() as db:
-            return int(await get_setting_typed("ai.alertmanager_poll_minutes", db))
+            return int(await get_setting_typed("alerts.poll_minutes", db))
 
     minutes = _asyncio.run(_interval())
     name = "poll-alertmanager"

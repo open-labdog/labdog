@@ -1647,7 +1647,7 @@ class TestFromAlertToRollback:
         monkeypatch.setattr(settings.alerts, "webhook_token", TOKEN)
         for key, value in {
             "ai.enabled": "1",
-            "ai.alert_intake_enabled": "1",
+            "alerts.intake_enabled": "1",
             "ai.auto_investigate_enabled": "1",
             "ai.alert_full_auto_rules_enabled": "1",
             "ai.alert_full_auto_rules": ALERT,

@@ -1096,13 +1096,13 @@ async def alert_intake_status(
         ).all()
     )
     return AlertIntakeStatus(
-        intake_enabled=bool(int(await get_setting_typed("ai.alert_intake_enabled", db))),
+        intake_enabled=bool(int(await get_setting_typed("alerts.intake_enabled", db))),
         webhook_path="/api/webhooks/grafana-alerts",
         token_set=bool(token),
         token_long_enough_for_full_auto=len(token) >= MIN_WEBHOOK_TOKEN_CHARS,
         full_auto_rules_enabled=rules_enabled,
         full_auto_rules=len(rules),
-        poll_minutes=int(await get_setting_typed("ai.alertmanager_poll_minutes", db)),
+        poll_minutes=int(await get_setting_typed("alerts.poll_minutes", db)),
         last_webhook_alert_at=last.get("grafana_webhook"),
         last_poll_alert_at=last.get("alertmanager_poll"),
     )
@@ -1134,8 +1134,8 @@ async def host_full_auto(
     applicable = [r.text for r in rules if hostname and r.applies_to_host(hostname, groups)]
 
     blockers: list[str] = []
-    if not int(await get_setting_typed("ai.alert_intake_enabled", db)):
-        blockers.append("alert intake is off (ai.alert_intake_enabled)")
+    if not int(await get_setting_typed("alerts.intake_enabled", db)):
+        blockers.append("alert intake is off (alerts.intake_enabled)")
     if len(settings.alerts.webhook_token) < MIN_WEBHOOK_TOKEN_CHARS:
         blockers.append(
             f"the alert webhook token is shorter than {MIN_WEBHOOK_TOKEN_CHARS} characters, "

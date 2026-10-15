@@ -52,7 +52,7 @@ export default function SettingsPage() {
           </div>
         )}
         {section === "access" && <Access superuser={!!user?.is_superuser} />}
-        {section === "fleet" && <SettingsEditor categories={["drift", "ssh", "ansible", "actions", "scheduling", "workflow", "discovery"]} includeUncategorised />}
+        {section === "fleet" && <SettingsEditor categories={["drift", "ssh", "ansible", "actions", "scheduling", "alerts", "workflow", "discovery"]} includeUncategorised />}
         {section === "system" && (
           <div className="flex flex-col gap-3">
             <SettingsEditor categories={["logging"]} />
@@ -163,7 +163,7 @@ function Integrations() {
         href="/settings?section=system"
         action="Details"
       />
-      <Card name="Alert intake" {...alertCard} href="/settings?section=ai" action="Configure…" more={{ href: "/alerts", label: "Alerts" }} />
+      <Card name="Alert intake" {...alertCard} href="/settings?section=fleet" action="Configure…" more={{ href: "/alerts", label: "Alerts" }} />
     </div>
   )
 }
@@ -176,7 +176,7 @@ function Integrations() {
  */
 function intakeCard(s: AlertIntakeStatus | undefined): { state: Tone; status?: string; detail: string; meta: string } {
   if (!s) return { state: "idle", detail: "…", meta: "Grafana alerts in, for the assistant to investigate" }
-  if (!s.intake_enabled) return { state: "idle", status: "off", detail: "intake off", meta: "turn on ai.alert_intake_enabled to record Grafana alerts" }
+  if (!s.intake_enabled) return { state: "idle", status: "off", detail: "intake off", meta: "turn on alerts.intake_enabled to record Grafana alerts" }
   const origin = typeof window !== "undefined" ? window.location.origin : ""
   const last = [s.last_webhook_alert_at, s.last_poll_alert_at].filter((t): t is string => !!t).sort().at(-1)
   // With the rules off, any alert Grafana labels labdog_automate=true may

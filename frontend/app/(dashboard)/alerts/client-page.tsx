@@ -155,7 +155,7 @@ export default function AlertsPage() {
         loading={isLoading}
         empty={
           <span>
-            No alerts recorded. LabDog accepts alerts once <span className="mono">ai.alert_intake_enabled</span> is on and a Grafana contact point points at <span className="mono">/api/webhooks/grafana-alerts</span> with the configured token. Nothing here means nothing has arrived — not that nothing is wrong.
+            No alerts recorded. LabDog accepts alerts once <span className="mono">alerts.intake_enabled</span> is on and a Grafana contact point points at <span className="mono">/api/webhooks/grafana-alerts</span> with the configured token. Nothing here means nothing has arrived — not that nothing is wrong.
           </span>
         }
       />
