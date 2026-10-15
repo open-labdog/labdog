@@ -463,6 +463,11 @@ added. These are the deferred hardening/maintenance tasks that remain.
 entries in [`BUGS.md`](BUGS.md). These are hardening and maintenance
 tasks rather than defects, so they live here. Ordered roughly by value.
 
+- [ ] **Move CI to Ubuntu 26.04 on purpose.** Every job is pinned to
+      `runs-on: ubuntu-24.04` (2026-10) so 1.0.0 was built on the image it
+      was tested on when `ubuntu-latest` moved to 26.04 on 2026-10-19.
+      Switch in its own PR, and check that `actions/setup-python` has 3.12
+      for 26.04 and that `packaging-smoke` passes before a release.
 - [ ] **Stop PR builds overwriting the floating `:test` Docker tag.**
       `build-test-image` (`.github/workflows/ci.yml:491-537`) pushes every
       PR, and every push to `dev`, to both `:test-<sha>` and the mutable
