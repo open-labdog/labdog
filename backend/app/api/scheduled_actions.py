@@ -53,6 +53,7 @@ from app.models.user import User
 from app.schemas.actions import ActionRunOut
 from app.schemas.scheduled_actions import (
     AlertTriggerMatchOut,
+    AlertTriggerPreviewIn,
     ScheduledActionIn,
     ScheduledActionOut,
     ScheduledActionRunOut,
@@ -652,8 +653,12 @@ async def alert_trigger_matches(
         raise HTTPException(status_code=404, detail="Scheduled action not found")
     if sa.trigger != "alert":
         raise HTTPException(status_code=409, detail="Only an alert trigger matches alerts")
+    return await _match_rows(db, await would_have_matched(db, sa, limit=limit))
+
+
+async def _match_rows(db: AsyncSession, events: list[Any]) -> list[AlertTriggerMatchOut]:
     out = []
-    for event in await would_have_matched(db, sa, limit=limit):
+    for event in events:
         host = await db.get(Host, event.host_id) if event.host_id else None
         out.append(
             AlertTriggerMatchOut(
@@ -666,6 +671,29 @@ async def alert_trigger_matches(
             )
         )
     return out
+
+
+@router.post("/preview-matches", response_model=list[AlertTriggerMatchOut])
+async def preview_alert_trigger_matches(
+    body: AlertTriggerPreviewIn,
+    limit: int = Query(default=20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(current_active_user),
+) -> list[AlertTriggerMatchOut]:
+    """Like ``GET /{id}/matches``, for a trigger that is not saved yet.
+
+    What the schedule dialog shows under the match as it is typed.
+    """
+    from types import SimpleNamespace
+
+    from app.alerts.triggers import parse_match, would_have_matched
+
+    try:
+        rules = parse_match(body.alert_match)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"alert_match: {exc}") from exc
+    scope = SimpleNamespace(target_kind=body.target_kind, target_id=body.target_id)
+    return await _match_rows(db, await would_have_matched(db, scope, limit=limit, rules=rules))
 
 
 @router.post("/validate-cron", response_model=ValidateCronResponse)

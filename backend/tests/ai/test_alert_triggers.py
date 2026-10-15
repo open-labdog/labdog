@@ -577,6 +577,25 @@ class TestAPI:
         data = (await superuser_client.get(f"/api/scheduled-actions/{sa.id}/matches")).json()
         assert [(m["alert_event_id"], m["hostname"]) for m in data] == [(hit.id, member.hostname)]
 
+    async def test_preview_before_saving(self, superuser_client, db) -> None:
+        host = await create_host(db)
+        hit = await _alert(db, host.id, "Nginx Down", team="web")
+        await _alert(db, host.id, "Nginx Down", team="db")
+        await db.commit()
+        resp = await superuser_client.post(
+            "/api/scheduled-actions/preview-matches",
+            json={"target_kind": "fleet", "alert_match": "Nginx Down, team=web"},
+        )
+        assert resp.status_code == 200, resp.text
+        assert [m["alert_event_id"] for m in resp.json()] == [hit.id]
+
+        bad = await superuser_client.post(
+            "/api/scheduled-actions/preview-matches",
+            json={"target_kind": "fleet", "alert_match": "group:web"},
+        )
+        assert bad.status_code == 422
+        assert "schedule's target" in bad.text
+
     async def test_alerts_runs_and_hosts_show_it(
         self, superuser_client, db, tasks_use_test_db, sent, ai_policy
     ) -> None:

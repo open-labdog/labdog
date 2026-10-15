@@ -263,7 +263,9 @@ async def dispatch_for(db: AsyncSession, event: Any) -> list[Any]:
     return dispatches
 
 
-async def would_have_matched(db: AsyncSession, schedule: Any, *, limit: int = 20) -> list[Any]:
+async def would_have_matched(
+    db: AsyncSession, schedule: Any, *, limit: int = 20, rules: list[Rule] | None = None
+) -> list[Any]:
     """Recent alerts this schedule's match and target would have fired on.
 
     Read from the alert history, newest first, so a trigger can be checked
@@ -272,7 +274,7 @@ async def would_have_matched(db: AsyncSession, schedule: Any, *, limit: int = 20
     """
     from app.ai.models import AlertEvent
 
-    rules = _rules_of(schedule)
+    rules = _rules_of(schedule) if rules is None else rules
     if not rules:
         return []
     recent = (

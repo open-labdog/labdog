@@ -107,6 +107,14 @@ class ScheduledActionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class AlertTriggerPreviewIn(BaseModel):
+    """An alert trigger's target and match, before it is saved."""
+
+    target_kind: ScheduledActionTargetKind
+    target_id: int | None = None
+    alert_match: str
+
+
 class AlertTriggerMatchOut(BaseModel):
     """A recorded alert an alert trigger would have fired on."""
 
