@@ -2,19 +2,22 @@
 
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { apiFetch, ApiError } from "@/lib/api"
 import { toast } from "sonner"
 import { shortAgo } from "@/lib/fleet"
 import { def, ALERT_SEVERITY, ALERT_STATUS, AI_AUTONOMY, AI_ROLLBACK, AI_SESSION_STATUS, REMEDIATION_OUTCOME } from "@/lib/status"
-import { PageHead, Seg, Table, Tag } from "@/components/ld"
-import type { AlertEvent } from "@/lib/types"
+import { PageHead, RunStatus, Seg, Table, Tag, type Tone } from "@/components/ld"
+import type { AlertAction, AlertEvent } from "@/lib/types"
 
 /** Why no investigation ran, in words. Every one of these is a decision
  *  LabDog made on the operator's behalf, and each has a different fix —
  *  a setting to flip, a threshold to lower, a budget to raise. */
 const OUTCOME_LABEL: Record<string, string> = {
   started: "investigating",
+  waiting_on_action: "waiting on action",
+  handled_by_action: "handled by action",
   skipped_disabled: "auto-investigate off",
   skipped_severity: "below severity threshold",
   skipped_resolved: "already resolved",
@@ -59,6 +62,52 @@ function RemediationTags({ alert }: { alert: AlertEvent }) {
       <Tag tone={outcome.tone} title={alert.remediation_detail ?? undefined}>{outcome.label}</Tag>
       {rollback && <Tag tone={rollback.tone} title={alert.rollback_detail ?? undefined}>{rollback.label}</Tag>}
     </>
+  )
+}
+
+/** Why an alert-triggered schedule did not run its action. */
+const ACTION_SKIP: Record<string, string> = {
+  skipped_no_host: "no host",
+  skipped_token: "token too short",
+  skipped_in_flight: "already running",
+  skipped_cooldown: "cooldown",
+  failed: "could not run",
+}
+
+/** What LabDog found when it judged the run afterwards. */
+const ACTION_CHECK: Record<string, { label: string; tone: Tone }> = {
+  fixed: { label: "fixed", tone: "ok" },
+  not_effective: { label: "did not fix it", tone: "warn" },
+  run_failed: { label: "run failed", tone: "danger" },
+}
+
+/** What each alert-triggered schedule did with this alert: the run it
+ *  started and how that went, or why it did not run. */
+function ActionTags({ actions }: { actions: AlertAction[] }) {
+  if (actions.length === 0) return <span className="text-text-faint">—</span>
+  return (
+    <span className="flex min-w-0 flex-col gap-0.5" data-testid="alert-actions">
+      {actions.map((x) => {
+        const name = x.action_name ?? x.action_key
+        if (x.outcome !== "started") {
+          return (
+            <span key={x.id} className="flex items-center gap-1">
+              <span className="trunc text-[11px] text-text-2">{name}</span>
+              <Tag title={x.detail ?? undefined}>{ACTION_SKIP[x.outcome] ?? x.outcome}</Tag>
+            </span>
+          )
+        }
+        const check = x.check_outcome ? ACTION_CHECK[x.check_outcome] : null
+        return (
+          <span key={x.id} className="flex items-center gap-1">
+            <Link href={`/actions/runs/${x.action_run_id}`} className="trunc text-[11px] text-ld-accent hover:no-underline">
+              {name} #{x.action_run_id}
+            </Link>
+            {check ? <Tag tone={check.tone}>{check.label}</Tag> : x.run_status ? <RunStatus s={x.run_status} /> : null}
+          </span>
+        )
+      })}
+    </span>
   )
 }
 
@@ -126,6 +175,7 @@ export default function AlertsPage() {
               )
             },
           },
+          { k: "action", label: "action", w: "minmax(140px,1fr)", sortable: false, cell: (a) => <ActionTags actions={a.actions ?? []} /> },
           {
             k: "investigation", label: "investigation", w: "minmax(150px,1fr)", sortable: false,
             cell: (a) => (

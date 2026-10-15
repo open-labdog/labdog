@@ -37,7 +37,10 @@ source of actions; see [Upgrading to 1.0.0](docs/upgrade.md#upgrading-to-100).
   what was tried added to the prompt, unless the schedule is set to
   handle the alert alone. The Alerts page shows what each trigger did, a
   run page names the alert that started it, and a host's Overview lists
-  the triggers that cover it. Each outcome is emailed under **Actions
+  the triggers that cover it. In the schedule dialog, **Runs: when an
+  alert fires on a host** turns the When step into the alert rules, the
+  cooldown and the AI fallback. Below the rules, it lists the recent
+  alerts they would have fired on as you type. Each outcome is emailed under **Actions
   run by alerts**.
 
 - **The run log is coloured, and can be searched.** Ansible's output is

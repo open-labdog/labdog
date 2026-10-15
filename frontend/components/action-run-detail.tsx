@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { API_BASE, apiFetch } from "@/lib/api"
@@ -229,6 +230,12 @@ export function ActionRunDetail({ runId }: { runId: number }) {
         sub={run && (
           <>
             v{run.action_version} · {run.started_at ? `started ${new Date(run.started_at).toLocaleString()}` : `created ${new Date(run.created_at).toLocaleString()}`}
+            {run.alert_event_id && (
+              <>
+                {" "}· triggered by alert{" "}
+                <Link href="/alerts" className="mono underline hover:text-text-2" data-testid="run-alert">{run.alertname ?? `#${run.alert_event_id}`}</Link>
+              </>
+            )}
             {targetDeleted && <> · {run.target_label} (deleted)</>}
           </>
         )}

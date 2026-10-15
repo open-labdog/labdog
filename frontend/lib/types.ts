@@ -879,6 +879,10 @@ export interface ActionRun {
   /** NULL for ad-hoc runs; populated when the run was dispatched by the
    *  unified scheduler or POST /api/scheduled-actions/{id}/run-now. */
   scheduled_action_id: number | null
+  /** Set when an alert-triggered schedule dispatched the run; the name is
+   *  filled in by the run detail endpoint only. */
+  alert_event_id?: number | null
+  alertname?: string | null
   parameters: Record<string, unknown>
   parallelism: number
   /** Universal destructive-flow toggles, mirrored from the schedule
@@ -903,6 +907,7 @@ export interface ActionRun {
 // ---------------------------------------------------------------------------
 
 export type ScheduledActionTargetKind = "host" | "group" | "fleet"
+export type ScheduledActionTrigger = "cron" | "alert"
 
 export interface ScheduledActionRunSummary {
   id: number
@@ -924,6 +929,14 @@ export interface ScheduledAction {
   verify_enabled: boolean
   auto_rollback: boolean
   batch_size: number
+  /** "cron" covers cron and run-by-hand schedules; "alert" fires when a
+   *  matching alert names a host in the target. */
+  trigger: ScheduledActionTrigger
+  /** Alert triggers: which alerts, one rule per line. */
+  alert_match: string | null
+  alert_cooldown_minutes: number
+  /** Alert triggers: hand the alert to the AI if the action does not fix it. */
+  investigate_on_failure: boolean
   last_dispatched_at: string | null
   created_at: string
   updated_at: string
@@ -963,6 +976,20 @@ export interface ScheduledActionCreate {
   verify_enabled?: boolean
   auto_rollback?: boolean
   batch_size?: number
+  trigger?: ScheduledActionTrigger
+  alert_match?: string | null
+  alert_cooldown_minutes?: number
+  investigate_on_failure?: boolean
+}
+
+/** POST /api/scheduled-actions/preview-matches, GET /{id}/matches. */
+export interface AlertTriggerMatch {
+  alert_event_id: number
+  alertname: string
+  status: string
+  host_id: number | null
+  hostname: string | null
+  created_at: string
 }
 
 export type ScheduledActionUpdate = Partial<
@@ -1275,6 +1302,23 @@ export interface HostFullAuto {
   rules_enabled: boolean
   rules: string[]
   blockers: string[]
+  /** Alert-triggered schedules whose target covers the host. */
+  alert_actions: { id: number; action_key: string; action_name: string | null; alert_match: string; enabled: boolean }[]
+}
+
+/** What one alert-triggered schedule did with one alert. */
+export interface AlertAction {
+  id: number
+  scheduled_action_id: number | null
+  action_key: string
+  action_name: string | null
+  host_id: number | null
+  action_run_id: number | null
+  run_status: string | null
+  outcome: "started" | "skipped_no_host" | "skipped_token" | "skipped_in_flight" | "skipped_cooldown" | "failed"
+  detail: string | null
+  check_outcome: "fixed" | "not_effective" | "run_failed" | null
+  checked_at: string | null
 }
 
 export interface AlertEvent {
@@ -1298,6 +1342,8 @@ export interface AlertEvent {
    */
   investigation_outcome:
     | "started"
+    | "waiting_on_action"
+    | "handled_by_action"
     | "skipped_disabled"
     | "skipped_severity"
     | "skipped_resolved"
@@ -1341,6 +1387,8 @@ export interface AlertEvent {
   /** The latest rollback of this alert's session, if there was one. */
   rollback_status: AIRollbackStatus | null
   rollback_detail: string | null
+  /** What each alert-triggered schedule did with this alert. */
+  actions: AlertAction[]
   created_at: string
 }
 

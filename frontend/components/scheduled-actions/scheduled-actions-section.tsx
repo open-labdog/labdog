@@ -24,7 +24,7 @@ export function ScheduledActionsSection({ scope, targetId }: ScheduledActionsSec
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <Toolbar actions={<button type="button" className="btn btn-sm btn-primary" onClick={() => setCreateOpen(true)}>Schedule action</button>}>
-        <span className="tt">cron-driven runs scoped to this {scope}</span>
+        <span className="tt">runs on a cron or on alerts, scoped to this {scope}</span>
       </Toolbar>
 
       <ScheduledActionsList rows={rows ?? []} hideColumns={["target"]} loading={isLoading} />
