@@ -145,7 +145,7 @@ const CATEGORIES: Record<string, Category> = {
   },
   alerts: {
     label: "Alert intake",
-    keys: ["alerts.intake_enabled", "alerts.poll_minutes"],
+    keys: ["alerts.intake_enabled", "alerts.poll_minutes", "alerts.action_check_minutes"],
   },
   discovery: {
     label: "Discovery",

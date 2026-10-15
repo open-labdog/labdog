@@ -405,6 +405,11 @@ ALERT_STATUSES = ("firing", "resolved")
 #: rather than reconstructed from logs that may have rotated.
 INVESTIGATION_OUTCOMES = (
     "started",
+    # An alert-triggered schedule ran an action for it first. The AI looks
+    # only if that does not fix it (app.tasks.alert_handling), or not at
+    # all when the schedule says the action alone handles it.
+    "waiting_on_action",
+    "handled_by_action",
     "skipped_disabled",
     "skipped_severity",
     "skipped_resolved",

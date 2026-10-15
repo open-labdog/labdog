@@ -4,9 +4,10 @@
 `/schedules` redirects), and a host's or group's Activity tab ›
 **Schedules** for the schedules that target it.
 
-Scheduled Actions are cron-driven runs of any registered
-[Action](actions.md) — pack-supplied (e.g. `linux-upgrade`,
-`linux-os-upgrade`, `k8s-upgrade`). The scheduler ticks every 60 s,
+Scheduled Actions are runs of any registered [Action](actions.md) —
+pack-supplied (e.g. `linux-upgrade`, `linux-os-upgrade`, `k8s-upgrade`) —
+on a cron schedule, by hand, or [when an alert fires](#when-an-alert-fires)
+on a host. The scheduler ticks every 60 s,
 walks the `scheduled_actions` table, and dispatches due rows through
 the same execution path as an ad-hoc run. There's no separate
 "scheduled-only" or "ad-hoc-only" action type.
@@ -106,6 +107,84 @@ A run time that passed while the schedule was off, or that only the new
 expression matches, is not made up straight away. Editing anything else
 (parameters, batch size, the destructive options) leaves the schedule's
 timing alone.
+
+---
+
+## When an alert fires
+
+A schedule can run its action when a Grafana alert fires on a host,
+instead of on a clock. This needs no AI: the action is the response. It
+needs alert intake on (`alerts.intake_enabled`) and Grafana sending its
+alerts to LabDog; see [Alerts](alerts.md#turning-it-on).
+
+An alert trigger has, besides the action, its parameters and the
+snapshot / verify / rollback choices every schedule has:
+
+| Field | What |
+|---|---|
+| **Target** | Which hosts' alerts it reacts to: one host, a group, or the fleet. The run is always on the **one host the alert names**, whatever the target. So the action must support host runs. |
+| **Alerts** (`alert_match`) | Which alerts, one rule per line. A rule is conditions separated by commas, and all of them must hold. An alert qualifies when any rule does. |
+| **Cooldown** (`alert_cooldown_minutes`, 60) | No second alert-triggered run of this schedule on the same host within this many minutes. |
+| **If it doesn't fix it, hand the alert to the AI** (`investigate_on_failure`, on) | See [afterwards](#afterwards). Off means the action alone handles the alert. |
+
+The conditions in a rule:
+
+| Condition | Holds when |
+|---|---|
+| `NginxDown` | the alert's name is exactly this (spaces allowed, no wildcards) |
+| `severity=critical` | the alert has this label value (quote a value with a comma: `team="a, b"`) |
+| `severity!=info` | the label has another value, or is missing |
+
+Hosts and groups are not conditions here: the target already says which
+hosts count. A label set on the alert rule in Grafana works as well as a
+name, for example `labdog_action=restart-nginx`. That way one trigger
+covers several alert rules, and the rule says which response it wants.
+
+**When an alert arrives**, each enabled alert trigger is checked against
+it:
+
+1. Only a **new firing** alert counts. Repeat notifications of the same
+   firing, and resolved notifications, never start a run.
+2. The alert must name a **host LabDog manages** inside the target. See
+   [Scope](alerts.md#scope) for how LabDog works that out.
+3. An alert that came **by webhook** needs `[alerts] webhook_token` to be
+   at least 32 characters, as for AI full auto. The token is all that
+   stands between whoever can reach the webhook and a run on your hosts.
+4. No run of this schedule may be queued, waiting or running on the
+   host, and the **cooldown** must have passed.
+
+If all hold, LabDog dispatches a single-host run of the action, with the
+schedule's parameters. It runs like any other: it waits for a busy host,
+takes a snapshot first if the action is destructive and the schedule
+says so, and appears in the schedule's run history. The run page says
+which alert triggered it.
+
+If a trigger matched but could not run, the alert's row on the
+[Alerts](alerts.md) page says why: *no host*, *token*, *in flight*,
+*cooldown*, or the action no longer existing.
+
+### Afterwards
+
+While the action runs, the AI investigation the alert would otherwise
+get **waits**. Once the run has finished, LabDog checks every minute:
+
+| Outcome | When |
+|---|---|
+| **fixed** | The alert resolved. |
+| **did not fix it** | The run succeeded, but the alert is still firing `alerts.action_check_minutes` (10) after the run finished. |
+| **run failed** | The run failed or was cancelled. |
+
+If the action did not fix it and the schedule hands failures to the AI,
+the alert goes to the AI as usual, with the same checks as any alert
+investigation (`ai.auto_investigate_enabled`, the severity threshold,
+the budget, and the [full-auto](alerts.md#which-alerts-may-run-at-full-auto)
+rules). Its prompt gains a section saying what LabDog already tried: the
+action, the run, how it ended, and the end of its output. With
+`investigate_on_failure` off, or with the AI off, nothing more happens.
+
+Grafana must send **resolved notifications** for **fixed** to be told
+apart from **did not fix it**. Subscribe to **Actions run by alerts** on
+the [Email](notifications.md) page for a message with each outcome.
 
 ---
 

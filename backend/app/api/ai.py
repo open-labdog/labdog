@@ -51,8 +51,10 @@ from app.ai.schemas import (
     AISessionResponse,
     AIUsageDayResponse,
     AIUsageSummary,
+    AlertActionOut,
     AlertEventResponse,
     AlertIntakeStatus,
+    HostAlertActionOut,
     HostFullAutoResponse,
     provider_to_response,
     session_to_response,
@@ -1053,9 +1055,40 @@ async def _with_investigation(db: AsyncSession, rows: list[AlertEvent]) -> list[
         for rollback in found.scalars().all():
             latest_rollback[rollback.alert_event_id] = rollback
 
+    actions: dict[int, list[AlertActionOut]] = {}
+    if event_ids:
+        from app.actions.registry import ACTION_REGISTRY
+        from app.alerts.models import AlertActionDispatch
+        from app.models.action_run import ActionRun
+
+        found = await db.execute(
+            select(AlertActionDispatch, ActionRun.status)
+            .outerjoin(ActionRun, ActionRun.id == AlertActionDispatch.action_run_id)
+            .where(AlertActionDispatch.alert_event_id.in_(event_ids))
+            .order_by(AlertActionDispatch.id)
+        )
+        for dispatch, run_status in found.all():
+            action = ACTION_REGISTRY.get(dispatch.action_key)
+            actions.setdefault(dispatch.alert_event_id, []).append(
+                AlertActionOut(
+                    id=dispatch.id,
+                    scheduled_action_id=dispatch.scheduled_action_id,
+                    action_key=dispatch.action_key,
+                    action_name=action.name if action else None,
+                    host_id=dispatch.host_id,
+                    action_run_id=dispatch.action_run_id,
+                    run_status=run_status,
+                    outcome=dispatch.outcome,
+                    detail=dispatch.detail,
+                    check_outcome=dispatch.check_outcome,
+                    checked_at=dispatch.checked_at,
+                )
+            )
+
     out = []
     for row in rows:
         response = AlertEventResponse.model_validate(row)
+        response.actions = actions.get(row.id, [])
         session = sessions.get(row.investigation_session_id or 0)
         if session is not None:
             response.investigation_status = session.status
@@ -1145,11 +1178,28 @@ async def host_full_auto(
         refusal = await snapshot_refusal(db, host_id)
         if refusal:
             blockers.append(refusal)
+    from app.actions.registry import ACTION_REGISTRY
+    from app.alerts.triggers import alert_triggers, in_scope
+
+    alert_actions = []
+    for schedule in await alert_triggers(db, enabled_only=False):
+        if await in_scope(db, schedule, host_id):
+            action = ACTION_REGISTRY.get(schedule.action_key)
+            alert_actions.append(
+                HostAlertActionOut(
+                    id=schedule.id,
+                    action_key=schedule.action_key,
+                    action_name=action.name if action else None,
+                    alert_match=schedule.alert_match or "",
+                    enabled=schedule.enabled,
+                )
+            )
     return HostFullAutoResponse(
         ai_enabled=bool(int(await get_setting_typed("ai.enabled", db))),
         rules_enabled=rules_enabled,
         rules=applicable,
         blockers=blockers,
+        alert_actions=alert_actions,
     )
 
 

@@ -329,6 +329,14 @@ async def get_run(
         hr_out.hostname = hostname or hr.hostname
         host_runs_out.append(hr_out)
     out.host_runs = host_runs_out
+    if run.alert_event_id is not None:
+        from app.ai.models import AlertEvent
+
+        out.alertname = (
+            await db.execute(
+                select(AlertEvent.alertname).where(AlertEvent.id == run.alert_event_id)
+            )
+        ).scalar_one_or_none()
     return out
 
 

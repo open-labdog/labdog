@@ -426,6 +426,16 @@ class AlertIntakeStatus(BaseModel):
     last_poll_alert_at: datetime | None
 
 
+class HostAlertActionOut(BaseModel):
+    """An alert-triggered schedule whose target covers a host."""
+
+    id: int
+    action_key: str
+    action_name: str | None = None
+    alert_match: str
+    enabled: bool
+
+
 class HostFullAutoResponse(BaseModel):
     """Which alerts may fix one host without asking, for its page.
 
@@ -441,6 +451,25 @@ class HostFullAutoResponse(BaseModel):
     rules_enabled: bool
     rules: list[str]
     blockers: list[str]
+    #: Alert-triggered schedules that cover this host. Shown whether or not
+    #: the AI is on: they need no AI.
+    alert_actions: list[HostAlertActionOut] = []
+
+
+class AlertActionOut(BaseModel):
+    """One alert-triggered schedule's handling of one alert."""
+
+    id: int
+    scheduled_action_id: int | None = None
+    action_key: str
+    action_name: str | None = None
+    host_id: int | None = None
+    action_run_id: int | None = None
+    run_status: str | None = None
+    outcome: str
+    detail: str | None = None
+    check_outcome: str | None = None
+    checked_at: datetime | None = None
 
 
 class AlertEventResponse(BaseModel):
@@ -493,4 +522,7 @@ class AlertEventResponse(BaseModel):
     #: running, succeeded, failed, or refused, and what happened.
     rollback_status: str | None = None
     rollback_detail: str | None = None
+    #: What each alert-triggered schedule did with this alert. See
+    #: app.alerts.models.AlertActionDispatch.
+    actions: list[AlertActionOut] = []
     created_at: datetime

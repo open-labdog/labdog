@@ -43,7 +43,7 @@ async def build_mission(db, event) -> str:  # noqa: ANN001 - AlertEvent, AsyncSe
     return render(template, event)
 
 
-async def start_investigation(db, event, provider, *, user=None):  # noqa: ANN001, ANN201
+async def start_investigation(db, event, provider, *, user=None, already_tried=None):  # noqa: ANN001, ANN201
     """Create ``event``'s session at the level its policy allows.
 
     The one place an alert session is made, shared by the automatic path
@@ -65,6 +65,10 @@ async def start_investigation(db, event, provider, *, user=None):  # noqa: ANN00
     from app.audit.logger import log_action
 
     mission = await build_mission(db, event)
+    if already_tried:
+        # Appended rather than templated: it is LabDog's own account of
+        # what it did, not part of the operator's prompt.
+        mission = f"{mission}\n\n## What LabDog already tried\n\n{already_tried}"
     autonomy = await resolve(db, event)
     session = AISession(
         provider_id=provider.id,
@@ -116,8 +120,12 @@ async def start_investigation(db, event, provider, *, user=None):  # noqa: ANN00
     return session
 
 
-async def _decide_and_run(alert_event_id: int) -> dict:
+async def _decide_and_run(alert_event_id: int, *, already_tried: str | None = None) -> dict:
     """Apply the auto-investigation policy to one recorded alert.
+
+    ``already_tried`` is set when an alert-triggered action ran first and
+    did not fix the alert (:mod:`app.tasks.alert_handling`); it is added to
+    the mission so the session starts from what was done.
 
     Every path writes ``investigation_outcome``. "Why did nothing happen
     for this alert?" has half a dozen answers and an operator should not
@@ -173,7 +181,7 @@ async def _decide_and_run(alert_event_id: int) -> dict:
             outcome = "skipped_budget" if isinstance(exc, service.BudgetExceededError) else "failed"
             return await _finish(db, event, outcome, str(exc))
 
-        session = await start_investigation(db, event, provider)
+        session = await start_investigation(db, event, provider, already_tried=already_tried)
         await db.commit()
 
         celery_app.send_task(
@@ -188,8 +196,15 @@ async def _decide_and_run(alert_event_id: int) -> dict:
 
 @celery_app.task(name="app.tasks.ai_alerts.investigate_alert")
 def investigate_alert(alert_event_id: int) -> dict:
-    """Decide whether one alert warrants a session, and start it if so."""
-    return asyncio.run(_decide_and_run(alert_event_id))
+    """Kept for messages queued before alert-triggered schedules existed.
+
+    New alerts go to ``app.tasks.alert_handling.handle_alert``, which runs
+    the triggers first; this does the same, so a message already in the
+    queue during an upgrade is not handled the old way.
+    """
+    from app.tasks.alert_handling import _handle
+
+    return asyncio.run(_handle(alert_event_id))
 
 
 async def _poll() -> dict:
@@ -235,7 +250,7 @@ async def _poll() -> dict:
     # transaction has not landed yet.
     for event_id in created_ids:
         celery_app.send_task(
-            "app.tasks.ai_alerts.investigate_alert", kwargs={"alert_event_id": event_id}
+            "app.tasks.alert_handling.handle_alert", kwargs={"alert_event_id": event_id}
         )
 
     return {"polled": len(alerts), "new": len(created_ids)}

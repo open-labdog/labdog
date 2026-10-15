@@ -394,7 +394,8 @@ safeguards matter:
 
 - **The webhook token is the trigger's only lock.** A webhook-delivered
   alert is refused full auto while `[alerts] webhook_token` is shorter
-  than 32 characters. Use `openssl rand -hex 16` or longer, and restrict
+  than 32 characters, and the same goes for running an
+  [alert-triggered schedule](ui/scheduled-actions.md#when-an-alert-fires). Use `openssl rand -hex 16` or longer, and restrict
   the path at the reverse proxy to Grafana's address.
 - **Alert text is attacker-controlled.** Whoever writes alert rules or
   annotations, or controls a label value such as a job or instance name,

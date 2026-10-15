@@ -1,5 +1,11 @@
 """Unified scheduled-actions API.
 
+A schedule fires on cron, by hand, or — ``trigger = "alert"`` — when a
+matching alert names a host in its target (see app.alerts.triggers). An
+alert trigger's run is a single-host run on that host, so it needs an
+action that supports host runs whatever its target, has no cron, and
+cannot be run now.
+
 POST/PUT/DELETE/GET on the ``ScheduledAction`` table plus a ``run-now``
 shortcut and a runs-history list. All endpoints are superuser-only —
 scheduling work that affects shared infrastructure is privileged.
@@ -46,6 +52,8 @@ from app.models.scheduled_action import ScheduledAction
 from app.models.user import User
 from app.schemas.actions import ActionRunOut
 from app.schemas.scheduled_actions import (
+    AlertTriggerMatchOut,
+    AlertTriggerPreviewIn,
     ScheduledActionIn,
     ScheduledActionOut,
     ScheduledActionRunOut,
@@ -76,7 +84,21 @@ def _validate_request(body: ScheduledActionIn) -> ActionDefinition:
     if action is None:
         raise HTTPException(status_code=400, detail=f"Unknown action_key: {body.action_key!r}")
 
-    if body.target_kind == "fleet":
+    if body.trigger == "alert":
+        _validate_alert_trigger(body, action)
+    elif body.alert_match is not None:
+        raise HTTPException(status_code=422, detail="alert_match is only for trigger='alert'")
+
+    if body.trigger == "alert":
+        # The target only scopes which hosts' alerts count; the run itself
+        # is always on one host.
+        if body.target_kind == "fleet" and body.target_id is not None:
+            raise HTTPException(status_code=422, detail="fleet target requires target_id=null")
+        if body.target_kind in ("host", "group") and body.target_id is None:
+            raise HTTPException(
+                status_code=422, detail=f"{body.target_kind} target requires target_id"
+            )
+    elif body.target_kind == "fleet":
         if not action.supports_fleet:
             raise HTTPException(
                 status_code=422,
@@ -104,6 +126,27 @@ def _validate_request(body: ScheduledActionIn) -> ActionDefinition:
         raise HTTPException(status_code=422, detail=exc.errors(include_context=False)) from exc
 
     return action
+
+
+def _validate_alert_trigger(body: ScheduledActionIn, action: ActionDefinition) -> None:
+    from app.alerts.triggers import validate_match
+
+    if not action.supports_host:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "An alert trigger runs the action on the one host the alert names, and this "
+                "action does not support host runs"
+            ),
+        )
+    if body.schedule_cron is not None:
+        raise HTTPException(status_code=422, detail="An alert trigger has no cron expression")
+    if not body.alert_match or not body.alert_match.strip():
+        raise HTTPException(status_code=422, detail="An alert trigger needs alert_match")
+    try:
+        body.alert_match = validate_match(body.alert_match)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"alert_match: {exc}") from exc
 
 
 async def _validate_target_exists(
@@ -143,6 +186,10 @@ def _scheduled_action_audit_payload(sa: ScheduledAction) -> dict[str, Any]:
         "verify_enabled": sa.verify_enabled,
         "auto_rollback": sa.auto_rollback,
         "batch_size": sa.batch_size,
+        "trigger": sa.trigger,
+        "alert_match": sa.alert_match,
+        "alert_cooldown_minutes": sa.alert_cooldown_minutes,
+        "investigate_on_failure": sa.investigate_on_failure,
     }
 
 
@@ -294,6 +341,10 @@ async def create_scheduled_action(
         verify_enabled=body.verify_enabled,
         auto_rollback=body.auto_rollback,
         batch_size=body.batch_size,
+        trigger=body.trigger,
+        alert_match=body.alert_match if body.trigger == "alert" else None,
+        alert_cooldown_minutes=body.alert_cooldown_minutes,
+        investigate_on_failure=body.investigate_on_failure,
     )
     db.add(sa)
     try:
@@ -301,11 +352,12 @@ async def create_scheduled_action(
     except Exception as exc:  # noqa: BLE001
         # Unique-constraint collision: same (target_kind, target_id, action_key).
         if "uq_scheduled_actions_target_action" in str(exc):
+            kind = "An alert trigger" if body.trigger == "alert" else "A schedule"
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    "A schedule already exists for this target + action_key. "
-                    "Edit the existing schedule instead."
+                    f"{kind} already exists for this target + action_key. "
+                    "Edit the existing one instead."
                 ),
             ) from exc
         raise
@@ -354,11 +406,12 @@ async def update_scheduled_action(
         body.action_key != sa.action_key
         or body.target_kind != sa.target_kind
         or body.target_id != sa.target_id
+        or body.trigger != sa.trigger
     ):
         raise HTTPException(
             status_code=422,
             detail=(
-                "action_key and target are immutable on update — delete and "
+                "action_key, target and trigger are immutable on update — delete and "
                 "re-create the schedule to change them."
             ),
         )
@@ -373,6 +426,9 @@ async def update_scheduled_action(
     sa.verify_enabled = body.verify_enabled
     sa.auto_rollback = body.auto_rollback
     sa.batch_size = body.batch_size
+    sa.alert_match = body.alert_match if sa.trigger == "alert" else None
+    sa.alert_cooldown_minutes = body.alert_cooldown_minutes
+    sa.investigate_on_failure = body.investigate_on_failure
     await db.flush()
     await db.refresh(sa)
 
@@ -430,6 +486,14 @@ async def run_now(
     sa = await db.get(ScheduledAction, scheduled_action_id)
     if sa is None:
         raise HTTPException(status_code=404, detail="Scheduled action not found")
+    if sa.trigger == "alert":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "An alert trigger runs on the host an alert names, so it has no target to run "
+                "now. Run the action from the host instead."
+            ),
+        )
 
     action = ACTION_REGISTRY.get(sa.action_key)
     if action is None:
@@ -566,6 +630,70 @@ async def list_runs(
         item.host_runs = []
         out.append(item)
     return out
+
+
+@router.get("/{scheduled_action_id}/matches", response_model=list[AlertTriggerMatchOut])
+async def alert_trigger_matches(
+    scheduled_action_id: int,
+    limit: int = Query(default=20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(current_active_user),
+) -> list[AlertTriggerMatchOut]:
+    """Recorded alerts this alert trigger would have fired on, newest first.
+
+    Applies the match and the target to the alert history, so a trigger
+    can be checked against what has arrived before it is switched on. The
+    guards (token, cooldown, a run in flight) depend on the moment and are
+    not applied.
+    """
+    from app.alerts.triggers import would_have_matched
+
+    sa = await db.get(ScheduledAction, scheduled_action_id)
+    if sa is None:
+        raise HTTPException(status_code=404, detail="Scheduled action not found")
+    if sa.trigger != "alert":
+        raise HTTPException(status_code=409, detail="Only an alert trigger matches alerts")
+    return await _match_rows(db, await would_have_matched(db, sa, limit=limit))
+
+
+async def _match_rows(db: AsyncSession, events: list[Any]) -> list[AlertTriggerMatchOut]:
+    out = []
+    for event in events:
+        host = await db.get(Host, event.host_id) if event.host_id else None
+        out.append(
+            AlertTriggerMatchOut(
+                alert_event_id=event.id,
+                alertname=event.alertname,
+                status=event.status,
+                host_id=event.host_id,
+                hostname=host.hostname if host else None,
+                created_at=event.created_at,
+            )
+        )
+    return out
+
+
+@router.post("/preview-matches", response_model=list[AlertTriggerMatchOut])
+async def preview_alert_trigger_matches(
+    body: AlertTriggerPreviewIn,
+    limit: int = Query(default=20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(current_active_user),
+) -> list[AlertTriggerMatchOut]:
+    """Like ``GET /{id}/matches``, for a trigger that is not saved yet.
+
+    What the schedule dialog shows under the match as it is typed.
+    """
+    from types import SimpleNamespace
+
+    from app.alerts.triggers import parse_match, would_have_matched
+
+    try:
+        rules = parse_match(body.alert_match)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"alert_match: {exc}") from exc
+    scope = SimpleNamespace(target_kind=body.target_kind, target_id=body.target_id)
+    return await _match_rows(db, await would_have_matched(db, scope, limit=limit, rules=rules))
 
 
 @router.post("/validate-cron", response_model=ValidateCronResponse)

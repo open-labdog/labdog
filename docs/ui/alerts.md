@@ -125,6 +125,15 @@ flapping looks like from here.
 
 ---
 
+## Running an action instead
+
+An alert can also run an action on its host with no AI at all, for
+example *NginxDown → restart nginx*. That is a schedule that fires on
+alerts; see [Schedules › When an alert fires](scheduled-actions.md#when-an-alert-fires).
+When one matches, it goes first. The investigation below waits for its
+result, and runs only if the action did not fix the alert and the
+schedule says to hand it over.
+
 ## When an investigation starts
 
 An alert must clear every one of these:
@@ -175,6 +184,8 @@ happened" has six different causes and each has a different fix:
 | **already investigated** | A repeat notification |
 | **AI budget reached** | Spend limit hit; the alert is still recorded |
 | **could not start** | AI disabled, no provider, or a provider that cannot run tools |
+| **waiting on action** | An [alert-triggered schedule](scheduled-actions.md#when-an-alert-fires) is running an action for it; the AI looks only if that does not fix it |
+| **handled by action** | An alert-triggered schedule handled it: the action fixed it, or the schedule does not hand alerts to the AI |
 
 ### Reading the outcome on the row
 

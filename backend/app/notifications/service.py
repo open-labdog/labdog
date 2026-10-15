@@ -493,3 +493,66 @@ async def notify_remediation_checked(
             f"{rollback.status if rollback is not None else '-'}"
         ),
     )
+
+
+_ACTION_VERDICT = {
+    "fixed": "fixed: the alert resolved",
+    "not_effective": "did not fix it: the run succeeded and the alert is still firing",
+    "run_failed": "failed: the run did not succeed",
+}
+
+
+async def notify_alert_action(
+    db: AsyncSession,
+    dispatch: Any,
+    run: Any | None,
+    event: Any | None,
+    *,
+    host: str,
+    handed_to_ai: bool,
+) -> int:
+    """How an action an alert set off went, once LabDog has judged it.
+
+    One message per run, sent for every outcome: "it worked" is what lets
+    someone stop wondering whether the 3 a.m. alert needs them.
+    """
+    from app.actions.registry import ACTION_REGISTRY
+
+    verdict = dispatch.check_outcome or "run_failed"
+    alertname = one_line(event.alertname, 80) if event is not None else "an alert"
+    action = ACTION_REGISTRY.get(dispatch.action_key)
+    name = one_line(action.name if action else dispatch.action_key, 80)
+
+    if verdict == "fixed":
+        subject = f"{name} fixed {alertname} on {host}"
+    elif verdict == "not_effective":
+        subject = f"{name} did not clear {alertname} on {host}"
+    else:
+        subject = f"{name} failed on {host} for {alertname}"
+
+    lines = [
+        f"{alertname} fired on {host}, and an alert-triggered schedule ran {name}.",
+        "",
+        f"Action:    {one_line(dispatch.action_key, 64)}",
+        f"Run:       #{run.id}, {run.status}" if run is not None else "Run:       deleted",
+        f"Outcome:   {_ACTION_VERDICT.get(verdict, verdict)}",
+    ]
+    if run is not None and run.error_message:
+        lines += ["", clean(run.error_message, 1000)]
+    if verdict != "fixed":
+        lines += [
+            "",
+            "The alert has been handed to the AI. Whether it investigates depends on the AI "
+            "settings; the Alerts page shows what it did."
+            if handed_to_ai
+            else "Nothing more will happen on its own: this schedule does not hand alerts to "
+            "the AI, or the alert already has an investigation or has resolved.",
+        ]
+    return await notify(
+        db,
+        "alert_action",
+        subject=subject,
+        body="\n".join(lines),
+        link_path=f"/actions/runs/{run.id}" if run is not None else "/alerts",
+        dedupe_key=f"alert_action:{dispatch.id}:{verdict}",
+    )

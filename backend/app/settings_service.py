@@ -174,9 +174,10 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "max": 1,
         "description": "Accept alerts from Grafana and Alertmanager.",
         "help": (
-            "Recording alerts costs nothing and starts nothing. An AI investigation is a separate "
-            "switch, ai.auto_investigate_enabled. The webhook also needs [alerts] webhook_token in "
-            "labdog.toml."
+            "Recording alerts costs nothing and starts nothing on its own. What happens next is "
+            "an alert-triggered schedule, if one matches, and an AI investigation, which is a "
+            "separate switch, ai.auto_investigate_enabled. The webhook also needs "
+            "[alerts] webhook_token in labdog.toml."
         ),
     },
     "alerts.poll_minutes": {
@@ -189,6 +190,20 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
             "Only useful when your alert rules live in Mimir's ruler. Grafana-managed rules are "
             "routed to Grafana's own Alertmanager, which this cannot see, and the poll then "
             "records nothing while appearing healthy."
+        ),
+    },
+    "alerts.action_check_minutes": {
+        "type": "int",
+        "default": 10,
+        "min": 1,
+        "max": 1440,
+        "description": (
+            "Minutes after an alert-triggered run finishes before LabDog judges whether it worked."
+        ),
+        "help": (
+            "If the alert has resolved by then, the action fixed it. If it is still firing, the "
+            "action did not, and a schedule set to hand the alert to the AI does so. Grafana must "
+            "send resolved notifications for this to tell the two apart."
         ),
     },
     "ai.enabled": {

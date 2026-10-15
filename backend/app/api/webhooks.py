@@ -257,7 +257,8 @@ async def grafana_alerts_webhook(
     """Receive alerts from a Grafana contact point.
 
     Records every alert in the payload and returns immediately. Deciding
-    whether any of them is worth an AI investigation happens in a Celery
+    what each one sets off — an alert-triggered schedule, an AI
+    investigation, or nothing — happens in a Celery
     task, per alert — Grafana retries a webhook that does not answer
     quickly, and doing policy work inline would turn a slow provider into
     duplicate notifications.
@@ -302,7 +303,7 @@ async def grafana_alerts_webhook(
 
     for event_id in new_ids:
         celery_app.send_task(
-            "app.tasks.ai_alerts.investigate_alert", kwargs={"alert_event_id": event_id}
+            "app.tasks.alert_handling.handle_alert", kwargs={"alert_event_id": event_id}
         )
 
     logger.info(
