@@ -1,18 +1,15 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
+import { useRouter } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
-import { ActionCard } from "@/components/action-card"
+import { apiFetch } from "@/lib/api"
+import { shortAgo } from "@/lib/fleet"
+import { syncModuleLabel } from "@/lib/modules"
+import { Panel, RunStatus, Table, Tag } from "@/components/ld"
 import { ActionRunDialog } from "@/components/action-run-dialog"
 import { ScheduleActionDialog } from "@/components/scheduled-actions/schedule-action-dialog"
-import { RunStatusBadge } from "@/components/status-badge"
-import { DataTable } from "@/components/ui/data-table"
-import { TableSkeleton } from "@/components/ui/skeleton"
-import { apiFetch } from "@/lib/api"
-import { formatRelativeTime } from "@/lib/utils"
-import type { ColumnDef } from "@/components/ui/data-table"
 import type { ActionDefinition, ActionRun, Host } from "@/lib/types"
-import { useRouter } from "next/navigation"
 
 interface ActionsTabProps {
   scope: "host" | "group"
@@ -46,27 +43,22 @@ export function ActionsTab({ scope, targetId, host }: ActionsTabProps) {
     queryFn: () => apiFetch<ActionRun[]>(`/api/actions/runs?${scopeParam}&limit=20`),
     refetchInterval: (query) => {
       const data = query.state.data as ActionRun[] | undefined
-      if (!data) return false
-      const hasActive = data.some((r) => r.status === "queued" || r.status === "running")
-      return hasActive ? 3000 : false
+      return data?.some((r) => r.status === "queued" || r.status === "running") ? 3000 : false
     },
   })
 
   const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
   // Which host ids this component instance has already asked to refresh.
-  //
   // Collection is asynchronous: the POST queues a Celery job and
   // os_facts_collected_at does not move until that job lands, so the
-  // staleness test below stays true and the effect re-fired on every mount
-  // of the tab — one extra SSH round trip per navigation until the worker
-  // caught up. The ref makes the dispatch once-per-host instead.
+  // staleness test below stays true and the effect re-fired on every
+  // mount of the tab — one extra SSH round trip per navigation until the
+  // worker caught up. The ref makes the dispatch once-per-host instead.
   const factsRefreshRequested = useRef<Set<number>>(new Set())
   useEffect(() => {
     if (scope !== "host" || !host) return
     if (factsRefreshRequested.current.has(targetId)) return
-    const stale =
-      !host.os_facts_collected_at ||
-      Date.now() - new Date(host.os_facts_collected_at).getTime() > SEVEN_DAYS_MS
+    const stale = !host.os_facts_collected_at || Date.now() - new Date(host.os_facts_collected_at).getTime() > SEVEN_DAYS_MS
     if (stale) {
       factsRefreshRequested.current.add(targetId)
       apiFetch(`/api/hosts/${targetId}/facts/refresh`, { method: "POST" }).catch(() => {})
@@ -75,94 +67,72 @@ export function ActionsTab({ scope, targetId, host }: ActionsTabProps) {
   }, [scope, host?.id, host?.os_facts_collected_at])
 
   // Built-in pseudo-actions (sync / drift_check / collect_state) are
-  // dispatched from their own UI surfaces (Sync button, drift card,
-  // facts refresh) and never need to appear in the Actions catalog.
-  // The schedule dialog still surfaces them — they're scheduleable.
-  const filteredCatalog = (catalog ?? []).filter(
-    (a) =>
-      !a.key.startsWith("_builtin.") &&
-      (scope === "host" ? a.supports_host : a.supports_group),
-  )
-
-  const runColumns: ColumnDef<ActionRun>[] = [
-    {
-      key: "action_key",
-      label: "Action",
-      cell: (r) => {
-        const def = (catalog ?? []).find((a) => a.key === r.action_key)
-        return <span className="text-sm">{def?.name ?? r.action_key}</span>
-      },
-    },
-    {
-      key: "status",
-      label: "Status",
-      cell: (r) => <RunStatusBadge status={r.status} reason={r.pending_reason} />,
-      defaultWidth: 100,
-    },
-    {
-      key: "duration",
-      label: "Duration",
-      cell: (r) => <span className="text-xs text-slate-400">{formatDuration(r)}</span>,
-      defaultWidth: 80,
-    },
-    {
-      key: "created_at",
-      label: "Started",
-      cell: (r) => (
-        <span className="text-xs text-slate-400" title={new Date(r.created_at).toLocaleString()}>
-          {formatRelativeTime(r.created_at)}
-        </span>
-      ),
-      defaultWidth: 100,
-    },
-  ]
-
+  // dispatched from their own UI surfaces and never appear in the
+  // catalog here; the schedule dialog still surfaces them.
+  const filteredCatalog = (catalog ?? []).filter((a) => !a.key.startsWith("_builtin.") && (scope === "host" ? a.supports_host : a.supports_group))
   const runsBasePath = scope === "host" ? `/hosts/${targetId}` : `/groups/${targetId}`
+  // Newest first, so the first match is the latest — within the 20 loaded.
+  const lastRun = (key: string) => (runs ?? []).find((r) => r.action_key === key)
 
   return (
-    <div className="space-y-6">
-      {/* Catalog + recent runs two-column layout */}
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-5">
-        {/* Catalog — 60% */}
-        <div className="md:col-span-3 space-y-3">
-          <h3 className="text-sm font-semibold text-slate-200">Available Actions</h3>
-          {catalogLoading ? (
-            <TableSkeleton rows={2} />
-          ) : filteredCatalog.length === 0 ? (
-            <p className="text-sm text-slate-500">No actions available.</p>
-          ) : (
-            filteredCatalog.map((action) => {
-              const lastRun = (runs ?? []).find((r) => r.action_key === action.key)
-              return (
-                <ActionCard
-                  key={action.key}
-                  action={action}
-                  onRun={(a) => { setSelectedAction(a); setDialogOpen(true) }}
-                  onSchedule={(a) => setScheduleAction(a)}
-                  lastRun={lastRun ? { status: lastRun.status, started_at: lastRun.created_at } : null}
-                />
-              )
-            })
-          )}
-        </div>
+    <div className="scroll flex flex-1 flex-col gap-3 p-3.5">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-5">
+        <Panel title="available actions" className="lg:col-span-3" pad={0}>
+          <Table<ActionDefinition>
+            cols={[
+              {
+                k: "name", label: "action", w: "minmax(140px,1.2fr)", sortable: false,
+                cell: (a) => (
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="mono trunc font-medium text-text">{a.name}</span>
+                    <Tag>{a.pack_name}</Tag>
+                    {a.unresolved && <Tag tone="hold" title={`contested by ${a.overridden_from.join(", ")} — pick a winner on /actions?tab=packs`}>unresolved</Tag>}
+                    {a.post_run_sync.length > 0 && <Tag title={`re-syncs ${a.post_run_sync.map(syncModuleLabel).join(", ")} afterwards`}>+sync</Tag>}
+                  </span>
+                ),
+              },
+              { k: "desc", label: "what it does", w: "minmax(120px,1.4fr)", sortable: false, cell: (a) => <span className="trunc text-[11px] text-text-3" title={a.description}>{a.description}</span> },
+              {
+                k: "last", label: "last run", w: "84px", sortable: false,
+                cell: (a) => {
+                  const r = lastRun(a.key)
+                  return r
+                    ? <span className="mono num text-[11px] text-text-3" title={new Date(r.created_at).toLocaleString()}>{shortAgo(r.created_at)} ago</span>
+                    : <span className="text-[11px] text-text-faint" title="not among the 20 most recent runs">—</span>
+                },
+              },
+              {
+                k: "actions", label: "", w: "150px", right: true, sortable: false,
+                cell: (a) => (
+                  <span className="flex items-center justify-end gap-1.5">
+                    <button type="button" className="btn btn-sm btn-ghost" disabled={a.unresolved} onClick={() => setScheduleAction(a)}>schedule…</button>
+                    <button type="button" className="btn btn-sm btn-ghost" disabled={a.unresolved} title={a.unresolved ? "pick a winning pack first" : undefined} onClick={() => { setSelectedAction(a); setDialogOpen(true) }}>run →</button>
+                  </span>
+                ),
+              },
+            ]}
+            rows={filteredCatalog}
+            keyOf={(a) => a.key}
+            loading={catalogLoading}
+            empty="No actions available."
+          />
+        </Panel>
 
-        {/* Recent runs — 40% */}
-        <div className="md:col-span-2 space-y-3">
-          <h3 className="text-sm font-semibold text-slate-200">Recent Runs</h3>
-          {runsLoading ? (
-            <TableSkeleton rows={3} />
-          ) : !runs || runs.length === 0 ? (
-            <p className="text-sm text-slate-500">No runs yet.</p>
-          ) : (
-            <DataTable
-              tableId="action-runs"
-              columns={runColumns}
-              data={runs}
-              onRowClick={(r) => router.push(`${runsBasePath}/actions/runs/${r.id}`)}
-              rowClassName={() => "cursor-pointer"}
-            />
-          )}
-        </div>
+        <Panel title="recent runs" className="lg:col-span-2" pad={0}>
+          <Table<ActionRun>
+            cols={[
+              { k: "action", label: "action", w: "minmax(100px,1.2fr)", sortable: false, cell: (r) => <span className="trunc text-text-2">{(catalog ?? []).find((a) => a.key === r.action_key)?.name ?? r.action_key}</span> },
+              { k: "status", label: "status", w: "90px", sortable: false, cell: (r) => <RunStatus s={r.status} reason={r.pending_reason} /> },
+              { k: "duration", label: "took", w: "70px", sortable: false, cell: (r) => <span className="mono text-[11px] text-text-faint">{formatDuration(r)}</span> },
+              { k: "when", label: "when", w: "70px", right: true, sortable: false, cell: (r) => <span className="mono num text-[11px] text-text-faint">{shortAgo(r.created_at)} ago</span> },
+            ]}
+            rows={runs ?? []}
+            keyOf={(r) => r.id}
+            onRowClick={(r) => router.push(`${runsBasePath}/actions/runs/${r.id}`)}
+            loading={runsLoading}
+            empty="No runs yet."
+          />
+        </Panel>
       </div>
 
       <ActionRunDialog
@@ -178,10 +148,7 @@ export function ActionsTab({ scope, targetId, host }: ActionsTabProps) {
         <ScheduleActionDialog
           open
           onOpenChange={(o) => !o && setScheduleAction(null)}
-          preselected={{
-            action_key: scheduleAction.key,
-            target: { kind: scope, id: targetId },
-          }}
+          preselected={{ action_key: scheduleAction.key, target: { kind: scope, id: targetId } }}
         />
       )}
     </div>

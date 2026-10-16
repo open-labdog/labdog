@@ -5,8 +5,10 @@ LabDog says it should be?" and records the answer. It is read-only — a drift
 check never changes anything on the host. Fixing drift is a sync.
 
 Checks run on a timer (`drift.check_interval_minutes`, default 30, see
-[Settings](settings.md)) and can also be run on demand from the Host detail
-page.
+[Settings](settings.md)) and can also be run on demand: **collect** on a
+module's tab or **collect all** on a host's page, **Re-check** on the
+[Drift](operations.md#drift) screen, or **Drift-check fleet** on the
+[Overview](dashboard.md).
 
 ## It is off by default, and the Add Host form asks
 
@@ -31,12 +33,13 @@ hosts to check, so a fleet with it off everywhere shows no error, no
 warning, and no checks — indefinitely.
 
 This is worth stating plainly because everything downstream of drift goes
-quiet too, and each looks like a separate malfunction:
+quiet too. The UI says so where it can; the exporter cannot:
 
 | Surface | What you see when drift is off everywhere |
 |---|---|
-| Dashboard → Fleet Overview | `Never Checked` counts every host, permanently |
-| Dashboard drift-trend chart | "Drift history is being collected" forever |
+| Overview → drift trend | "Drift checking is off on all *n* hosts — nothing is being checked", with a way to turn it on |
+| Operations → Drift | The same banner above an empty findings list: "Nothing is being checked, so nothing can be found" |
+| Hosts list | `off` in every row's drift check column |
 | `/metrics` exporter | No `labdog_drift_*` series at all — absent, not zero |
 
 The exporter's `labdog_hosts_drift_check_enabled` gauge is the quickest way to
@@ -49,8 +52,8 @@ hierarchical — neither one gates the other.
 
 | Flag | Governs | Set from |
 |---|---|---|
-| `Host.drift_check_enabled` | **Firewall drift only** | Hosts list bulk action; Host → Overview → "Drift Monitoring" badge; the **Firewall** module row's Enable/Disable Drift Check action |
-| `HostModuleStatus.drift_check_enabled` | One module, for one host — **services, /etc/hosts, users, cron, packages, resolver** | That module's tab on the Host detail page |
+| `Host.drift_check_enabled` | **Firewall drift only** | Hosts list bulk action; the host page's Overview tab — the **drift monitoring** toggle; the **Firewall** tab's **enable/disable drift check** |
+| `HostModuleStatus.drift_check_enabled` | One module, for one host — **services, /etc/hosts, users, cron, packages, resolver** | **enable/disable drift check** in that module's *current state* panel (host page › Config) |
 
 Firewall is the exception because it predates per-module toggles: its sweep
 is the only one that selects candidates from the host-level flag
@@ -60,20 +63,21 @@ their own row.
 Three consequences follow, and none of them is guessable from the UI:
 
 1. **Turning on host-level drift does not turn on the other six modules.**
-   The Overview badge reading `Enabled` means firewall drift is on. Services,
+   The Overview tab's drift monitoring reading `enabled` means firewall
+   drift is on. Services,
    cron, packages and the rest each stay off until switched on individually.
 
 2. **Turning on a module does not turn on firewall drift.** Enabling drift on
    the Services tab writes only the services row.
 
-3. **The Firewall row's toggle is the host-level switch.** Clicking Enable
-   Drift Check on the Firewall module row does the same thing as the Overview
-   badge and the Hosts-list bulk action — all three write the same flag. It is
-   the one module row whose control is not module-scoped.
+3. **The Firewall tab's toggle is the host-level switch.** **enable drift
+   check** on the Firewall tab does the same thing as the Overview tab's
+   toggle and the Hosts-list bulk action — all three write the same flag. It
+   is the one module whose control is not module-scoped.
 
 ### Turning it on for a whole fleet
 
-The Hosts list has a bulk **Enable Drift Check** action for the host-level
+The Hosts list has a bulk **Enable drift check** action for the host-level
 flag. There is no bulk equivalent for the per-module flags; those are set per
 host, per module.
 
@@ -107,7 +111,8 @@ it writes the host record rather than a module row.
 ## See also
 
 - [Hosts](hosts.md) — where the per-host controls live
-- [Dashboard](dashboard.md) — the fleet-wide drift trend
+- [Overview](dashboard.md) — the fleet-wide drift trend
+- [Operations › Drift](operations.md#drift) — the findings list
 - [Settings](settings.md) — `drift.check_interval_minutes`
 - [Metrics export](../metrics-export.md) — `labdog_drift_*` and
   `labdog_hosts_drift_check_enabled`

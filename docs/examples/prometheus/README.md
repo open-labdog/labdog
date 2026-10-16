@@ -10,7 +10,7 @@ useful dashboards and alerts out of it.
 | [`labdog-overview.json`](labdog-overview.json) | Grafana dashboard — fleet, sync, drift, actions, certificates, exporter health |
 
 Scraping is shown with **Alloy**, since LabDog already deploys it to managed
-hosts via the bundled `alloy-install` action. The endpoint serves standard
+hosts via the `alloy-install` action from `labdog-playbooks`. The endpoint serves standard
 Prometheus text exposition, so any compatible scraper works — point it at the
 same URL. The alert rules and dashboard are ordinary Prometheus/Grafana
 artifacts and apply either way.

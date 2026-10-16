@@ -37,6 +37,12 @@ by transitioning the per-member ActionHostRun rows to `running` before
 committing. On finish, call `dispatch_next_pending_for_host` for every
 member (each member can now unblock a different queued operation).
 
+A rollback by the assistant (``AIRollback``, see `app.ai.remediation`)
+takes part as well, without a ``pending`` state of its own: it claims
+the host under the lock or is refused, its ``running`` row is what
+`check_host_busy` sees while Proxmox restores the machine, and it
+releases the host's queue when it ends.
+
 Self-exclusion in the busy check is NOT needed for sync and group-action
 callers — their own rows are still in `queued`/`pending` state at the
 time of the check. However, host-targeted action runs are a special case:
@@ -59,7 +65,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Literal
 
-from sqlalchemy import or_, select, text, update
+from sqlalchemy import exists, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -70,7 +76,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-BlockerKind = Literal["sync", "action_host", "action_group"]
+BlockerKind = Literal["sync", "action_host", "action_group", "ai_rollback"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,9 +93,11 @@ class BlockerInfo:
     * ``action_host``  — host-targeted ``ActionRun`` is running on this host.
     * ``action_group`` — group-targeted ``ActionRun`` is running and this
       host is one of its members.
+    * ``ai_rollback``  — an ``AIRollback`` is restoring this host's VM to a
+      snapshot the assistant took (:mod:`app.ai.remediation`).
 
-    ``id`` is the primary key of the blocking row (``SyncJob.id`` or
-    ``ActionRun.id``). ``host_id`` is the host being blocked (matters
+    ``id`` is the primary key of the blocking row (``SyncJob.id``,
+    ``ActionRun.id`` or ``AIRollback.id``). ``host_id`` is the host being blocked (matters
     for group dispatch — names the specific busy member, not the run's
     nominal target). ``action_key`` is the action key for the two
     ``action_*`` kinds; ``None`` for ``sync``.
@@ -192,6 +200,31 @@ async def acquire_host_locks(db: AsyncSession, host_ids: list[int]) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _has_no_host_runs():
+    """``ActionRun`` has no ``ActionHostRun`` rows yet: the BUG-62 window.
+
+    The membership scans (3b below, and its twin in `check_hosts_busy`)
+    exist for one moment only: a group-dispatch run that has claimed every
+    member under their locks but has not yet created the per-host rows that
+    say so. Once those rows exist, scan 3 is exact, so the membership scan
+    must stop matching.
+
+    It did not, and that was BUG-100. A per-host fan-out of a group target
+    (``linux-upgrade`` on a group, say) creates its rows in the same commit
+    that marks it ``running``, so the membership scan matched it for its
+    whole lifetime: every member read as busy, including hosts it had
+    finished and hosts it had not reached. Two such runs over overlapping
+    groups each found the other and deferred, and neither ever moved.
+
+    Hosts are serialised, not groups. Two runs whose groups overlap may work
+    on different members at the same time; they never touch the same member
+    at once, because a member is held by a ``running`` per-host row.
+    """
+    from app.models.action_run import ActionHostRun, ActionRun  # noqa: PLC0415
+
+    return ~exists().where(ActionHostRun.action_run_id == ActionRun.id)
+
+
 async def check_host_busy(
     db: AsyncSession,
     host_id: int,
@@ -200,8 +233,10 @@ async def check_host_busy(
 ) -> BlockerInfo | None:
     """First blocker on ``host_id``, or None if the host is free.
 
-    Walks three sources, returns at the first hit:
+    Walks four sources, returns at the first hit:
 
+    0. ``AIRollback`` with ``status='running'`` and ``host_id=X`` (Proxmox
+       is stopping and restoring the machine; nothing else may run on it).
     1. ``SyncJob`` with ``status='running'`` and ``host_id=X``
        (the existing sync queue).
     2. ``ActionRun`` with ``status='running'`` and ``host_id=X``
@@ -209,6 +244,13 @@ async def check_host_busy(
     3. ``ActionHostRun`` with ``status='running'`` and ``host_id=X``
        belonging to an ActionRun with ``status='running'``
        (group-targeted action runs whose member set includes X).
+       3b. A ``running`` group-targeted ``ActionRun`` whose group contains
+       X and which has no ``ActionHostRun`` rows yet (the claim-to-load
+       window of a group dispatch; see `_has_no_host_runs`).
+
+    So a group run holds a member only while that member's own row is
+    ``running``: two runs over overlapping groups can work on different
+    members at the same time, never on the same one.
 
     Rows whose host has been deleted carry ``host_id IS NULL`` (BUG-77)
     and match none of these scans, which is the wanted answer: a host
@@ -246,8 +288,20 @@ async def check_host_busy(
         ``is not None`` truthy-check (the return is a frozen dataclass,
         not a bool).
     """
+    from app.ai.models import AIRollback
     from app.models.action_run import ActionHostRun, ActionRun
     from app.models.sync_job import JobStatus, SyncJob
+
+    # 0. A rollback of this host's VM.
+    rollback_hit = (
+        await db.execute(
+            select(AIRollback.id)
+            .where(AIRollback.host_id == host_id, AIRollback.status == "running")
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if rollback_hit is not None:
+        return BlockerInfo(kind="ai_rollback", id=rollback_hit, host_id=host_id)
 
     # 1. SyncJob running on this host.
     sync_hit = (
@@ -306,7 +360,8 @@ async def check_host_busy(
         # locks commits. Between those two points a group run held every
         # member and nothing said so, so a sync entering its gate saw the
         # host free. Matching on membership closes that window without
-        # depending on rows that do not exist yet.
+        # depending on rows that do not exist yet — and only that window
+        # (BUG-100, see `_has_no_host_runs`).
         from app.models.host import HostGroupMembership  # noqa: PLC0415
 
         claimed_group_stmt = (
@@ -319,6 +374,7 @@ async def check_host_busy(
                 HostGroupMembership.c.host_id == host_id,
                 ActionRun.host_id.is_(None),
                 ActionRun.status == "running",
+                _has_no_host_runs(),
             )
         )
         if exclude_action_run_id is not None:
@@ -344,7 +400,7 @@ async def check_hosts_busy(db: AsyncSession, host_ids: list[int]) -> BlockerInfo
     ("Waiting for sync 7 on host node-1").
 
     Equivalent to scanning each host via `check_host_busy` but
-    expressed as three queries instead of ``3N``.
+    expressed as five queries instead of ``5N``.
 
     Args:
         db: An open async session inside a transaction holding locks
@@ -361,15 +417,28 @@ async def check_hosts_busy(db: AsyncSession, host_ids: list[int]) -> BlockerInfo
     if not host_ids:
         return None
 
+    from app.ai.models import AIRollback
     from app.models.action_run import ActionHostRun, ActionRun
     from app.models.sync_job import JobStatus, SyncJob
 
     ordered = sorted(set(host_ids))
 
     # host_id → (kind, id, action_key) for the FIRST hit per host.
-    # We accept any one of the three sources hitting first (the lock
+    # We accept any one of the sources hitting first (the lock
     # invariant means a host has at most one running op anyway).
     blockers: dict[int, BlockerInfo] = {}
+
+    rollback_rows = (
+        await db.execute(
+            select(AIRollback.id, AIRollback.host_id).where(
+                AIRollback.host_id.in_(ordered), AIRollback.status == "running"
+            )
+        )
+    ).all()
+    for row in rollback_rows:
+        blockers.setdefault(
+            row.host_id, BlockerInfo(kind="ai_rollback", id=row.id, host_id=row.host_id)
+        )
 
     sync_rows = (
         await db.execute(
@@ -427,7 +496,8 @@ async def check_hosts_busy(db: AsyncSession, host_ids: list[int]) -> BlockerInfo
         )
 
     # Same window as case 3b in check_host_busy: a group run that has taken
-    # its members' locks but not yet created their per-host rows.
+    # its members' locks but not yet created their per-host rows, and only
+    # that window (BUG-100, see `_has_no_host_runs`).
     from app.models.host import HostGroupMembership  # noqa: PLC0415
 
     claimed_group_rows = (
@@ -441,6 +511,7 @@ async def check_hosts_busy(db: AsyncSession, host_ids: list[int]) -> BlockerInfo
                 HostGroupMembership.c.host_id.in_(ordered),
                 ActionRun.host_id.is_(None),
                 ActionRun.status == "running",
+                _has_no_host_runs(),
             )
         )
     ).all()
@@ -459,6 +530,55 @@ async def check_hosts_busy(db: AsyncSession, host_ids: list[int]) -> BlockerInfo
         return None
     first_host = min(blockers.keys())
     return blockers[first_host]
+
+
+async def resume_deferred_parent(db: AsyncSession, action_run_id: int) -> None:
+    """Put a single-host run back to ``running`` as its row claims the host.
+
+    Call in the transaction that flips the row to ``running``. Deferring a
+    host-targeted run flips the run to ``pending`` with its row, and the
+    host queue now resumes it through the row (BUG-102), so nothing else
+    would ever flip the run back. Left ``pending`` while its row runs, the
+    run is invisible to ``check_host_busy``: scan 2 wants a ``running`` run
+    and scan 3 a ``running`` parent, so a sync entering its gate would find
+    the host free and run alongside the action.
+
+    Only from ``pending``: a run cancelled meanwhile stays cancelled. A
+    group run's parent never goes ``pending`` when one member defers, so
+    the ``host_id`` condition only says which runs this is for.
+    """
+    from app.models.action_run import ActionRun
+
+    await db.execute(
+        update(ActionRun)
+        .where(
+            ActionRun.id == action_run_id,
+            ActionRun.host_id.is_not(None),
+            ActionRun.status == "pending",
+        )
+        .values(status="running", pending_reason=None)
+    )
+
+
+def is_claimable(host_run) -> bool:
+    """Whether a per-host task may claim this ``ActionHostRun``.
+
+    Only a ``queued`` row is ever claimed. An orchestrator taking over from
+    a dead one re-sends every row still queued, and the dead one may
+    already have sent some of them (BUG-101): the copy of the task that
+    comes second finds the row claimed, or finished, and must leave it
+    alone. Ask once on the first read, and again after taking the host
+    lock — the second copy waits on that lock for the first one's commit,
+    and only a fresh read sees it.
+    """
+    if host_run.status == "queued":
+        return True
+    logger.info(
+        "host_run %d is %r, not queued — another copy of its task has it",
+        host_run.id,
+        host_run.status,
+    )
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -515,6 +635,7 @@ DispatchedKind = Literal["sync", "action_host", "action_group", "action_host_run
 `action_group`: an ActionRun whose member set includes the freed host
     (the dispatched task will re-check all its members and may defer
     again if another member is still busy).
+`action_host_run`: one deferred per-host row, re-sent to its per-host task.
 """
 
 
@@ -568,12 +689,13 @@ async def dispatch_next_pending_for_host(
 
     - SyncJob → dispatches via ``run_host_sync.delay(...)`` (same
       task name the orchestrator already uses).
-    - host-targeted ActionRun → dispatches via
-      ``app.tasks.action_orchestrator.run_action.delay(...)``.
-    - group-targeted ActionRun → dispatches via
+    - ActionRun with no per-host rows yet → dispatches via
       ``app.tasks.action_orchestrator.run_action.delay(...)`` (which
       routes to action_group based on the action's `supports_host`
       flag — same routing as the original submission).
+    - ActionHostRun (a deferred per-host row, of a host-targeted run or
+      of a group run fanned out per host) → dispatches the action's own
+      per-host task via ``action_orchestrator.send_host_task``.
 
     The dispatched task does its own claim-or-defer. A group action
     picked here may re-defer if any of its OTHER members is still
@@ -626,7 +748,18 @@ async def dispatch_next_pending_for_host(
 
         # ------------------------------------------------------------------
         # ActionRun candidate: pending + (host_id matches OR group target
-        # whose member set includes this host) + not excluded.
+        # whose member set includes this host) + not excluded + no
+        # per-host rows yet.
+        #
+        # BUG-102: a host-targeted run defers per row — the orchestrator has
+        # already created the host's ActionHostRun, and action_host flips
+        # that row and the run to ``pending`` together. Both rows were then
+        # candidates with the same created_at, the run won the tie, and
+        # re-sending it through the orchestrator inserted the host's row a
+        # second time: the run failed on ``uq_action_host_run`` and the real
+        # row stayed ``pending`` for good. Such a run comes back through its
+        # row (the child scan below). Only a run that deferred before it had
+        # rows — a group dispatch, which defers as a whole — is re-sent here.
         # ------------------------------------------------------------------
         group_member_subq = (
             select(HostGroupMembership.c.group_id)
@@ -641,6 +774,7 @@ async def dispatch_next_pending_for_host(
                     ActionRun.host_id == host_id,
                     ActionRun.group_id.in_(group_member_subq),
                 ),
+                _has_no_host_runs(),
             )
             .order_by(ActionRun.created_at.asc())
             .limit(1)
@@ -650,8 +784,9 @@ async def dispatch_next_pending_for_host(
         action_candidate = (await db.execute(action_stmt)).scalar_one_or_none()
 
         # ------------------------------------------------------------------
-        # ActionHostRun candidate: a deferred *child* of a group-targeted
-        # run whose action has supports_host=True.
+        # ActionHostRun candidate: a deferred per-host row — a member of a
+        # group-targeted run whose action has supports_host=True, or the
+        # one row of a host-targeted run (BUG-102, above).
         #
         # BUG-62: nothing selected on this. action_host defers such a child
         # by flipping only the ActionHostRun to ``pending`` — the parent
@@ -661,17 +796,26 @@ async def dispatch_next_pending_for_host(
         # never touched that host, and the sweeper skipped it because the
         # parent was terminal. Reporting success for work that did not
         # happen is worse than reporting failure.
+        #
+        # A ``_builtin.sync`` row is left out while the SyncJob it queued is
+        # still open (BUG-103). That job is in the sync scan above and closes
+        # the row when it runs (BUG-81); re-sending the row as well would
+        # start a second sync for the same request.
         # ------------------------------------------------------------------
         # ActionHostRun has no created_at of its own, so a child takes its
         # parent's queue position — which is the FIFO semantic that matters
         # anyway: the run was submitted at one instant, not per member.
         child_stmt = (
-            select(ActionHostRun, ActionRun.created_at)
+            select(ActionHostRun, ActionRun.created_at, ActionRun.action_key)
             .join(ActionRun, ActionRun.id == ActionHostRun.action_run_id)
             .where(
                 ActionHostRun.host_id == host_id,
                 ActionHostRun.status == "pending",
                 ActionRun.status.in_(("queued", "running", "pending")),
+                ~exists().where(
+                    SyncJob.origin_action_host_run_id == ActionHostRun.id,
+                    SyncJob.status.in_((JobStatus.pending, JobStatus.running)),
+                ),
             )
             .order_by(ActionRun.created_at.asc(), ActionHostRun.id.asc())
             .limit(1)
@@ -697,6 +841,7 @@ async def dispatch_next_pending_for_host(
 
         if candidate_kind == "action_host_run":
             child_row: ActionHostRun = candidate_row  # type: ignore[assignment]
+            child_action_key: str = child_hit[2]  # type: ignore[index]
             # Claim it out of ``pending`` in this transaction so a second
             # finisher cannot pick the same child (see the ActionRun claim
             # below for the same reasoning).
@@ -712,9 +857,15 @@ async def dispatch_next_pending_for_host(
                 continue
             await db.commit()
 
-            from app.tasks.action_host import run_action_host
+            # The task's time limits come from the action's own timeouts, so
+            # this process's registry has to know the action: a pool process
+            # still on the built-ins alone would size a pack action's limits
+            # from the defaults (BUG-105). After the commit, as it requires.
+            from app.actions.registry import ensure_registry_current
+            from app.tasks.action_orchestrator import send_host_task
 
-            run_action_host.delay(child_row.action_run_id, child_row.id)
+            await ensure_registry_current(db)
+            send_host_task(child_action_key, child_row.action_run_id, child_row.id)
             return ("action_host_run", child_row.id)
 
         if candidate_kind == "sync":

@@ -5,11 +5,12 @@ take?", used by three consumers that must never drift apart:
 
 * the executors (``action_host`` / ``action_group``) — wall-clock
   ``timeout=`` passed to ansible-runner;
-* the orchestrator — per-child Celery soft/hard time limits and its
-  own batch-join timeout;
+* the orchestrator — per-child Celery soft/hard time limits and how
+  long it waits on a batch;
 * the stale-run sweeper (``action_sweeper``) and the scheduler's
   wedged-in-flight guard — "past this age the worker is presumed
-  dead".
+  dead";
+* the orchestrator's heartbeat, and the sweeper's reading of it.
 
 Kept import-light (no module-level app imports) so it can be pulled
 into any task module without circular-import risk.
@@ -40,6 +41,16 @@ HARD_LIMIT_MARGIN_SECONDS = 300
 #: Slack added to the whole-run deadline for batch boundaries,
 #: queueing delays, and post-run sync dispatch.
 RUN_DEADLINE_SLACK_SECONDS = 3600
+
+#: How often an orchestrator driving a run re-reads its batch, checks for
+#: a cancel, and writes ``ActionRun.heartbeat_at``.
+ORCHESTRATOR_POLL_SECONDS = 5
+
+#: A run whose orchestrator has not written a heartbeat for this long has
+#: lost it, and the action sweeper hands the run to a new one (BUG-101).
+#: Sixty missed polls: far beyond anything a live orchestrator does, even
+#: through a database restart, and still short next to any action.
+ORCHESTRATOR_STALE_SECONDS = 300
 
 
 def effective_playbook_timeout(playbook_timeout_floor: int | None) -> int:

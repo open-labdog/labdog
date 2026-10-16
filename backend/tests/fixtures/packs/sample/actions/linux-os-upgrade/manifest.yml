@@ -1,0 +1,24 @@
+key: linux-os-upgrade
+name: Upgrade OS release
+description: Per-host destructive action with required parameters.
+icon: Layers
+playbook: playbook.yml
+version: "1.0"
+estimated_duration: "20–45 min"
+destructive: true
+supports_group: true
+supports_host: true
+playbook_timeout_seconds: 5400
+parameters:
+  - key: current_version
+    label: Current codename
+    type: string
+    required: true
+  - key: next_version
+    label: Target codename
+    type: string
+    required: true
+  - key: cleanup
+    label: Remove unused packages
+    type: bool
+    default: true

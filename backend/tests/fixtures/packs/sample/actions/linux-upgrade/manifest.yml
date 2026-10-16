@@ -1,0 +1,30 @@
+key: linux-upgrade
+name: Upgrade Linux packages
+description: Per-host destructive action with a pack verify playbook.
+icon: ArrowUpFromLine
+playbook: playbook.yml
+version: "1.0"
+estimated_duration: "5–15 min"
+destructive: true
+supports_group: true
+supports_host: true
+playbook_timeout_seconds: 1800
+verify_playbook: ../../verify/post-upgrade.yml
+verify_timeout_seconds: 180
+parameters:
+  - key: auto_reboot
+    label: Reboot if required
+    type: bool
+    default: true
+  - key: reboot_timeout
+    label: Reboot timeout (seconds)
+    type: int
+    default: 300
+  - key: cleanup
+    label: Remove unused packages
+    type: bool
+    default: true
+  - key: ignore_failed_units
+    label: Tolerated failed units
+    type: string
+    default: ""

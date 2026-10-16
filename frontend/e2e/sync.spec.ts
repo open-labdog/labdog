@@ -5,65 +5,54 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 /**
  * Group sync.
  *
- * This file used to drive a standalone /groups/{id}/sync page with its own
- * Preview / Apply / confirm-dialog flow. That page no longer exists —
- * `frontend/app/(dashboard)/groups/[id]/` has no `sync/` route — and every
- * test here navigated to a URL the SPA answered with the group detail page,
- * then failed looking for a heading that was never going to be there.
- *
- * Sync is now the `GroupSyncButton` dialog on the group detail page
- * (components/group-sync-dialog.tsx): opening it runs the preview
- * immediately, and Apply Changes stays disabled until the preview finds
- * something to change. These tests cover that surface instead.
+ * Sync used to be a dialog on the group detail page (`GroupSyncButton`,
+ * components/group-sync-dialog.tsx): open it, it previews, Apply stays
+ * disabled until the preview finds a change. That dialog is gone. The
+ * group page's "Plan sync — N hosts" now opens Operations › Plans scoped
+ * to the group (`/plans?scope=group:<id>`), where the dry run, the review
+ * and the armed Apply are a screen with a shareable URL. These tests
+ * cover that surface.
  */
-test.describe("Group sync dialog", () => {
+test.describe("Group sync via Plans", () => {
   test.describe.configure({ mode: "serial" })
   let groupId: number
+  let groupName: string
 
   test.beforeAll(async ({ request }) => {
+    groupName = `e2e-sync-group-${Date.now()}`
     const res = await request.post(`${API_BASE}/api/groups`, {
-      data: { name: `e2e-sync-group-${Date.now()}`, description: "Sync test group", priority: 995 },
+      data: { name: groupName, description: "Sync test group", priority: 995 },
     })
     const group = await res.json()
     groupId = group.id
   })
 
-  test("the Sync Status card offers a Sync button", async ({ page }) => {
+  test("the group head offers Plan sync, disabled while the group is empty", async ({ page }) => {
     await page.goto(`/groups/${groupId}`)
-    await expect(page.getByRole("heading", { name: "Sync Status" })).toBeVisible()
-    await expect(page.getByRole("button", { name: "Sync", exact: true })).toBeVisible()
+    const plan = page.getByRole("button", { name: "Plan sync — 0 hosts" })
+    await expect(plan).toBeVisible()
+    await expect(plan).toBeDisabled()
+    await expect(plan).toHaveAttribute("title", /no hosts in this group/)
   })
 
-  test("opening it previews every module", async ({ page }) => {
-    await page.goto(`/groups/${groupId}`)
-    await page.getByRole("button", { name: "Sync", exact: true }).click()
-
-    const dialog = page.getByRole("dialog")
-    await expect(dialog).toBeVisible()
-    await expect(
-      dialog.getByRole("heading", { name: "Sync all modules — Preview" })
-    ).toBeVisible()
+  test("a plan scoped to the group computes on open and names the group", async ({ page }) => {
+    await page.goto(`/plans?scope=group:${groupId}`)
+    await expect(page.getByRole("heading", { name: /plan/ })).toBeVisible()
+    // The scope tag carries the group and links back to it.
+    await expect(page.getByText(`group: ${groupName} →`)).toBeVisible()
   })
 
   test("an empty group has nothing to apply", async ({ page }) => {
-    await page.goto(`/groups/${groupId}`)
-    await page.getByRole("button", { name: "Sync", exact: true }).click()
-
-    const dialog = page.getByRole("dialog")
-    // The group was created with no hosts, so the preview resolves to the
-    // empty state and Apply must stay disabled — `hasChanges` is false.
-    await expect(dialog.getByText("No hosts in this group.")).toBeVisible({ timeout: 15000 })
-    await expect(dialog.getByRole("button", { name: "Apply Changes" })).toBeDisabled()
+    await page.goto(`/plans?scope=group:${groupId}`)
+    // No hosts → the dry run has nothing in scope and Apply cannot be armed.
+    await expect(page.getByText("Nothing in scope")).toBeVisible({ timeout: 15000 })
+    await expect(page.getByRole("button", { name: "Review & apply…" })).toBeDisabled()
   })
 
-  test("Cancel closes the dialog", async ({ page }) => {
-    await page.goto(`/groups/${groupId}`)
-    await page.getByRole("button", { name: "Sync", exact: true }).click()
-
-    const dialog = page.getByRole("dialog")
-    await expect(dialog).toBeVisible()
-
-    await dialog.getByRole("button", { name: "Cancel" }).click()
-    await expect(dialog).not.toBeVisible()
+  test("the scope tag returns to the group's Config tab", async ({ page }) => {
+    await page.goto(`/plans?scope=group:${groupId}`)
+    await page.getByText(`group: ${groupName} →`).click()
+    await expect(page).toHaveURL(new RegExp(`/groups/${groupId}/?\\?tab=config`))
+    await expect(page.getByRole("tab", { name: "Config", selected: true })).toBeVisible()
   })
 })

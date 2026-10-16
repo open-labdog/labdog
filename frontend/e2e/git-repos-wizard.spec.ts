@@ -23,7 +23,7 @@ type ScanShape = {
   }>
   existing_key_winners: Record<
     string,
-    { key: string; source: "bundled" | "db_pack"; pack_name: string; pack_id: number | null }
+    { key: string; pack_name: string; pack_id: number }
   >
   intra_repo_key_conflicts: Array<{ key: string; contributing_packs: string[] }>
   scan_errors: Array<{ file: string; message: string }>

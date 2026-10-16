@@ -28,7 +28,7 @@ from sqlalchemy import select
 from app.models.action_run import ActionHostRun, ActionRun
 from tests.conftest import create_host, create_ssh_key
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("sample_pack")]
 
 
 # ---------------------------------------------------------------------------
@@ -94,19 +94,19 @@ class _FakeProxmoxClient:
         self.deleted: list[tuple[str, int, str]] = []
         self.started: list[tuple[str, int]] = []
 
-    async def create_snapshot(self, pve_node, vmid, name, description=""):  # noqa: ARG002
+    async def create_snapshot(self, pve_node, vmid, name, description="", *, vm_type="qemu"):  # noqa: ARG002
         self.created.append((pve_node, vmid, name))
         return f"UPID:{pve_node}:{vmid}:{name}"
 
-    async def rollback_snapshot(self, pve_node, vmid, name):
+    async def rollback_snapshot(self, pve_node, vmid, name, *, vm_type="qemu"):  # noqa: ARG002
         self.rolled_back.append((pve_node, vmid, name))
         return f"UPID:{pve_node}:{vmid}:rb:{name}"
 
-    async def delete_snapshot(self, pve_node, vmid, name):
+    async def delete_snapshot(self, pve_node, vmid, name, *, vm_type="qemu"):  # noqa: ARG002
         self.deleted.append((pve_node, vmid, name))
         return f"UPID:{pve_node}:{vmid}:rm:{name}"
 
-    async def start_vm(self, pve_node, vmid):
+    async def start_vm(self, pve_node, vmid, *, vm_type="qemu"):  # noqa: ARG002
         self.started.append((pve_node, vmid))
         return f"UPID:{pve_node}:{vmid}:start"
 
@@ -129,6 +129,8 @@ def fake_proxmox():
         host,
         ssh_key_path,
         db,  # noqa: ARG001
+        *,
+        vm_type="qemu",  # noqa: ARG001
     ):
         await proxmox_client.rollback_snapshot(pve_node, vmid, snapshot_name)
         await proxmox_client.start_vm(pve_node, vmid)
@@ -214,7 +216,7 @@ async def _make_destructive_run(
     await _seed_vm_mapping(db, host.id, pve_id, vmid=801)
     await db.flush()
 
-    # ``linux-upgrade`` is a bundled destructive action with
+    # ``linux-upgrade`` is the sample pack's destructive action with
     # ``supports_host: true``. Use it so the orchestrator's per-host
     # path actually executes the envelope.
     run = ActionRun(
@@ -342,7 +344,7 @@ async def test_auto_rollback_false_keeps_snapshot_on_failure(
 
 
 async def _make_simple_run(db):
-    """A non-destructive host-targeted run using a bundled action, so the
+    """A non-destructive host-targeted run using a sample-pack action, so the
     executor reaches the preflight step without needing a Proxmox mapping."""
     key = await create_ssh_key(db)
     host = await create_host(db, ssh_key_id=key.id, hostname="preflight-host")

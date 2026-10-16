@@ -50,16 +50,17 @@ class ActionDefinition:
     #: ``_builtin.collect_state`` set this to ``True``.
     supports_fleet: bool = False
     parameters: tuple[ActionParameter, ...] = field(default_factory=tuple)
-    pack_name: str = "bundled"
+    #: Name of the pack supplying the action (``_builtin`` for the
+    #: built-ins). Set by the pack loader.
+    pack_name: str = ""
     roles_paths: tuple[Path, ...] = field(default_factory=tuple)
     #: ``ActionPack.id`` of the pack supplying this action — i.e. the
     #: pinned or sole contributor. ``None`` means **unresolved**:
     #: multiple packs declare this key and the operator hasn't pinned a
     #: winner. The frontend surfaces an "Unresolved — pick winner" hint
-    #: and the API rejects ``POST /api/actions/runs`` with 409. Bundled
-    #: actions also report ``None`` here because the bundled pack has
-    #: no ``ActionPack`` row — distinguish via ``pack_name`` /
-    #: ``contributor_pack_ids``.
+    #: and the API rejects ``POST /api/actions/runs`` with 409. Built-in
+    #: pseudo-actions also report ``None`` here, having no pack at all —
+    #: use :attr:`is_unresolved` rather than testing this for ``None``.
     winning_pack_id: int | None = None
     #: Names of every other pack that also declared this key, in stable
     #: (sorted) order. Empty when only one pack contributes. Shown in
@@ -116,8 +117,7 @@ class ActionDefinition:
         operator pin exists yet. The action cannot run; the UI must
         prompt the operator to choose a winner.
 
-        Note: bundled / pack-supplied uncontested actions are *not*
-        unresolved — uncontested keys win automatically. Built-ins
-        are never unresolved.
+        Note: uncontested keys are *not* unresolved — they win
+        automatically. Built-ins are never unresolved.
         """
         return self.playbook_path is None and not self.is_builtin

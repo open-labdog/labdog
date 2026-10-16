@@ -101,6 +101,38 @@ async def collect_service_states(
     return results
 
 
+def _parse_unit_file_states(output: str) -> dict[str, str]:
+    """Map each service unit file to its state, from ``systemctl list-unit-files``.
+
+    Keys drop the ``.service`` suffix. A template is listed once, as
+    ``name@``; its instances have no unit file of their own and are absent.
+    """
+    states: dict[str, str] = {}
+    for line in output.splitlines():
+        parts = line.split()
+        # Skips the header, the blank line and the "N unit files listed." summary.
+        if len(parts) < 2 or not parts[0].endswith(".service"):
+            continue
+        states[parts[0].removesuffix(".service")] = parts[1]
+    return states
+
+
+def _unit_enabled(unit: str, unit_file_states: dict[str, str]) -> bool:
+    """Whether *unit* is enabled, by the rule ``collect_service_states`` applies
+    to ``systemctl is-enabled``: only the state ``enabled`` counts.
+
+    An instance (``getty@tty1``) has no unit file of its own and takes its
+    template's state. That is an approximation: ``is-enabled`` looks at the
+    instance's own symlinks, so an enabled template can still have a
+    disabled instance. A unit with no unit file at all (generated,
+    transient) is not enabled.
+    """
+    state = unit_file_states.get(unit)
+    if state is None and "@" in unit:
+        state = unit_file_states.get(unit.split("@", 1)[0] + "@")
+    return state == "enabled"
+
+
 async def list_all_services(
     host: "Host",
     db: "AsyncSession",
@@ -109,7 +141,10 @@ async def list_all_services(
     """
     SSH into host and list all systemd services via systemctl.
 
-    Returns a list of dicts with keys: unit, load_state, active_state, sub_state, description.
+    Returns a list of dicts with keys: unit, load_state, active_state, sub_state,
+    description, and enabled. ``systemctl list-units`` says nothing about
+    enablement, so ``enabled`` comes from a second call to ``list-unit-files``;
+    it is left out when that call yields nothing, rather than guessed (BUG-87).
     Returns empty list on any error (connection failure, timeout, parse error).
     """
     try:
@@ -152,6 +187,15 @@ async def list_all_services(
                             "description": description,
                         }
                     )
+
+                files = await conn.run(
+                    "systemctl list-unit-files --type=service --no-pager --plain",
+                    check=False,
+                )
+                unit_file_states = _parse_unit_file_states(files.stdout or "")
+                if unit_file_states:
+                    for svc in services:
+                        svc["enabled"] = _unit_enabled(svc["unit"], unit_file_states)
                 return services
 
         return await asyncio.wait_for(_run(), timeout=30.0)

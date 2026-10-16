@@ -19,6 +19,9 @@ def scan_network_task(self, cidr: str, port: int, timeout: float, exclude_ips: l
     # Subtract already-known hosts
     exclude_set = set(exclude_ips)
     hosts_to_scan = [h for h in all_hosts if h not in exclude_set]
+    # Reported back, or a range whose only SSH hosts are already in LabDog
+    # reads as "nothing found" with no hint that anything was left out.
+    skipped_known = [h for h in all_hosts if h in exclude_set]
     total = len(hosts_to_scan)
 
     # Scan in batches, reporting progress every ~50 hosts
@@ -61,4 +64,5 @@ def scan_network_task(self, cidr: str, port: int, timeout: float, exclude_ips: l
     return {
         "hosts_found": hosts_found,
         "total_scanned": total,
+        "skipped_known": skipped_known,
     }

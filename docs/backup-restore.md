@@ -291,8 +291,11 @@ existing credentials without the key.** Recovery path:
    DELETE FROM ssh_keys;
    DELETE FROM proxmox_nodes;
    UPDATE git_repositories
-     SET encrypted_https_token = NULL, ssh_key_id = NULL;
+     SET encrypted_https_token = NULL, encrypted_webhook_secret = NULL,
+         ssh_key_id = NULL;
    UPDATE grafana_instances SET encrypted_token = NULL;
+   UPDATE ai_providers SET encrypted_api_key = NULL;
+   UPDATE smtp_settings SET encrypted_password = NULL;
    UPDATE hosts SET ssh_key_id = NULL;
    ```
 

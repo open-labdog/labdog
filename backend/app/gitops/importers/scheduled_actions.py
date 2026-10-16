@@ -33,6 +33,7 @@ Audit emission per change (``scheduled_action.created`` /
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -187,6 +188,9 @@ async def import_scheduled_actions(
             continue
 
         before = _row_snapshot(sa)
+        # Before the loop, which writes the same two values again: it has
+        # to see the old ones to know whether the walk restarts.
+        sa.set_schedule(entry.schedule_cron, entry.enabled, datetime.now(UTC))
         for field in _TRACKED_FIELDS:
             setattr(sa, field, getattr(entry, field))
         await db.flush()

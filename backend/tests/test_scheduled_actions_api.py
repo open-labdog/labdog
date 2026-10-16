@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from unittest.mock import patch
 
 import pytest
 
 from app.models.action_run import ActionRun
+from app.models.scheduled_action import ScheduledAction
 from tests.conftest import create_group, create_host
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("sample_pack")]
 
 
 @pytest.fixture(autouse=True)
@@ -24,14 +26,9 @@ def stub_celery_dispatch():
 # ---------------------------------------------------------------------------
 
 
-async def test_list_requires_superuser(client, db):
+async def test_list_requires_auth(client, db):
     resp = await client.get("/api/scheduled-actions")
     assert resp.status_code == 401
-
-
-async def test_list_forbidden_for_regular_user(regular_user_client, db):
-    resp = await regular_user_client.get("/api/scheduled-actions")
-    assert resp.status_code == 403
 
 
 async def test_get_404_for_unknown(superuser_client, db):
@@ -52,6 +49,24 @@ async def test_create_unknown_action_returns_400(superuser_client, db):
         },
     )
     assert resp.status_code == 400
+
+
+async def test_refused_parameter_answers_422_with_reason(superuser_client, db):
+    """A validator's ValueError sits in the error context; it must not reach the encoder."""
+    host = await create_host(db)
+    await db.commit()
+    resp = await superuser_client.post(
+        "/api/scheduled-actions",
+        json={
+            "target_kind": "host",
+            "target_id": host.id,
+            "action_key": "linux-os-upgrade",
+            "schedule_cron": "0 3 * * *",
+            "parameters": {"current_version": "{{ lookup('pipe', 'id') }}", "next_version": "13"},
+        },
+    )
+    assert resp.status_code == 422, resp.text
+    assert "template delimiters" in resp.text
 
 
 # ---------------------------------------------------------------------------
@@ -251,6 +266,37 @@ async def test_update_changes_fields_emits_audit(superuser_client, db):
     body = update_resp.json()
     assert body["schedule_cron"] == "0 4 * * 1"
     assert body["enabled"] is True
+
+
+async def test_update_restarts_the_walk_only_when_the_schedule_changes(superuser_client, db):
+    """Editing anything else must not move the start: a missed run still catches up."""
+    group = await create_group(db)
+    await db.commit()
+    body = {
+        "target_kind": "group",
+        "target_id": group.id,
+        "action_key": "_builtin.collect_state",
+        "schedule_cron": "0 3 * * 0",
+        "enabled": True,
+    }
+    sa_id = (await superuser_client.post("/api/scheduled-actions", json=body)).json()["id"]
+
+    async def changed_at():
+        sa = await db.get(ScheduledAction, sa_id)
+        await db.refresh(sa)
+        return sa.schedule_changed_at
+
+    resp = await superuser_client.put(
+        f"/api/scheduled-actions/{sa_id}", json=body | {"batch_size": 2}
+    )
+    assert resp.status_code == 200, resp.text
+    assert await changed_at() is None
+
+    resp = await superuser_client.put(
+        f"/api/scheduled-actions/{sa_id}", json=body | {"schedule_cron": "0 4 * * 0"}
+    )
+    assert resp.status_code == 200, resp.text
+    assert await changed_at() is not None
 
 
 async def test_update_action_key_or_target_immutable(superuser_client, db):
@@ -459,6 +505,31 @@ async def test_validate_cron_valid(superuser_client, db):
     body = resp.json()
     assert body["valid"] is True
     assert len(body["next_run_at"]) == 3
+
+
+async def test_validate_cron_previews_in_the_scheduling_timezone(superuser_client, db):
+    from app.models.app_setting import AppSetting
+    from app.settings_service import invalidate_cache
+
+    resp = await superuser_client.post(
+        "/api/scheduled-actions/validate-cron", json={"cron": "0 3 * * *"}
+    )
+    assert resp.json()["timezone"] == "UTC"
+
+    db.add(AppSetting(key="scheduling.timezone", value="Asia/Kolkata"))
+    await db.flush()
+    invalidate_cache("scheduling.timezone")
+    try:
+        resp = await superuser_client.post(
+            "/api/scheduled-actions/validate-cron", json={"cron": "0 3 * * *"}
+        )
+    finally:
+        invalidate_cache("scheduling.timezone")
+    body = resp.json()
+    assert body["timezone"] == "Asia/Kolkata"
+    # 03:00 in Kolkata is 21:30 UTC the day before.
+    runs = [datetime.fromisoformat(t) for t in body["next_run_at"]]
+    assert [(t.hour, t.minute, t.utcoffset().total_seconds()) for t in runs] == [(21, 30, 0)] * 3
 
 
 async def test_validate_cron_invalid(superuser_client, db):

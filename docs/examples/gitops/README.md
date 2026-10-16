@@ -47,23 +47,28 @@ This directory contains:
    whatever fits your conventions. The file path is configured per group in
    LabDog.
 3. In LabDog:
-   a. Navigate to **Integrations → Git Repos**, add the repo, choose SSH key
-   or HTTPS token auth.
-   b. Navigate to **Manage → Groups → `<your group>`**.
-   c. Click **Enable GitOps**, pick the repo and the YAML file path.
-   d. Copy the webhook secret shown, then add a webhook on the git provider:
+   a. Go to **Settings › Integrations → Git remotes** and **Add
+   Repository**: URL, branch, SSH key or HTTPS token auth, and a webhook
+   secret. The wizard scans the repository and offers each file that
+   declares a `group:` for binding.
+   b. Or bind one group by hand: open **Fleet → Groups → `<your group>`**,
+   and in the Overview tab's **gitops** panel click **Enable…**, then pick
+   the repo and the YAML file path.
+   c. Add a webhook on the git provider — imports run only when a push
+   arrives:
       - URL: `https://<your-labdog-host>/api/webhooks/github` (or
-        `/api/webhooks/gitlab`, `/api/webhooks/gitea`)
+        `/api/webhooks/gitlab`, `/api/webhooks/gitea`; the repository row's
+        **webhooks** shows all three)
       - Content type: `application/json`
-      - Secret: the one LabDog showed you
+      - Secret: the repository's webhook secret
       - Events: `push` only
 
-   The Git Repos page renders all three URLs ready-to-copy under the
-   "Webhook URLs" section.
 4. Push a commit. LabDog imports, diffs, and syncs.
 
-Manual imports are also available — a **Sync from Git** button on the Git
-Repos page bypasses the webhook (handy during setup).
+There is no manual import: a bound group's file is read only when a push
+arrives, so the webhook is required. During setup, push an empty commit
+(`git commit --allow-empty -m "labdog: import"`) to trigger the first
+import.
 
 ---
 
@@ -74,7 +79,7 @@ file at the repo root, named exactly `_global.yaml`. As of v0.1 it
 covers two sections:
 
 - **`drift:`** — sets `drift.check_interval_minutes` (the same setting
-  reachable from Settings → Drift Detection in the UI).
+  reachable from Settings › Fleet defaults › Drift Detection in the UI).
 - **`discovery:`** — list of `ScanConfig` rows that periodically scan a
   CIDR for SSH-reachable hosts.
 
@@ -240,13 +245,13 @@ endpoint returns **HTTP 403** with body:
 {"detail": "This group is managed by GitOps. Changes must be made via Git."}
 ```
 
-The UI wires this into disabled Add / Edit / Delete controls on every
-module page so users don't even get to try. Host-level overrides (config
+The UI makes every module editor on the group's Config tab read-only, with
+a banner linking to the repository, so users don't even get to try. Host-level overrides (config
 scoped to a single host, not the group) stay open — GitOps manages group
 config only.
 
-To break the glass in an emergency, toggle GitOps off on the group from
-the UI — the lock lifts immediately.
+To break the glass in an emergency, **Disable GitOps** in the group's
+**gitops** panel — the lock lifts immediately.
 
 ---
 
@@ -319,7 +324,8 @@ about than juggling multiple repos.
 If you need to break out of the GitOps lock (e.g. emergency rule push and
 your git provider is down):
 
-1. **From the UI:** group → **Disable GitOps** toggle. Lock lifts. You can
+1. **From the UI:** the group's Overview tab → **gitops** panel → **Disable
+   GitOps**. Lock lifts. You can
    edit via the UI. Re-enable when done; the next push will reconcile any
    drift from git.
 2. **From a DB shell:** `UPDATE host_groups SET gitops_enabled = FALSE

@@ -25,7 +25,9 @@ from claude_agent_sdk import (
 )
 
 
-def assistant(text: str, usage: dict | None = None) -> AssistantMessage:
+def assistant(
+    text: str, usage: dict | None = None, *, message_id: str | None = None
+) -> AssistantMessage:
     """One assistant turn.
 
     ``usage`` mirrors the real per-response block the SDK copies out of
@@ -33,8 +35,14 @@ def assistant(text: str, usage: dict | None = None) -> AssistantMessage:
     do not care, but it is the only way to exercise the token cap: the
     runner's live estimate is summed from these, and a script whose turns
     all report nothing can never reach a limit.
+
+    ``message_id`` is the API response's id. The CLI sends one message per
+    content block, all with the same id and the same usage; give two
+    messages one id to script that.
     """
-    return AssistantMessage(content=[TextBlock(text=text)], model="fake-model", usage=usage)
+    return AssistantMessage(
+        content=[TextBlock(text=text)], model="fake-model", usage=usage, message_id=message_id
+    )
 
 
 def rate_limit(

@@ -1,7 +1,7 @@
 """BUG-63: an orchestrator must never wait on a pool it occupies.
 
 ``action_orchestrator.run_action`` publishes per-host children and then
-blocks in ``result.join()`` until they finish. It used to be published to
+blocks until they finish. It used to be published to
 ``long_running`` — the same queue as its children — served by one worker
 at ``celery.concurrency`` 4. Four schedules sharing a cron minute
 (``0 3 * * *`` is the obvious default) took all four slots, leaving none
@@ -31,6 +31,10 @@ from app.tasks import _is_orchestrator_worker, celery_app
 from app.tasks.action_orchestrator import CHILD_QUEUE
 
 ORCHESTRATOR_TASK = "app.tasks.action_orchestrator.run_action"
+#: ``run_action`` picked up part-way through, after its worker died
+#: (BUG-101). It waits on the same children, so it is held to the same rule.
+RESUME_TASK = "app.tasks.action_orchestrator.resume_run"
+ORCHESTRATOR_TASKS = {ORCHESTRATOR_TASK, RESUME_TASK}
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -52,13 +56,15 @@ def _worker_serving(queue: str) -> str:
 
 
 class TestTheJoinCannotStarveItsChildren:
-    def test_the_orchestrator_and_its_children_are_on_different_queues(self):
-        assert _queue_for(ORCHESTRATOR_TASK) != CHILD_QUEUE
+    @pytest.mark.parametrize("task", sorted(ORCHESTRATOR_TASKS))
+    def test_the_orchestrator_and_its_children_are_on_different_queues(self, task):
+        assert _queue_for(task) != CHILD_QUEUE
 
-    def test_they_are_served_by_different_workers(self):
+    @pytest.mark.parametrize("task", sorted(ORCHESTRATOR_TASKS))
+    def test_they_are_served_by_different_workers(self, task):
         """Different queues are not enough — one worker consuming both puts
         them back in the same pool."""
-        assert _worker_serving(_queue_for(ORCHESTRATOR_TASK)) != _worker_serving(CHILD_QUEUE)
+        assert _worker_serving(_queue_for(task)) != _worker_serving(CHILD_QUEUE)
 
     def test_nothing_else_shares_the_orchestrator_worker(self):
         """A slot on the orchestrator worker held by unrelated work
@@ -70,7 +76,7 @@ class TestTheJoinCannotStarveItsChildren:
             name
             for name in celery_app.tasks
             if not name.startswith("celery.")
-            and name != ORCHESTRATOR_TASK
+            and name not in ORCHESTRATOR_TASKS
             and _queue_for(name) in orch_queues
         )
         assert not strays, (

@@ -34,13 +34,22 @@ def _make_session_patcher(db):
 
     Without this, the task wrapper opens its own engine via
     ``task_session()`` and writes vanish from the test's view.
+
+    ``release_host_queue`` imports ``task_session`` from ``app.db`` at call
+    time, so it needs patching there too. Left real, it opens a second
+    connection that waits forever on the advisory lock this session holds.
     """
 
     @asynccontextmanager
     async def _fake_task_session():
         yield db
 
-    return patch("app.tasks.host_sync_orchestrator.task_session", new=_fake_task_session)
+    stack = contextlib.ExitStack()
+    stack.enter_context(
+        patch("app.tasks.host_sync_orchestrator.task_session", new=_fake_task_session)
+    )
+    stack.enter_context(patch("app.db.task_session", new=_fake_task_session))
+    return stack
 
 
 async def _create_pending_job(
@@ -233,6 +242,13 @@ async def test_happy_path_all_modules_in_sync(db: AsyncSession, tmp_path):
     for row in rows:
         assert row.sync_status == "in_sync"
         assert row.last_sync_at is not None
+
+    # The stale-hosts panel reads the host's own timestamp, not the module rows.
+    from app.models.host import Host
+
+    host = (await db.execute(select(Host).where(Host.id == host_id))).scalar_one()
+    await db.refresh(host)
+    assert host.last_sync_at == job.completed_at
 
     audit_rows = await _audit_rows_for(db, host_id, action="sync_completed")
     assert len(audit_rows) == 1
@@ -1320,6 +1336,7 @@ async def test_the_session_is_closed_before_the_ansible_run(db: AsyncSession, tm
 
     with (
         patch("app.tasks.host_sync_orchestrator.task_session", new=_tracking_task_session),
+        patch("app.db.task_session", new=_tracking_task_session),
         _patch_halves(_fake_build, _fake_execute),
     ):
         await _async_run(

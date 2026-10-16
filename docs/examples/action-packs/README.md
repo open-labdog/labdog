@@ -14,7 +14,7 @@ reference of all manifest fields, see
 |---|---|
 | [`minimal-pack/`](https://github.com/open-labdog/labdog/tree/main/docs/examples/action-packs/minimal-pack) | The smallest possible pack. One action, no parameters, no roles, no destructive wrapping. Start here. |
 | [`reboot-pack/`](https://github.com/open-labdog/labdog/tree/main/docs/examples/action-packs/reboot-pack) | A realistic destructive action with a parameter. Shows how `destructive: true` activates the Proxmox snapshot → verify → rollback pipeline automatically. |
-| [`with-role/`](https://github.com/open-labdog/labdog/tree/main/docs/examples/action-packs/with-role) | A pack that ships its own Ansible role and reuses it from a playbook. Shows how `ANSIBLE_ROLES_PATH` resolution works across bundled + pack roles. |
+| [`with-role/`](https://github.com/open-labdog/labdog/tree/main/docs/examples/action-packs/with-role) | A pack that ships its own Ansible role and reuses it from a playbook. Shows how `ANSIBLE_ROLES_PATH` resolution works across LabDog's own and the pack's roles. |
 | [`with-verify/`](https://github.com/open-labdog/labdog/tree/main/docs/examples/action-packs/with-verify) | A destructive action with a pack-supplied verify playbook that decides pass/fail after the main playbook runs. Replaces LabDog's built-in SSH/services/packages check with the pack's own definition of success. |
 
 ## Quick start
@@ -32,17 +32,17 @@ git commit -m "initial pack"
 
 Then in the LabDog UI:
 
-1. Go to **Action Packs** (sidebar → Integrations → Action Packs).
-2. Click **Add Pack**.
-3. Either point at a git URL, or pick **Local directory** and paste the
-   filesystem path.
-4. Save. The pack joins the **Pack Sources** table — packs are
+1. Go to **Operations → Actions → Packs**.
+2. Click **Add pack…**.
+3. Either point at a git repository, or pick **local directory** and paste
+   the filesystem path.
+4. Save. The pack joins the **pack sources** panel — packs are
    unordered. Uncontested keys win automatically. Contested keys
    (multiple packs declare the same action key) require a per-key
-   pin via the Action Registry table on the same page; until pinned
+   pin in the **action registry** panel on the same tab; until pinned
    the action is *unresolved* and unrunnable.
-5. The action will appear on any host's detail page under the
-   **Actions** tab.
+5. The action appears in the **Library** tab, in **Run action…** on a
+   host's or group's page, and in their **Activity** tab.
 
 ## Pack layout recap
 
@@ -62,6 +62,10 @@ An action is a directory: each contains its `manifest.yml` and
 `playbook.yml` side by side. LabDog discovers actions by globbing
 `actions/*/manifest.yml` — a directory without a `manifest.yml` is
 ignored.
+
+A run gets only the playbook file and the roles, so anything else the
+playbook needs (task files, vars files, templates) goes in a role. See
+[Pack layout](../../ui/actions.md#pack-layout) in the user guide.
 
 ## Optional post-run hooks
 

@@ -29,12 +29,9 @@ echo "== LabDog install smoke (expected version: $EXPECTED) =="
 [ -f "$BACKEND/alembic.ini" ] || fail "alembic.ini missing: $BACKEND/alembic.ini"
 ok "application code + venv present"
 
-# 2. Bundled action pack (build-time clone of labdog-playbooks) -------------
-[ -d "$BACKEND/app/ansible/actions" ] || fail "bundled pack actions dir missing"
-for a in alloy-install k8s-upgrade linux-os-upgrade linux-upgrade; do
-    [ -d "$BACKEND/app/ansible/actions/$a" ] || fail "bundled action '$a' missing"
-done
-ok "bundled action pack present (alloy-install, k8s-upgrade, linux-os-upgrade, linux-upgrade)"
+# 2. No action pack in the package: packs are synced from git at runtime ---
+[ ! -e "$BACKEND/app/ansible" ] || fail "package ships an action pack at $BACKEND/app/ansible"
+ok "no action pack shipped in the package"
 
 # 3. System-integration files ----------------------------------------------
 [ -f "$UNIT" ] || fail "systemd unit missing: $UNIT"
@@ -71,8 +68,8 @@ getent group labdog >/dev/null 2>&1 || fail "labdog group not created"
 ok "data dirs + labdog service account present"
 
 # 5. The venv imports the app package + key runtime deps -------------------
-#    cwd = backend so `app` resolves the installed source tree (with the
-#    bundled pack), matching how the systemd unit runs it.
+#    cwd = backend so `app` resolves the installed source tree, matching
+#    how the systemd unit runs it.
 ( cd "$BACKEND" && "$VENV_PY" - <<'PY'
 import importlib
 mods = [

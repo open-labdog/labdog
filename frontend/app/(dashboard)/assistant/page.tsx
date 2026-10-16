@@ -9,7 +9,7 @@ import AssistantPage from "./client-page"
  */
 export default function Page() {
   return (
-    <Suspense fallback={<p className="text-slate-500">Loading the assistant…</p>}>
+    <Suspense fallback={<p className="m-0 p-4 text-xs text-text-3">Loading the assistant…</p>}>
       <AssistantPage />
     </Suspense>
   )

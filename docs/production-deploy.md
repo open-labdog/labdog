@@ -40,9 +40,11 @@ Volumes managed by the compose file:
   subdirectory below that — do **not** mount at `.../data`).
 - `labdog_packs` — DB-backed action-pack checkouts. Mounts onto
   `ansible.packs_root_dir` (default `/var/lib/labdog/packs` —
-  see `backend/app/config.py`). The bundled pack lives in the image
-  itself, so this volume is only needed for git-backed packs added
-  via the UI.
+  see `backend/app/config.py`). Every action pack is synced into it,
+  including the seeded `labdog-playbooks` one; without the volume they
+  are cloned again on every start. A site without GitHub access edits
+  the `labdog-playbooks` repository (**Settings › Git repositories**) to
+  point at an internal mirror, or adds a local-directory pack.
 - `caddy_data` — Caddy's ACME state.
 
 ---
@@ -212,7 +214,6 @@ port = 8000
 [logging]
 level  = "info"
 format = "json"     # easier to scrape from a centralised log store
-audit_retention_days = 365
 
 [ssh]
 max_sessions_per_user = 5
@@ -230,6 +231,11 @@ enabled = true
 login   = "5/minute"
 api     = "100/minute"
 ```
+
+How long the audit log, action runs and drift samples are kept is not a
+`labdog.toml` setting. Set it once LabDog is up, under
+[Settings › System](ui/settings.md#logging-and-retention); a production
+install usually wants the audit log kept longer than the 90-day default.
 
 ---
 

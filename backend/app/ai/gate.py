@@ -61,6 +61,21 @@ class GateDecision:
     verdict: Verdict | None = None
 
 
+def target_host(arguments: dict[str, Any], target_host_ids: list | None) -> int | None:
+    """The host a call names, when it is one of the session's targets.
+
+    ``host_id`` comes from the model, and the rows that record a call
+    (``ai_tool_calls`` and ``ai_approval_requests``) keep it in a foreign
+    key to ``hosts``. A made-up id would fail the insert and lose the
+    record, so anything the session could not run on is left unset:
+    ``run_ssh_command`` refuses a host outside the targets anyway.
+    """
+    host_id = arguments.get("host_id")
+    if isinstance(host_id, bool) or not isinstance(host_id, int):
+        return None
+    return host_id if host_id in (target_host_ids or []) else None
+
+
 def decide(
     tool_name: str,
     arguments: dict[str, Any],

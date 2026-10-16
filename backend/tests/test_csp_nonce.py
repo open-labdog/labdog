@@ -210,8 +210,12 @@ class TestTheDocsException:
         assert _DOCS_PATHS == {"/docs", "/redoc", "/docs/oauth2-redirect"}
 
     async def test_docs_are_off_by_default(self, client):
+        # Not a status check: with a built frontend the SPA fallback
+        # answers /docs with its own index.html and a 200.
         resp = await client.get("/docs")
-        assert resp.status_code != 200
+        assert "swagger-ui" not in resp.text.lower()
+        resp = await client.get("/openapi.json")
+        assert '"openapi"' not in resp.text
 
 
 class TestTheSingleServingPath:

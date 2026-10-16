@@ -158,17 +158,17 @@ class TestTheGate:
 class TestTheLoaderEnforcesIt:
     def test_an_untrusted_pack_contributes_no_actions(self, tmp_path: Path):
         root = _pack(tmp_path, "p", extra={"action_plugins/evil.py": "import os\n"})
-        assert load_pack(Pack(name="p", path=root, trusted=False)) == []
+        assert load_pack(Pack(name="p", path=root, pack_id=1, trusted=False)) == []
 
     def test_the_same_pack_loads_once_trusted(self, tmp_path: Path):
         root = _pack(tmp_path, "p", extra={"action_plugins/evil.py": "import os\n"})
-        defns = load_pack(Pack(name="p", path=root, trusted=True))
+        defns = load_pack(Pack(name="p", path=root, pack_id=1, trusted=True))
         assert [d.key for d in defns] == ["demo"]
 
     def test_an_ordinary_pack_loads_untrusted(self, tmp_path: Path):
-        defns = load_pack(Pack(name="p", path=_pack(tmp_path, "p"), trusted=False))
+        defns = load_pack(Pack(name="p", path=_pack(tmp_path, "p"), pack_id=1, trusted=False))
         assert [d.key for d in defns] == ["demo"]
 
     def test_pack_defaults_to_untrusted(self):
         """A caller that forgets the flag gets the safe answer."""
-        assert Pack(name="p", path=Path("/nonexistent")).trusted is False
+        assert Pack(name="p", path=Path("/nonexistent"), pack_id=1).trusted is False

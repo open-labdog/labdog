@@ -58,6 +58,14 @@ class ScheduledAction(Base):
     last_dispatched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # When the cron expression last changed or the row was last switched
+    # on. The walk starts from this too, so a run time that passed while
+    # the schedule was off, or that only the new expression matches, is
+    # not fired on the next tick. Kept apart from ``last_dispatched_at``
+    # because that one also says when the scheduler last did anything.
+    schedule_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -87,3 +95,20 @@ class ScheduledAction(Base):
         Index("ix_scheduled_actions_due", "action_key", "enabled"),
         Index("ix_scheduled_actions_target", "target_kind", "target_id"),
     )
+
+    def set_schedule(self, cron: str | None, enabled: bool, now: datetime) -> None:
+        """Change the cron expression and the enabled flag together.
+
+        A new expression, or switching the row on, restarts the walk at
+        *now*. Without that, the walk would carry on from the last
+        dispatch and fire straight away for whatever it found in between.
+        """
+        if cron != self.schedule_cron or (enabled and not self.enabled):
+            self.schedule_changed_at = now
+        self.schedule_cron = cron
+        self.enabled = enabled
+
+    def walk_start(self) -> datetime:
+        """Where the cron walk looks for the next run from."""
+        marks = [t for t in (self.last_dispatched_at, self.schedule_changed_at) if t is not None]
+        return max(marks) if marks else self.created_at

@@ -16,13 +16,19 @@ theoretical into load-bearing.
 The pruners open a session before reading the window, so ``task_session`` is
 faked here rather than a database being started: the assertion is that the
 guard returns before any DELETE is issued, not that Postgres behaves.
+
+With the guard in place, 0 was still out of reach from the other side: the
+setting's registry entry had ``min: 1``, so saving 0 on the Settings page was
+refused with "minimum is 1".
 """
 
+import re
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from app.settings_service import SETTING_DEFINITIONS, _validate
 from app.tasks import audit_retention
 
 
@@ -113,3 +119,32 @@ class TestTheWindowIsReadFromTheDatabase:
         assert await audit_retention._get_retention_days(sentinel) == 30
         assert seen["key"] == "logging.audit_retention_days"
         assert seen["db"] is sentinel, "the reader must use the caller's session"
+
+
+class TestZeroCanBeSaved:
+    def test_the_settings_page_accepts_zero(self):
+        assert _validate("logging.audit_retention_days", "0") == "0"
+
+    def test_negative_values_are_still_refused(self):
+        with pytest.raises(ValueError, match="minimum is 0"):
+            _validate("logging.audit_retention_days", "-1")
+
+
+_DOCUMENTS_ZERO = re.compile(r"\(0 = ")
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        key
+        for key, defn in SETTING_DEFINITIONS.items()
+        if _DOCUMENTS_ZERO.search(defn["description"] + (defn.get("help") or ""))
+    ],
+)
+def test_every_setting_that_documents_zero_accepts_it(key):
+    """A label that says "(0 = …)" is a promise the validator has to keep.
+
+    This is how the audit window went wrong, so check the whole registry
+    rather than the one key.
+    """
+    _validate(key, "0")

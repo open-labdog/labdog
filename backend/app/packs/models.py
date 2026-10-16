@@ -41,8 +41,7 @@ class ActionPack(Base):
     the same action key, the operator pins the winner via an
     :class:`ActionResolution` row; until pinned the key is *unresolved*
     and the action is unrunnable. See :class:`ActionResolution` for the
-    resolver semantics. The bundled pack is implicit (no DB row) and is
-    a candidate just like any DB pack.
+    resolver semantics.
     """
 
     __tablename__ = "action_packs"
@@ -106,8 +105,7 @@ class ActionResolution(Base):
     The resolver is now **pure per-key pinning, no global ordering.**
     For any action key contributed by more than one pack the operator
     MUST pin a winner via a row here; until a row exists the key is
-    *unresolved* and the action is unrunnable. ``pack_id NULL`` pins
-    bundled.
+    *unresolved* and the action is unrunnable.
 
     Three write paths feed this table:
 
@@ -116,7 +114,7 @@ class ActionResolution(Base):
        per-key radio writes a row here.
     2. **Per-key resolution UI** — operators set/change/clear pins
        directly on the ``/action-packs`` page.
-    3. **Sync-time freeze** — when ``reload_registry`` detects that a
+    3. **Sync-time freeze** — when ``reload_registry_async`` detects that a
        previously-uncontested key just became contested (a pack's
        upstream pushed a new manifest that conflicts with another
        pack), it auto-writes a row pinning the **previous winner**.
@@ -134,10 +132,10 @@ class ActionResolution(Base):
     __tablename__ = "action_resolution"
 
     action_key: Mapped[str] = mapped_column(String(64), primary_key=True)
-    pack_id: Mapped[int | None] = mapped_column(
+    pack_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("action_packs.id", ondelete="CASCADE"),
-        nullable=True,
+        nullable=False,
     )
     decided_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -159,7 +157,6 @@ class ActionRegistrySnapshot(Base):
     freeze logic in :class:`ActionResolution` can pin the previous
     winner without surprise flips.
 
-    ``pack_id NULL`` means bundled was the winner (it has no DB row).
     A snapshot row is only written when the key has a single, resolved
     winner — unresolved contested keys are deliberately absent so that
     a later rebuild treats them fresh.
@@ -168,10 +165,10 @@ class ActionRegistrySnapshot(Base):
     __tablename__ = "action_registry_snapshot"
 
     action_key: Mapped[str] = mapped_column(String(64), primary_key=True)
-    pack_id: Mapped[int | None] = mapped_column(
+    pack_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("action_packs.id", ondelete="CASCADE"),
-        nullable=True,
+        nullable=False,
     )
     computed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

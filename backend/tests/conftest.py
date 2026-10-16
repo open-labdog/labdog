@@ -2,6 +2,7 @@
 Shared pytest fixtures and factory helpers for LabDog integration tests.
 """
 
+import os
 import uuid
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -73,24 +74,25 @@ class _CsrfAutoTransport(httpx.AsyncBaseTransport):
         return response
 
 
-def pytest_configure(config):
-    """Set test-safe security values before any app modules are imported."""
-    import os
-
-    os.environ.setdefault("LABDOG_SECURITY__SECRET_KEY", "test-secret-key-not-for-production")
-    os.environ.setdefault(
-        "LABDOG_SECURITY__ENCRYPTION_KEY", "vrPDeLMuFGehy2sYV//fyTd7EmnvOKbE2n4h7XM/8zg="
-    )
-    # Shared Redis across tests causes rate-limit pollution — fresh test runs
-    # still trip the 5/min login and 100/min API limits because httpx hits
-    # testserver from 127.0.0.1 repeatedly. Disable rate limiting for tests;
-    # individual rate-limit behavior can be tested in targeted integration tests.
-    os.environ.setdefault("LABDOG_RATE_LIMIT__ENABLED", "false")
+# Test-safe security values, set before any app module is imported. At
+# module level rather than in ``pytest_configure``: when a path under a
+# subdirectory is named on the command line (``pytest tests/ai``), pytest
+# loads that subdirectory's conftest before any ``pytest_configure`` hook
+# runs, and ``tests/ai/conftest.py`` imports the app, which reads its
+# settings on import. This file is always loaded before it (BUG-114).
+os.environ.setdefault("LABDOG_SECURITY__SECRET_KEY", "test-secret-key-not-for-production")
+os.environ.setdefault(
+    "LABDOG_SECURITY__ENCRYPTION_KEY", "vrPDeLMuFGehy2sYV//fyTd7EmnvOKbE2n4h7XM/8zg="
+)
+# Shared Redis across tests causes rate-limit pollution — fresh test runs
+# still trip the 5/min login and 100/min API limits because httpx hits
+# testserver from 127.0.0.1 repeatedly. Disable rate limiting for tests;
+# individual rate-limit behavior can be tested in targeted integration tests.
+os.environ.setdefault("LABDOG_RATE_LIMIT__ENABLED", "false")
 
 
 @pytest.fixture(scope="session")
 def pg_url():
-    import os
     import subprocess
     import sys
 
@@ -264,6 +266,37 @@ async def regular_user_client(app, db):
     assert resp.status_code in (200, 204), f"Login failed: {resp.text}"
     yield c
     await c.aclose()
+
+
+SAMPLE_PACK_DIR = Path(__file__).parent / "fixtures" / "packs" / "sample"
+
+
+@pytest.fixture
+async def sample_pack(db):
+    """Register ``tests/fixtures/packs/sample`` as a local pack and load it.
+
+    Nothing pack-supplied ships with LabDog, so a test that needs a real
+    action (``linux-upgrade``, ``k8s-upgrade``, ``linux-os-upgrade``,
+    ``example``) asks for this. The pack row lives in the test's
+    transaction, so a rebuild during the test (``ensure_registry_current``)
+    keeps it. Afterwards the registry goes back to the built-ins alone,
+    the way a process starts.
+    """
+    from app.actions import registry
+    from app.packs.models import ActionPack, PackSourceType
+
+    pack = ActionPack(
+        name="sample",
+        source_type=PackSourceType.LOCAL,
+        local_path=str(SAMPLE_PACK_DIR),
+        enabled=True,
+    )
+    db.add(pack)
+    await db.flush()
+    await registry.reload_registry_async(db)
+    yield pack
+    registry._load_builtins_only()
+    registry._BUILT_FROM = None
 
 
 @pytest.fixture

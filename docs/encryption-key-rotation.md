@@ -5,8 +5,10 @@ the AES-256-GCM master key that protects every encrypted credential stored in
 LabDog's database (`ssh_keys.encrypted_private_key`,
 `proxmox_nodes.encrypted_token_secret`,
 `git_repositories.encrypted_https_token`,
-`grafana_instances.encrypted_token`, and
-`ai_providers.encrypted_api_key`).
+`git_repositories.encrypted_webhook_secret`,
+`grafana_instances.encrypted_token`,
+`ai_providers.encrypted_api_key`, and
+`smtp_settings.encrypted_password`).
 
 ---
 
@@ -89,15 +91,18 @@ environment:
 Successful output looks like:
 
 ```
-  ssh_keys: 4 row(s) rotated
-  proxmox_nodes: 2 row(s) rotated
-  git_repositories: 1 row(s) rotated
-  grafana_instances: 1 row(s) rotated
+  ssh_keys.encrypted_private_key: 4 value(s) rotated
+  proxmox_nodes.encrypted_token_secret: 2 value(s) rotated
+  git_repositories.encrypted_https_token: 1 value(s) rotated
+  git_repositories.encrypted_webhook_secret: 2 value(s) rotated
+  grafana_instances.encrypted_token: 1 value(s) rotated
+  ai_providers.encrypted_api_key: 1 value(s) rotated
+  smtp_settings.encrypted_password: 1 value(s) rotated
 Key rotation complete.
 ```
 
-The counts should match the number of credentials stored in each table.
-A zero count for a table is normal if that table has no rows.  Any non-zero
+The counts should match the number of credentials stored in each column.
+A zero count is normal when no row holds that kind of secret.  Any non-zero
 exit code means the rotation did not complete — see [Failure modes](#failure-modes).
 
 ### 4. Update the production configuration

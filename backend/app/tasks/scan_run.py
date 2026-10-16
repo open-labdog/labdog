@@ -4,7 +4,8 @@ T4 -- Per-config runner
 T6 -- Advisory-lock rate-limit (max 4 concurrent scan runs across all workers)
 
 The task is registered as ``scans.run_config`` on the ``long_running`` queue.
-It is dispatched by the T3 scheduler; do NOT call it from API endpoints.
+It is dispatched by the T3 scheduler and, as a manual run, by
+``POST /api/scans/{id}/run``.
 """
 
 from __future__ import annotations
@@ -73,9 +74,11 @@ def run_scan_config(self, config_id: int, is_manual: bool = False) -> dict:
             (default False) silently skip dismissed IPs.
 
     Returns:
-        A summary dict with ``hosts_added`` and ``hosts_pending`` counts.
+        A summary dict with ``hosts_added`` and ``hosts_pending`` counts,
+        plus ``config_id`` so ``GET /api/scans/{id}/runs/{task_id}`` can
+        check the task id belongs to that config.
     """
-    return asyncio.run(_async_run(config_id, is_manual=is_manual))
+    return {**asyncio.run(_async_run(config_id, is_manual=is_manual)), "config_id": config_id}
 
 
 async def _async_run(config_id: int, is_manual: bool = False) -> dict:  # noqa: C901 -- complexity is intentional

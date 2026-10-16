@@ -159,9 +159,13 @@ class MetricValue(BaseModel):
 
 
 class HostMetrics(BaseModel):
-    #: False when no Mimir instance is registered → the UI shows the
+    #: False when there is no Mimir instance to query → the UI shows the
     #: "set up metrics" CTA rather than an empty/error state.
     configured: bool
+    #: Why ``configured`` is False. ``no_default`` is several Mimir
+    #: instances with none marked default: from the host page it looks
+    #: exactly like none at all, but the fix is a tick, not a new instance.
+    unconfigured_reason: Literal["no_instance", "no_default"] | None = None
     #: ISO timestamp of the freshest sample, or None when no data.
     sampled_at: datetime | None = None
     cpu: MetricValue | None = None

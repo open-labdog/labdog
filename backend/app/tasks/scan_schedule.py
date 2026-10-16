@@ -1,7 +1,7 @@
 """Periodic task that checks for scheduled scan configs and dispatches runs."""
 
 import asyncio
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 from typing import TYPE_CHECKING
 
 from app.tasks import celery_app
@@ -10,12 +10,13 @@ if TYPE_CHECKING:
     from app.models.scan_config import ScanConfig
 
 
-def _is_due(config: "ScanConfig", now: datetime) -> bool:
+def _is_due(config: "ScanConfig", now: datetime, tz: tzinfo = UTC) -> bool:
     """Return True when a scan config is due to run.
 
     Args:
         config: The ScanConfig ORM instance to evaluate.
         now: The current UTC-aware datetime used as the reference point.
+        tz: The zone cron expressions are read in (``scheduling.timezone``).
 
     Returns:
         True if the config should fire a run right now, False otherwise.
@@ -30,18 +31,13 @@ def _is_due(config: "ScanConfig", now: datetime) -> bool:
         return elapsed >= timedelta(minutes=config.interval_minutes)
 
     if has_cron and not has_interval:
-        from croniter import croniter
+        from app.cron_walk import next_fire_time
 
         # Use last_run_at as the base; if never run, pretend the last run was
-        # one minute ago so the first get_next() fires on the very first tick
+        # one minute ago so the first walk fires on the very first tick
         # that the cron would have matched.
         base = config.last_run_at if config.last_run_at is not None else now - timedelta(minutes=1)
-        cron = croniter(config.cron_expression, base)
-        next_fire = cron.get_next(datetime)
-        # croniter may return naive datetimes; normalise to UTC-aware.
-        if next_fire.tzinfo is None:
-            next_fire = next_fire.replace(tzinfo=UTC)
-        return next_fire <= now
+        return next_fire_time(config.cron_expression, base, tz) <= now
 
     # Both set or neither set — db constraint prevents this, but be defensive.
     return False
@@ -70,6 +66,7 @@ async def _check() -> int:
     """
     from sqlalchemy import select
 
+    from app.cron_walk import get_schedule_timezone
     from app.db import task_session
     from app.models.scan_config import ScanConfig
 
@@ -77,6 +74,7 @@ async def _check() -> int:
     now = datetime.now(UTC)
 
     async with task_session() as db:
+        tz = await get_schedule_timezone(db)
         configs = (
             (
                 await db.execute(
@@ -89,7 +87,7 @@ async def _check() -> int:
 
         for config in configs:
             try:
-                if _is_due(config, now):
+                if _is_due(config, now, tz):
                     # Use send_task so this module does not need to import
                     # scan_run (which T4 will create).
                     celery_app.send_task("scans.run_config", args=[config.id])

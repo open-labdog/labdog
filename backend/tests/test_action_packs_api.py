@@ -189,14 +189,6 @@ async def test_create_no_longer_assigns_position(
     assert "position" not in body
 
 
-async def test_create_rejects_bundled_name(superuser_client):
-    resp = await superuser_client.post(
-        "/api/action-packs",
-        json={"name": "bundled", "source_type": "local", "local_path": "/tmp/x"},
-    )
-    assert resp.status_code == 422
-
-
 async def test_create_conflict_on_duplicate_name(
     superuser_client, git_repo_row, monkeypatch, tmp_path
 ):
@@ -601,3 +593,47 @@ async def test_create_local_pack_relative_path_rejected(superuser_client):
     )
     assert resp.status_code == 422
     assert "absolute" in resp.text.lower()
+
+
+# ---------------------------------------------------------------------------
+# Constraint violations answer 4xx, not 500 (BUG-85)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_racing_create_answers_409_rather_than_500(db, git_repo_row):
+    """Two creates can both pass the name lookup; the loser's unique
+    violation must be the 409 the lookup would have given."""
+    from fastapi import HTTPException
+
+    from app.api.action_packs import _flush_or_conflict
+    from app.packs.models import ActionPack, PackSourceType
+
+    def pack() -> ActionPack:
+        return ActionPack(
+            name="raced", source_type=PackSourceType.GIT, git_repository_id=git_repo_row.id
+        )
+
+    db.add(pack())
+    await db.flush()
+    db.add(pack())
+    with pytest.raises(HTTPException) as exc:
+        await _flush_or_conflict(db)
+    assert exc.value.status_code == 409
+    assert exc.value.detail == "Action pack name already exists"
+
+
+async def test_switching_to_git_without_a_repository_is_400(superuser_client, local_pack_dir):
+    """The update schema cannot require git_repository_id, because it does
+    not know the row: the check constraint is what catches a local pack
+    switched to git without one, and that used to be a 500."""
+    create = await superuser_client.post(
+        "/api/action-packs",
+        json={"name": "was-local", "source_type": "local", "local_path": str(local_pack_dir)},
+    )
+    assert create.status_code == 201, create.text
+
+    resp = await superuser_client.put(
+        f"/api/action-packs/{create.json()['id']}", json={"source_type": "git"}
+    )
+    assert resp.status_code == 400, resp.text
+    assert "git_repository_id" in resp.json()["detail"]
