@@ -24,7 +24,7 @@ export interface ActivityItem {
   status: ActivityStatus
   title: string
   detail: string
-  who: "schedule" | "user" | "system"
+  who: "schedule" | "alert" | "user" | "system"
   /** Where the full object lives; null when it has no page of its own. */
   href: string | null
   hostId: number | null
@@ -101,7 +101,7 @@ function runToItem(r: ActionRun): ActivityItem {
     status,
     title: `${name} — ${r.target_label}`,
     detail: r.error_message ?? (status === "queued" ? (r.pending_reason ?? "queued") : status === "running" ? "running" : ""),
-    who: r.scheduled_action_id ? "schedule" : r.triggered_by_user_id ? "user" : "system",
+    who: r.scheduled_action_id ? "schedule" : r.alert_event_id ? "alert" : r.triggered_by_user_id ? "user" : "system",
     href: `/actions/runs/${r.id}`,
     hostId: r.host_id,
   }

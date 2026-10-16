@@ -55,28 +55,16 @@ export function RunHistoryModal({ scheduledAction, open, onClose }: RunHistoryMo
       footer={
         <>
           {possiblyTruncated && <span className="tt mr-auto">showing the latest {RUN_LIMIT} runs — older runs remain in the audit log</span>}
-          {/* An alert trigger runs on the host an alert names, so there is
-              nothing to run it against by hand. */}
-          {scheduledAction.trigger !== "alert" && (
-            <button type="button" className={possiblyTruncated ? "btn" : "btn ml-auto"} disabled={runNowMutation.isPending || inFlight} title={inFlight ? "A run is already in flight" : "Trigger a run now"} data-testid="run-now-button" onClick={() => runNowMutation.mutate(scheduledAction.id)}>
-              {runNowMutation.isPending ? "Starting…" : "Run now"}
-            </button>
-          )}
+          <button type="button" className={possiblyTruncated ? "btn" : "btn ml-auto"} disabled={runNowMutation.isPending || inFlight} title={inFlight ? "A run is already in flight" : "Trigger a run now"} data-testid="run-now-button" onClick={() => runNowMutation.mutate(scheduledAction.id)}>
+            {runNowMutation.isPending ? "Starting…" : "Run now"}
+          </button>
         </>
       }
     >
       <Table<ActionRun>
         cols={[
           { k: "status", label: "status", w: "110px", sortable: false, cell: (r) => <RunStatus s={r.status} reason={r.pending_reason} /> },
-          {
-            k: "when", label: "when", w: "minmax(120px,1fr)", sortable: false,
-            cell: (r) => (
-              <span className="flex min-w-0 flex-col">
-                <span className="text-text-2">{shortAgo(r.started_at ?? r.created_at)} ago</span>
-                {r.alert_event_id && <span className="trunc text-[10.5px] text-text-faint">on {r.target_label}, by an alert</span>}
-              </span>
-            ),
-          },
+          { k: "when", label: "when", w: "minmax(120px,1fr)", sortable: false, cell: (r) => <span className="text-text-2">{shortAgo(r.started_at ?? r.created_at)} ago</span> },
           { k: "id", label: "", w: "60px", right: true, sortable: false, cell: (r) => <span className="mono num text-[10.5px] text-text-faint">#{r.id}</span> },
           { k: "go", label: "", w: "70px", right: true, sortable: false, cell: () => <span className="tt text-ld-accent">open →</span> },
         ]}

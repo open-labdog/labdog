@@ -879,8 +879,8 @@ export interface ActionRun {
   /** NULL for ad-hoc runs; populated when the run was dispatched by the
    *  unified scheduler or POST /api/scheduled-actions/{id}/run-now. */
   scheduled_action_id: number | null
-  /** Set when an alert-triggered schedule dispatched the run; the name is
-   *  filled in by the run detail endpoint only. */
+  /** Set when an alert's labdog_action label started the run; the name
+   *  is filled in by the run detail endpoint only. */
   alert_event_id?: number | null
   alertname?: string | null
   parameters: Record<string, unknown>
@@ -907,7 +907,6 @@ export interface ActionRun {
 // ---------------------------------------------------------------------------
 
 export type ScheduledActionTargetKind = "host" | "group" | "fleet"
-export type ScheduledActionTrigger = "cron" | "alert"
 
 export interface ScheduledActionRunSummary {
   id: number
@@ -929,14 +928,6 @@ export interface ScheduledAction {
   verify_enabled: boolean
   auto_rollback: boolean
   batch_size: number
-  /** "cron" covers cron and run-by-hand schedules; "alert" fires when a
-   *  matching alert names a host in the target. */
-  trigger: ScheduledActionTrigger
-  /** Alert triggers: which alerts, one rule per line. */
-  alert_match: string | null
-  alert_cooldown_minutes: number
-  /** Alert triggers: hand the alert to the AI if the action does not fix it. */
-  investigate_on_failure: boolean
   last_dispatched_at: string | null
   created_at: string
   updated_at: string
@@ -976,20 +967,6 @@ export interface ScheduledActionCreate {
   verify_enabled?: boolean
   auto_rollback?: boolean
   batch_size?: number
-  trigger?: ScheduledActionTrigger
-  alert_match?: string | null
-  alert_cooldown_minutes?: number
-  investigate_on_failure?: boolean
-}
-
-/** POST /api/scheduled-actions/preview-matches, GET /{id}/matches. */
-export interface AlertTriggerMatch {
-  alert_event_id: number
-  alertname: string
-  status: string
-  host_id: number | null
-  hostname: string | null
-  created_at: string
 }
 
 export type ScheduledActionUpdate = Partial<
@@ -1277,50 +1254,87 @@ export interface AIUsageSummary {
   days: AIUsageDay[]
 }
 
-/** One alert as LabDog received it, deduplicated by fingerprint. */
-/** GET /api/ai/alert-intake — whether alerts can reach LabDog. The token
- *  itself is never returned, only whether it is set and long enough. */
+/** GET /api/alerts/intake — whether alerts can reach LabDog and what they
+ *  can set off. The token itself is never returned, only whether it is
+ *  set and long enough. */
 export interface AlertIntakeStatus {
   intake_enabled: boolean
   webhook_path: string
   token_set: boolean
+  /** At least 32 characters: below it a webhook alert runs no action and
+   *  no full auto. */
   token_long_enough_for_full_auto: boolean
-  /** Off: the labdog_automate=true label decides; on: the rules. */
+  ai_enabled: boolean
+  auto_investigate_enabled: boolean
+  /** Off: the labdog_ai_automate=true label decides; on: the rules. */
   full_auto_rules_enabled: boolean
   /** Rules in force: 1 (the label) while the rules are off. */
   full_auto_rules: number
+  /** Enabled entries on the list of actions alerts may run. */
+  allowed_actions: number
   poll_minutes: number
   last_webhook_alert_at: string | null
   last_poll_alert_at: string | null
 }
 
-/** GET /api/ai/full-auto/hosts/{id} — which alerts may fix a host without
- *  asking: the rules whose host and group conditions allow it, and the
- *  safeguards that would hold every alert back on it. */
-export interface HostFullAuto {
+/** GET /api/alerts/hosts/{id} — what alerts may do to one host: the
+ *  actions they may run there, the full-auto rules whose host and group
+ *  conditions allow it, and what holds every alert's full auto back on it
+ *  right now. */
+export interface HostAlerts {
   ai_enabled: boolean
+  auto_investigate_enabled: boolean
   rules_enabled: boolean
   rules: string[]
   blockers: string[]
-  /** Alert-triggered schedules whose target covers the host. */
-  alert_actions: { id: number; action_key: string; action_name: string | null; alert_match: string; enabled: boolean }[]
+  alert_actions: { id: number; action_key: string; action_name: string | null; scope: string; enabled: boolean }[]
 }
 
-/** What one alert-triggered schedule did with one alert. */
-export interface AlertAction {
+/** One entry on the list of actions alerts may run (/api/alerts/actions). */
+export interface AlertActionEntry {
   id: number
-  scheduled_action_id: number | null
+  action_key: string
+  target_kind: "host" | "group" | "fleet"
+  target_id: number | null
+  parameters: Record<string, unknown>
+  snapshot_enabled: boolean
+  verify_enabled: boolean
+  auto_rollback: boolean
+  cooldown_minutes: number
+  enabled: boolean
+  created_at: string
+  updated_at: string
+  /** Null when no loaded pack has the action any more. */
+  action_name: string | null
+  pack_name: string | null
+  destructive: boolean
+  target_name: string | null
+  last_run_id: number | null
+  last_run_status: string | null
+  last_run_at: string | null
+}
+
+export type AlertActionEntryIn = Pick<
+  AlertActionEntry,
+  "action_key" | "target_kind" | "target_id" | "parameters" | "snapshot_enabled" | "verify_enabled" | "auto_rollback" | "cooldown_minutes" | "enabled"
+>
+
+/** What one alert's labdog_action label came to. */
+export interface AlertDispatch {
+  id: number
+  alert_action_id: number | null
   action_key: string
   action_name: string | null
   host_id: number | null
   action_run_id: number | null
   run_status: string | null
-  outcome: "started" | "skipped_no_host" | "skipped_token" | "skipped_in_flight" | "skipped_cooldown" | "failed"
+  outcome: "started" | "not_allowed" | "unknown_action" | "skipped_no_host" | "skipped_token" | "skipped_in_flight" | "skipped_cooldown" | "failed"
   detail: string | null
   check_outcome: "fixed" | "not_effective" | "run_failed" | null
   checked_at: string | null
 }
 
+/** One alert as LabDog received it, deduplicated by fingerprint. */
 export interface AlertEvent {
   id: number
   source: "grafana_webhook" | "alertmanager_poll"
@@ -1345,6 +1359,7 @@ export interface AlertEvent {
     | "waiting_on_action"
     | "handled_by_action"
     | "skipped_disabled"
+    | "skipped_no_label"
     | "skipped_severity"
     | "skipped_resolved"
     | "skipped_duplicate"
@@ -1387,8 +1402,8 @@ export interface AlertEvent {
   /** The latest rollback of this alert's session, if there was one. */
   rollback_status: AIRollbackStatus | null
   rollback_detail: string | null
-  /** What each alert-triggered schedule did with this alert. */
-  actions: AlertAction[]
+  /** What the alert's labdog_action label came to: at most one entry. */
+  actions: AlertDispatch[]
   created_at: string
 }
 

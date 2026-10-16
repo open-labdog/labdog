@@ -105,7 +105,7 @@ function Integrations() {
   const { data: providers } = useQuery<AIProvider[]>({ queryKey: ["ai-providers"], queryFn: () => apiFetch<AIProvider[]>("/api/ai/providers"), ...q })
   const { data: metrics } = useQuery<MetricsStatus>({ queryKey: ["metrics-status"], queryFn: () => apiFetch<MetricsStatus>("/api/metrics/status"), ...q })
   const { data: email } = useQuery<EmailSettings>({ queryKey: ["notification-email"], queryFn: () => apiFetch<EmailSettings>("/api/notifications/email"), ...q })
-  const { data: intake } = useQuery<AlertIntakeStatus>({ queryKey: ["alert-intake"], queryFn: () => apiFetch<AlertIntakeStatus>("/api/ai/alert-intake"), ...q })
+  const { data: intake } = useQuery<AlertIntakeStatus>({ queryKey: ["alert-intake"], queryFn: () => apiFetch<AlertIntakeStatus>("/api/alerts/intake"), ...q })
 
   const enabledProviders = (providers ?? []).filter((p) => p.enabled)
   const lastGit = repos?.map((r) => r.last_sync_at).filter(Boolean).sort().at(-1) ?? null
@@ -163,7 +163,7 @@ function Integrations() {
         href="/settings?section=system"
         action="Details"
       />
-      <Card name="Alert intake" {...alertCard} href="/settings?section=fleet" action="Configure…" more={{ href: "/alerts", label: "Alerts" }} />
+      <Card name="Alert intake" {...alertCard} href="/settings?section=fleet" action="Configure…" more={{ href: "/alerts?tab=handling", label: "Alert handling" }} />
     </div>
   )
 }
@@ -175,25 +175,26 @@ function Integrations() {
  * on the Git remotes card, per repository.
  */
 function intakeCard(s: AlertIntakeStatus | undefined): { state: Tone; status?: string; detail: string; meta: string } {
-  if (!s) return { state: "idle", detail: "…", meta: "Grafana alerts in, for the assistant to investigate" }
+  if (!s) return { state: "idle", detail: "…", meta: "Grafana alerts in, to run actions or for the assistant" }
   if (!s.intake_enabled) return { state: "idle", status: "off", detail: "intake off", meta: "turn on alerts.intake_enabled to record Grafana alerts" }
   const origin = typeof window !== "undefined" ? window.location.origin : ""
   const last = [s.last_webhook_alert_at, s.last_poll_alert_at].filter((t): t is string => !!t).sort().at(-1)
-  // With the rules off, any alert Grafana labels labdog_automate=true may
-  // act, so a short token always costs something; with them on, only when
-  // the list has rules.
+  // With the rules off, any alert Grafana labels labdog_ai_automate=true
+  // may act, so a short token always costs something; with them on, only
+  // when the list has rules. Actions on the list need the token too.
   const fullAutoPossible = !s.full_auto_rules_enabled || s.full_auto_rules > 0
-  const weakForFullAuto = s.token_set && !s.token_long_enough_for_full_auto && fullAutoPossible
+  const weak = s.token_set && !s.token_long_enough_for_full_auto && (fullAutoPossible || s.allowed_actions > 0)
   const meta = [
     last ? `last alert ${shortAgo(last)} ago` : "no alert received yet",
     s.poll_minutes > 0 && `polls Alertmanager every ${s.poll_minutes} min`,
     !s.token_set && "set [alerts] webhook_token in labdog.toml",
-    weakForFullAuto && "token under 32 characters: no full auto",
+    weak && (s.allowed_actions > 0 ? "token under 32 characters: no actions, no full auto" : "token under 32 characters: no full auto"),
   ].filter(Boolean).join(" · ")
   return {
-    // A short token only needs attention once someone has written rules
-    // that expect full auto; under the label default it is a note.
-    state: (!s.token_set && s.poll_minutes === 0) || (weakForFullAuto && s.full_auto_rules_enabled) ? "warn" : "ok",
+    // A short token only needs attention once someone has allowed actions
+    // or written rules that expect full auto; under the label default with
+    // an empty list it is a note.
+    state: (!s.token_set && s.poll_minutes === 0) || (weak && (s.full_auto_rules_enabled || s.allowed_actions > 0)) ? "warn" : "ok",
     status: s.token_set ? undefined : s.poll_minutes > 0 ? "polling only" : undefined,
     detail: s.token_set ? `POST ${origin}${s.webhook_path}` : "the webhook refuses every alert: no token",
     meta,

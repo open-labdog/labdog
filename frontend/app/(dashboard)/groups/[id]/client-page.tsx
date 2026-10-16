@@ -263,7 +263,7 @@ export default function GroupDetailPage() {
                   <span className="mono num w-[52px] shrink-0 text-[10.5px] text-text-faint">{shortAgo(r.created_at)} ago</span>
                   <RunStatus s={r.status} reason={r.pending_reason} />
                   <span className="trunc flex-1 text-xs">{catalog?.find((a) => a.key === r.action_key)?.name ?? r.action_key}</span>
-                  <span className="tt text-[9px]">{r.scheduled_action_id ? "schedule" : r.triggered_by_user_id ? "user" : "system"}</span>
+                  <span className="tt text-[9px]">{r.scheduled_action_id ? "schedule" : r.alert_event_id ? "alert" : r.triggered_by_user_id ? "user" : "system"}</span>
                 </Link>
               ))}
               {runs && runs.length === 0 && <div className="p-[11px] text-[11.5px] text-text-3">No runs against this group yet. Run action… starts one; plans show up under Operations › Runs.</div>}
@@ -319,7 +319,7 @@ export default function GroupDetailPage() {
             },
             { k: "action", label: "action", w: "minmax(160px,1.2fr)", sortable: false, cell: (r) => <span className="text-text">{catalog?.find((a) => a.key === r.action_key)?.name ?? r.action_key}</span> },
             { k: "target", label: "target", w: "minmax(140px,1fr)", sortable: false, cell: (r) => <span className="mono text-[11px]">{r.target_label}</span> },
-            { k: "who", label: "actor", w: "84px", sortable: false, cell: (r) => <span className="mono text-[11px]">{r.scheduled_action_id ? "schedule" : r.triggered_by_user_id ? "user" : "system"}</span> },
+            { k: "who", label: "actor", w: "84px", sortable: false, cell: (r) => <span className="mono text-[11px]">{r.scheduled_action_id ? "schedule" : r.alert_event_id ? "alert" : r.triggered_by_user_id ? "user" : "system"}</span> },
             { k: "go", label: "", w: "78px", right: true, sortable: false, cell: () => <span className="tt text-ld-accent">open →</span> },
           ]}
           rows={runs ?? []}

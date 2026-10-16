@@ -86,6 +86,7 @@ export const ZONE_DEFS: ZoneDef[] = [
       { label: "Drift", href: "/drift", n: (c) => nz(c.drifted) },
       { label: "Actions", href: "/actions" },
       { label: "Runs", href: "/runs" },
+      { label: "Alerts", href: "/alerts", n: (c) => nz(c.firingAlerts) },
       { label: "Audit", href: "/audit" },
     ],
   },
@@ -94,10 +95,7 @@ export const ZONE_DEFS: ZoneDef[] = [
     label: "Assistant",
     glyph: "tri",
     href: "/assistant",
-    items: [
-      { label: "Sessions", href: "/assistant", badge: (c) => nz(c.approvals) },
-      { label: "Alerts", href: "/alerts", n: (c) => nz(c.firingAlerts) },
-    ],
+    items: [{ label: "Sessions", href: "/assistant", badge: (c) => nz(c.approvals) }],
   },
 ]
 
@@ -131,7 +129,7 @@ const ROUTE_ZONES: [string, ZoneKey][] = [
   ["/runs", "ops"],
   ["/audit", "ops"],
   ["/assistant", "assistant"],
-  ["/alerts", "assistant"],
+  ["/alerts", "ops"],
   ["/settings", "settings"],
   ["/users", "settings"],
   ["/ssh-keys", "settings"],

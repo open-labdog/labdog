@@ -59,13 +59,8 @@ export function ScheduledActionsList({ rows, hideColumns = [], emptyState, loadi
           },
           ...(showTarget ? [{ k: "target", label: "target", w: "minmax(110px,1fr)", sortable: false, cell: (r: ScheduledAction) => <TargetCell row={r} /> }] : []),
           {
-            k: "schedule", label: "when", w: "minmax(120px,1fr)", sortable: false,
-            cell: (r) => r.trigger === "alert" ? (
-              <span className="flex min-w-0 flex-col" title={r.alert_match ?? undefined}>
-                <span className="flex items-center gap-1.5"><Tag tone="warn">on alert</Tag></span>
-                <span className="mono trunc text-[10.5px] text-text-faint">{(r.alert_match ?? "").split("\n").filter((l) => l.trim() && !l.trim().startsWith("#")).join(" · ")}</span>
-              </span>
-            ) : r.schedule_cron ? (
+            k: "schedule", label: "schedule", w: "minmax(120px,1fr)", sortable: false,
+            cell: (r) => r.schedule_cron ? (
               <span className="flex min-w-0 flex-col">
                 <span className="mono text-[11px] text-text-2">{r.schedule_cron}</span>
                 <span className="text-[10.5px] text-text-faint">{cronToHuman(r.schedule_cron)}</span>

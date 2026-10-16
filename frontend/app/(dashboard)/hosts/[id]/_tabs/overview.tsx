@@ -9,17 +9,19 @@ import { plural } from "@/lib/fleet"
 import { Banner, Facts, Panel, Status, Table, Tag } from "@/components/ld"
 import { HostMetricsSection } from "@/components/host-metrics-section"
 import { FirewallBackendTag } from "./config/shared"
-import type { Host, HostFullAuto, HostGroup, ModuleCurrentState, VMMapping } from "@/lib/types"
+import type { Host, HostAlerts, HostGroup, ModuleCurrentState, VMMapping } from "@/lib/types"
 
 /**
- * Which alerts may change this host without asking — the host's side of
- * the full-auto rules, worked out by the server, plus what would hold
- * every alert back here right now. Hidden while the AI is off.
+ * What alerts may do to this host — the actions on the list whose scope
+ * covers it, and which alerts may change it without asking (the host's
+ * side of the full-auto label or rules), plus what would hold every
+ * alert's full auto back here right now. Hidden when alerts can do
+ * neither.
  */
-function FullAutoSection({ hostId }: { hostId: number }) {
-  const { data } = useQuery<HostFullAuto>({
-    queryKey: ["host-full-auto", hostId],
-    queryFn: () => apiFetch<HostFullAuto>(`/api/ai/full-auto/hosts/${hostId}`),
+function AlertsSection({ hostId }: { hostId: number }) {
+  const { data } = useQuery<HostAlerts>({
+    queryKey: ["host-alerts", hostId],
+    queryFn: () => apiFetch<HostAlerts>(`/api/alerts/hosts/${hostId}`),
     retry: false,
   })
   if (!data || (!data.ai_enabled && data.alert_actions.length === 0)) return null
@@ -37,7 +39,7 @@ function FullAutoSection({ hostId }: { hostId: number }) {
       }
       actions={
         <>
-          {data.alert_actions.length > 0 && <Link href="/actions?tab=schedules" className="btn btn-sm btn-ghost hover:no-underline">schedules</Link>}
+          <Link href="/alerts?tab=handling" className="btn btn-sm btn-ghost hover:no-underline">alert handling</Link>
           {data.ai_enabled && <Link href="/settings?section=ai" className="btn btn-sm btn-ghost hover:no-underline">rules</Link>}
         </>
       }
@@ -46,14 +48,16 @@ function FullAutoSection({ hostId }: { hostId: number }) {
       <div className="flex flex-col gap-2 text-[11.5px]" data-testid="host-full-auto">
         {data.alert_actions.length > 0 && (
           <div className="flex flex-col gap-1" data-testid="host-alert-actions">
-            <span className="text-text-3">Alerts on this host run these actions:</span>
+            <span className="text-text-3">
+              Alerts labelled <span className="mono">labdog_action</span> may run these actions here:
+            </span>
             <ul className="m-0 flex list-none flex-col gap-1 p-0">
               {data.alert_actions.map((a) => (
                 <li key={a.id} className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-text">{a.action_name ?? a.action_key}</span>
-                  <span className="text-text-faint">when</span>
-                  <span className="mono">{a.alert_match.split("\n").filter((l) => l.trim() && !l.trim().startsWith("#")).join(" · ")}</span>
-                  {!a.enabled && <Tag>disabled</Tag>}
+                  <span className="mono text-text">{a.action_key}</span>
+                  {a.action_name && <span className="text-text-3">{a.action_name}</span>}
+                  <span className="text-text-faint">· {a.scope}</span>
+                  {!a.enabled && <Tag>paused</Tag>}
                 </li>
               ))}
             </ul>
@@ -76,7 +80,7 @@ function FullAutoSection({ hostId }: { hostId: number }) {
           </>
         )}
         {any && data.blockers.length > 0 && (
-          <div className="flex flex-col gap-1" style={{ color: "var(--warn)" }}>
+          <div className="flex flex-col gap-1" style={{ color: "var(--warn)" }} data-testid="host-alert-blockers">
             <span>None can right now:</span>
             <ul className="m-0 flex list-disc flex-col gap-0.5 pl-4">
               {data.blockers.map((b) => (
@@ -235,7 +239,7 @@ export function OverviewTab({ hostId, host, groups }: { hostId: number; host: Ho
       </Panel>
 
       <ProxmoxVMSection hostId={hostId} />
-      <FullAutoSection hostId={hostId} />
+      <AlertsSection hostId={hostId} />
       <SyncStatusMessage host={host} modules={currentState} />
 
       <Panel title="group memberships" meta={`${plural(members.length, "group")}`} actions={!picking && avail.length > 0 && <button type="button" className="btn btn-sm" onClick={() => setPicking(true)}>+ add to group</button>} pad={0}>
