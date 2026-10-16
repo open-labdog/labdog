@@ -1,23 +1,36 @@
 # Alerts
 
-**Path:** `/alerts` (Assistant · Alerts)
+**Path:** `/alerts` (Operations · Alerts)
 
-Alerts LabDog has received from Grafana or Alertmanager, newest first.
-Each one can be handed to the [AI assistant](assistant.md) to investigate
-— automatically under a policy you set, or by hand from this page — and,
-if you allow it, to fix what it finds. See
-[What the session can do](#what-the-session-can-do).
+Alerts LabDog has received from Grafana or Alertmanager, and what each one
+set off. What an alert sets off is up to its **labels**, which you put on
+the alert rule in Grafana:
 
-The screen is one table, one row per alert: when it fired, the alert name
-(with a `×N` repeat count), severity, status, its summary, and the
-investigation — with **investigate** or **view →** at the end of the row.
-Firing critical alerts are tinted. A **Firing / All** switch in the head
-hides or shows resolved alerts. Firing alerts also land in the
-[Overview's Pending queue](dashboard.md#pending).
+| Label | What it does |
+|---|---|
+| `labdog_action=<action key>` | Runs that action on the alert's host — if the action is on the [list of actions alerts may run](#the-actions-alerts-may-run) |
+| `labdog_ai=true` | Has the [AI assistant](assistant.md) investigate, when there is no action or the action did not fix the alert |
+| `labdog_ai_automate=true` | The same, and the AI may fix what it finds, behind the [full auto safeguards](#full-auto-safeguards) |
 
-**Recording an alert and investigating it are separate switches.**
-Recording costs nothing and starts nothing; investigating spends money
-without anyone asking. Both are off by default.
+An alert with none of them is recorded, and nothing else happens. See
+[Labels](#labels) for how they combine.
+
+The page has two tabs:
+
+- **Received** — one row per alert, newest first: when it fired, status,
+  severity, the alert name (with a `×N` repeat count), its summary, what
+  its action did, and the investigation, with **investigate** or
+  **view →** at the end of the row. Firing critical alerts are tinted. A
+  **Firing / All** switch hides or shows resolved alerts. Firing alerts
+  also land in the [Overview's Pending queue](dashboard.md#pending).
+- **Handling** — what alerts are allowed to do: the actions alerts may
+  run, a reference for the labels, whether alerts can get in, and whether
+  the AI will answer them.
+
+**Recording an alert, running its action and investigating it are
+separate decisions.** Recording costs nothing and starts nothing. An
+action runs only if it is on the list, which starts empty. Investigating
+spends money without anyone asking, and is off by default.
 
 ---
 
@@ -29,7 +42,7 @@ investigation under AI.
 | Setting | Default | Effect |
 |---|---|---|
 | `alerts.intake_enabled` | `0` | Accept alerts at all |
-| `ai.auto_investigate_enabled` | `0` | Start a session when an eligible alert arrives |
+| `ai.auto_investigate_enabled` | `0` | Start a session when an alert labelled `labdog_ai` or `labdog_ai_automate` arrives |
 
 Plus a token in the config file — **not** in the UI settings, because
 `/api/settings` is readable by any signed-in user and a shared secret does
@@ -41,8 +54,7 @@ webhook_token = "a-long-random-string"
 ```
 
 or `LABDOG_ALERTS__WEBHOOK_TOKEN`. **An unset token refuses every
-request**, and the **Alert intake** card under Settings › Integrations
-says so. An alert receiver that accepted unauthenticated POSTs would let
+request**, and the **Intake** card on the Handling tab says so. An alert receiver that accepted unauthenticated POSTs would let
 anyone on the network write rows LabDog might then spend money
 investigating.
 
@@ -125,28 +137,136 @@ flapping looks like from here.
 
 ---
 
-## Running an action instead
+## Labels
 
-An alert can also run an action on its host with no AI at all, for
-example *NginxDown → restart nginx*. That is a schedule that fires on
-alerts; see [Schedules › When an alert fires](scheduled-actions.md#when-an-alert-fires).
-When one matches, it goes first. The investigation below waits for its
-result, and runs only if the action did not fix the alert and the
-schedule says to hand it over.
+Put them on the alert rule in Grafana (**Configure labels and
+notifications** in the rule's form). They travel with every notification
+the rule sends, so LabDog reads them from the alert itself. How they
+combine:
+
+| The alert's labels | What happens |
+|---|---|
+| `labdog_action=restart-nginx` | LabDog runs `restart-nginx` on the host. Nothing else, whether or not it works. |
+| `labdog_action=restart-nginx`, `labdog_ai=true` | It runs `restart-nginx`. If the run fails, or the alert is still firing afterwards, the AI investigates, told what was tried. |
+| `labdog_action=restart-nginx`, `labdog_ai_automate=true` | The same, and the AI may fix what it finds. |
+| `labdog_ai=true` | The AI investigates, at `ai.alert_autonomy_level`. |
+| `labdog_ai_automate=true` | The AI investigates and may fix what it finds. |
+| none | Recorded only. |
+
+The AI values must be exactly `true`. `labdog_action` takes an action's
+key, as shown under each action on the [Actions](actions.md) page.
+
+To make a label depend on the host, give it a template. The
+[alloy-install action](actions.md) stamps `labdog_hostname` (and
+`labdog_host_id`) on every series it ships, so the template can use
+LabDog's own names:
+
+```
+labdog_action      = restart-nginx
+labdog_ai          = true
+labdog_ai_automate = {{ if match "^(web-1|web-2)$" $labels.labdog_hostname }}true{{ else }}false{{ end }}
+```
+
+Write the `false` branch too rather than leaving the label empty.
+
+With labels, **whoever can edit alert rules in Grafana decides what an
+alert asks for.** LabDog keeps the last word on what it does: only an
+action on the list runs, only on the hosts its entry allows, and full
+auto only while every safeguard holds.
+
+---
+
+## Running an action
+
+### The actions alerts may run
+
+The **Handling** tab lists the actions an alert may start. **The list
+starts empty**, so `labdog_action` does nothing until an action is on it:
+an alert naming any other action is recorded and refused, and its row says
+so. **Allow an action** adds one:
+
+| Field | What |
+|---|---|
+| **Action** | Any action that can run on a single host, because a run an alert starts is always the **one host the alert names**. One entry per action. It cannot be changed afterwards, since Grafana rules point at it by name. |
+| **Where** | All hosts, a group, or one host. An alert on a host outside it is refused. |
+| **Parameters** | Fixed, and checked like any other run's. Labels are not a way to pass them. |
+| **Snapshot / verify / rollback** | As for any run of a destructive action. |
+| **Cooldown** (60 min) | No second alert run of the action on the same host within this time. 0 means none. |
+| **Enabled** | Off pauses the entry without removing it; alerts naming it are refused. |
+
+Taking an action off the list refuses it from then on. What earlier
+alerts did with it stays on their rows.
+
+### When an alert arrives
+
+LabDog checks, in this order:
+
+1. Only a **new firing** alert counts. Repeat notifications of the same
+   firing, and resolved notifications, never start a run.
+2. The alert must name a **host LabDog manages**. See [Scope](#scope) for
+   how LabDog works that out.
+3. The action must exist and be **on the list**, enabled, with the host
+   inside its **Where**.
+4. An alert that came **by webhook** needs `[alerts] webhook_token` to be
+   at least 32 characters, as for full auto. The token is all that stands
+   between whoever can reach the webhook and a run on your hosts.
+5. No alert run of the action may be queued, waiting or running on the
+   host, and the **cooldown** must have passed.
+
+If all hold, LabDog starts a single-host run of the action with the
+entry's parameters. It runs like any other: it waits for a busy host,
+takes a snapshot first if the action is destructive and the entry says
+so, and shows on the [Runs](operations.md#runs) page. The run page says which alert
+started it.
+
+If the action could not run, the row's **action** column says why: *not
+allowed*, *unknown action*, *no host*, *token*, *already running* or
+*cooldown*, with the detail on hover. An alert that also asks for the AI
+then goes to it anyway, and its prompt says which action was asked for
+and why it did not run — except when the action is *already running*,
+because that run decides.
+
+### Afterwards
+
+While the action runs, an investigation the labels ask for **waits**.
+Once the run has finished, LabDog checks every minute:
+
+| Outcome | When |
+|---|---|
+| **fixed** | The alert resolved. |
+| **did not fix it** | The run succeeded, but the alert is still firing `alerts.action_check_minutes` (10) after the run finished. |
+| **run failed** | The run failed or was cancelled. |
+
+If the action did not fix it and the alert is labelled `labdog_ai` or
+`labdog_ai_automate`, it goes to the AI, through the same checks as any
+investigation (below). Its prompt gains a section saying what LabDog
+already tried: the action, the run, how it ended, and the end of its
+output. Without either label nothing more happens.
+
+Grafana must send **resolved notifications** for **fixed** to be told
+apart from **did not fix it**. Subscribe to **Actions run by alerts** on
+the [Email](notifications.md) page for a message with each outcome.
+
+---
 
 ## When an investigation starts
 
 An alert must clear every one of these:
 
 1. `ai.auto_investigate_enabled` is on.
-2. The alert is **firing** — a resolved alert has nothing live to look
+2. It **asks for the AI**: it is labelled `labdog_ai=true` or
+   `labdog_ai_automate=true` — or, with `ai.alert_full_auto_rules_enabled`
+   on, it matches one of [the rules](#which-alerts-may-run-at-full-auto).
+3. The alert is **firing** — a resolved alert has nothing live to look
    at, and a session would read a healthy host and report that nothing is
    wrong.
-3. It is **new**, not a repeat notification about something already being
+4. It is **new**, not a repeat notification about something already being
    investigated.
-4. Its `severity` label meets `ai.auto_investigate_min_severity`.
 5. `ai.enabled` is on, a provider that can run tools is configured, and
    the AI budget is not spent.
+
+When its `labdog_action` started a run, the investigation waits for it —
+see [Afterwards](#afterwards).
 
 The prompt the session starts from is `ai.alert_mission_template` — see
 [Settings](settings.md#the-investigation-prompt) if you want to change what
@@ -173,19 +293,20 @@ is where to look for the rule that caused it.
 
 Whatever happened is recorded on the row and shown as a tag in its
 **investigation** column (hover it for the detail), because "nothing
-happened" has six different causes and each has a different fix:
+happened" has several causes and each has a different fix:
 
 | Tag | Meaning |
 |---|---|
 | **investigating** | A session was started; **view →** opens it |
 | **auto-investigate off** | The policy switch is off |
-| **below severity threshold** | Including a severity LabDog did not recognise — see below |
+| **not labelled for the AI** | Neither `labdog_ai=true` nor `labdog_ai_automate=true`, and no full-auto rule matched |
 | **already resolved** | It cleared before LabDog got to it |
 | **already investigated** | A repeat notification |
 | **AI budget reached** | Spend limit hit; the alert is still recorded |
 | **could not start** | AI disabled, no provider, or a provider that cannot run tools |
-| **waiting on action** | An [alert-triggered schedule](scheduled-actions.md#when-an-alert-fires) is running an action for it; the AI looks only if that does not fix it |
-| **handled by action** | An alert-triggered schedule handled it: the action fixed it, or the schedule does not hand alerts to the AI |
+| **waiting on action** | Its `labdog_action` is running; the AI looks only if that does not fix it |
+| **handled by action** | Its action fixed it, or the alert does not ask for the AI, or another alert's run of the action was already going |
+| **below severity threshold** | Only on alerts from before 1.0.0, when a severity threshold decided |
 
 ### Reading the outcome on the row
 
@@ -208,24 +329,13 @@ skipped, so the row shows the verdict rather than the word `Summary`.
 (`/assistant?session=<id>`). It is a deep link to the session, not merely a
 jump to the Assistant page, so the run you clicked is the one you land on.
 
-### Severity is read, not guessed
-
-The threshold understands `info`, `warning`, and `critical`. Grafana lets
-you label an alert anything, so an alert labelled `sev1` or `P1`
-**does not meet any threshold** and is skipped with the unrecognised value
-named in the row.
-
-That is deliberate. Treating `sev1` as critical would be a guess, and
-treating it as trivial would be another — but only one of them spends
-money unattended. Relabel the alert, or investigate it by hand.
-
 ---
 
 ## Investigating by hand
 
-**investigate** on a firing alert's row starts a session regardless
-of the severity threshold — you have already made the judgement the
-threshold exists to automate.
+**investigate** on a firing alert's row starts a session whatever its
+labels say — you have already made the judgement `labdog_ai` exists to
+automate.
 
 It does **not** bypass the kill switch, the provider check, or the
 budget. Those are about whether LabDog may spend at all, which a button
@@ -239,8 +349,8 @@ By default, **only look**. Two settings let it do more:
 
 | Setting | Default | Effect |
 |---|---|---|
-| `ai.alert_autonomy_level` | `read_only` | What every alert's session may change: `read_only`, or `approval` — each change it wants to make waits for someone to approve it |
-| `ai.alert_full_auto_rules_enabled` | `0` | Which alerts may change the host **without asking**: off, those Grafana labels `labdog_automate=true`; on, those matching `ai.alert_full_auto_rules` — see [below](#which-alerts-may-run-at-full-auto) |
+| `ai.alert_autonomy_level` | `read_only` | What an alert's session may change: `read_only`, or `approval` — each change it wants to make waits for someone to approve it |
+| `ai.alert_full_auto_rules_enabled` | `0` | Which alerts may change the host **without asking**: off, those Grafana labels `labdog_ai_automate=true`; on, those matching `ai.alert_full_auto_rules` — see [below](#which-alerts-may-run-at-full-auto) |
 
 There is no `full_auto` choice on the level, and that is deliberate. An
 alert is a machine's opinion that something is wrong, and you are the one
@@ -272,20 +382,10 @@ for why.
 
 ### Which alerts may run at full auto
 
-**By default, the ones Grafana labels `labdog_automate=true`.** Put the
-label on the alert rule. To make it depend on the host, give it a
-template. The [alloy-install action](actions.md) stamps `labdog_hostname`
-(and `labdog_host_id`) on every series it ships, so the template can use
-LabDog's own names:
-
-```
-labdog_automate = {{ if match "^(web-1|web-2)$" $labels.labdog_hostname }}true{{ else }}false{{ end }}
-```
-
-The value must be exactly `true`. Write the `false` branch too rather than
-leaving the label empty. With this, the decision lives with the alert
-rule, and whoever can edit alert rules in Grafana decides which alerts may
-change your hosts unattended.
+**By default, the ones Grafana labels `labdog_ai_automate=true`** — with
+a template if only some hosts should qualify; see [Labels](#labels). With
+this, the decision lives with the alert rule, and whoever can edit alert
+rules in Grafana decides which alerts may change your hosts unattended.
 
 **With `ai.alert_full_auto_rules_enabled` on, `ai.alert_full_auto_rules`
 decides instead.** One rule per line. A rule is conditions separated by
@@ -302,7 +402,7 @@ does. There is no order and no "deny" line, so no rule overrides another.
 | `!host:…`, `!group:…` | that host is not one of these, or in none of these groups |
 
 Lines starting with `#` are comments. The default list is the single rule
-`labdog_automate=true`, so turning the rules on changes nothing until you
+`labdog_ai_automate=true`, so turning the rules on changes nothing until you
 edit it, and an empty list lets **no** alert run at full auto. Two alerts
 that both hosts can raise, each allowed on one host only:
 
@@ -318,8 +418,11 @@ DiskFull, host:db-1
 
 Groups keep a long list short, and `!` makes an exception:
 `DiskFull, group:db, !host:db-legacy`. Labels and hosts combine:
-`labdog_automate=true, group:lab` trusts Grafana's label, but only for
+`labdog_ai_automate=true, group:lab` trusts Grafana's label, but only for
 hosts in `lab`.
+
+An alert a rule lets run at full auto is also one that gets investigated,
+with or without `labdog_ai`.
 
 Saving a rule that names a host or group LabDog does not have is refused.
 If one is renamed or deleted later, the setting shows a warning beside the
@@ -327,9 +430,11 @@ list, because the rule would otherwise silently match nothing.
 
 **Where to see it.** An alert that ran at full auto says which rule it
 matched on its row, for example *Full auto: matched NginxDown, host:web-1*.
-A host's Overview has an **automatic fixes** panel listing the rules that
-can cover it, and anything that would hold every alert back on it right
-now: intake off, a short token, no snapshot possible.
+A host's Overview has an **automatic fixes** panel listing the actions
+alerts may run on it, the rules that can cover it, and anything that
+would hold every alert's full auto back on it right now: intake off, a
+short token, no snapshot possible, a fix that made it worse in the last
+24 hours (with when that lifts), or a fix not yet checked.
 
 ### Full auto safeguards
 
@@ -515,7 +620,13 @@ a wrong token is a 401 at LabDog and a delivery error in Grafana's own
 logs.
 
 **Alerts appear but nothing is investigated.** Read the investigation tag. It names
-which of the six gates stopped it.
+which gate stopped it. *Not labelled for the AI* means the alert rule in
+Grafana has neither `labdog_ai=true` nor `labdog_ai_automate=true`.
+
+**An alert's action did not run.** Hover the tag in its **action** column:
+the action is not on the Handling tab's list, is paused there, does not
+cover that host, or ran on it too recently. The label's value must be the
+action's key exactly.
 
 **Every fix is marked "fix did not work", although the alerts cleared.**
 LabDog never heard that they resolved. Check that **Disable resolved

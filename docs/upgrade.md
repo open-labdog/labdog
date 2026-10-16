@@ -52,7 +52,10 @@ patch release (1.0.1) only fixes bugs.
   [Actions](ui/actions.md)).
 - **The GitOps file format** (see [the GitOps guide](examples/gitops/README.md)).
 - **The webhook endpoints** under `/api/webhooks/` (`github`, `gitlab`,
-  `gitea`, `grafana-alerts`) and the payloads they accept.
+  `gitea`, `grafana-alerts`) and the payloads they accept, including the
+  alert labels LabDog reads: `labdog_action`, `labdog_ai`,
+  `labdog_ai_automate`, `labdog_host_id` and `labdog_hostname` (see
+  [Alerts](ui/alerts.md#labels)).
 - **The Prometheus metrics**: names and labels in
   [Metrics export](metrics-export.md).
 - **The REST calls these docs tell you to make**, such as
@@ -71,13 +74,14 @@ that used to work, in any release. Its upgrade notes say so.
 ### Upgrading to 1.0.0
 
 Nothing is required unless you deleted the seeded `labdog-playbooks`
-pack or LabDog cannot reach GitHub (see 1). Every new thing that can
-change a host or send mail is off until you turn it on: alert
-investigations stay read-only, no alert runs at full auto unless its
-Grafana rule is labelled `labdog_automate=true` (see 6), no schedule fires
-on alerts until you create one, no mail server is
-configured and nobody is subscribed, and schedules keep
-reading their cron expressions in UTC. Six things are worth checking.
+pack or LabDog cannot reach GitHub (see 1), or alerts are investigated
+automatically today (see 6). Every new thing that can change a host or
+send mail is off until you turn it on: alert investigations stay
+read-only, no alert runs at full auto unless its Grafana rule is labelled
+`labdog_ai_automate=true`, no alert runs an action until you allow that
+action under **Operations → Alerts → Handling**, no mail server is
+configured and nobody is subscribed, and schedules keep reading their
+cron expressions in UTC. Six things are worth checking.
 
 **1. The bundled action pack is gone.** The image and the `.deb` / `.rpm` /
 `.tar.gz` packages no longer carry a copy of `labdog-playbooks`. Actions
@@ -131,15 +135,23 @@ column, so signed push webhooks have answered 500 since, and GitOps has
 not imported a push. See
 [encryption-key-rotation.md](encryption-key-rotation.md).
 
-**6. If alert investigations already run, an alert can now be labelled
-to fix its host unattended.** An alert whose Grafana rule carries the label
-`labdog_automate=true` runs at full auto, behind the safeguards in
-[Alerts](ui/alerts.md#full-auto-safeguards). Nobody adds that label by
-accident. But anyone who can post to the alert webhook with its token
-could send an alert carrying it, and the webhook token of at least 32
-characters is the only lock. To keep that decision in LabDog, turn on
-`ai.alert_full_auto_rules_enabled` and list in `ai.alert_full_auto_rules`
-what may act. An empty list allows nothing.
+**6. Alerts are investigated only when their labels ask for it.** With
+`ai.auto_investigate_enabled` on, 0.10.0 investigated every alert at or
+above `ai.auto_investigate_min_severity`. Now an alert is investigated
+only when its Grafana rule labels it `labdog_ai=true`, or
+`labdog_ai_automate=true` to let the AI fix what it finds. **Until you
+add a label, alerts are recorded and nothing else happens.** Add
+`labdog_ai=true` to the alert rules you want investigated.
+`ai.auto_investigate_min_severity` is gone, and the upgrade deletes its
+stored value. See [Alerts](ui/alerts.md#labels).
+
+An alert labelled `labdog_ai_automate=true` runs at full auto, behind the
+safeguards in [Alerts](ui/alerts.md#full-auto-safeguards). Nobody adds
+that label by accident. But anyone who can post to the alert webhook with
+its token could send an alert carrying it, and the webhook token of at
+least 32 characters is the only lock. To keep that decision in LabDog,
+turn on `ai.alert_full_auto_rules_enabled` and list in
+`ai.alert_full_auto_rules` what may act. An empty list allows nothing.
 
 Smaller things to know:
 
@@ -154,8 +166,11 @@ Smaller things to know:
 - **Email** needs `notifications.public_url` set before it sends anything
   with a link; LabDog will not build links from a request's `Host`
   header. See [Notifications](ui/notifications.md).
+- **Alerts moved** from the Assistant to **Operations → Alerts**, and
+  their API from `/api/ai/alerts` to `/api/alerts`. The old paths still
+  answer, deprecated, until 2.0.
 - **Full auto** is for alerts whose Grafana rule is labelled
-  `labdog_automate=true`, or, with `ai.alert_full_auto_rules_enabled` on,
+  `labdog_ai_automate=true`, or, with `ai.alert_full_auto_rules_enabled` on,
   those matching `ai.alert_full_auto_rules`. It needs Grafana's contact
   point to send resolved notifications, or every fix is judged as not
   working, and it is refused on the machine LabDog itself runs on. See

@@ -43,7 +43,7 @@ summary see the [top-level README](https://github.com/open-labdog/labdog/blob/ma
 | [ui/scheduled-actions.md](./ui/scheduled-actions.md) | Schedules — cron-driven runs of any action (built-in or pack-supplied) against hosts, groups, or the fleet |
 | [ui/actions.md](./ui/actions.md) | Actions and Action Packs — ad-hoc playbook runs, bring-your-own playbooks, and AI verification of destructive runs |
 | [ui/assistant.md](./ui/assistant.md) | The AI assistant — connecting a provider, autonomy levels, approving a change, snapshots, spend limits |
-| [ui/alerts.md](./ui/alerts.md) | Alert intake from Grafana and Alertmanager, deduplication, and the auto-investigation policy |
+| [ui/alerts.md](./ui/alerts.md) | Alert intake from Grafana and Alertmanager, the labels that choose what an alert does, the actions alerts may run, deduplication, and the AI policy |
 | [ui/notifications.md](./ui/notifications.md) | Email notifications — the mail server, LabDog's address for links, per-user subscriptions, coalescing and retries, the delivery log |
 | [ui/admin.md](./ui/admin.md) | SSH Keys, Audit Log, User management |
 | [ui/settings.md](./ui/settings.md) | All settings configurable in the UI (log level, drift interval, timeouts, discovery tuning, AI kill switch and budgets) |
@@ -574,16 +574,19 @@ See [examples/gitops/README.md](./examples/gitops/README.md) for setup walkthrou
 
 See [ui/assistant.md](./ui/assistant.md) for autonomy levels, approvals, snapshots and spend limits.
 
-### Alert intake
+### Alerts
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/api/webhooks/grafana-alerts` | Grafana contact-point receiver (bearer or basic auth against `[alerts] webhook_token`; an unset token refuses every request) |
-| `GET` | `/api/ai/alerts` | Alerts received, with the investigation each one did or did not get |
-| `POST` | `/api/ai/alerts/{id}/investigate` | Start an investigation by hand, bypassing only the severity threshold |
-| `GET` | `/api/ai/alert-intake` | Whether alerts can get in: intake on, whether the webhook token is set and long enough for full auto (never the token), the full-auto mode, and the last alert by each route (drives the Settings › Integrations card) |
-| `GET` | `/api/ai/full-auto/hosts/{id}` | The full-auto rules that can cover one host, and what would hold every alert back on it (drives the host page's panel) |
+| `GET` | `/api/alerts` | Alerts received, with what each one's `labdog_action` came to and the investigation it did or did not get |
+| `POST` | `/api/alerts/{id}/investigate` | Start an investigation by hand, whatever the alert's labels |
+| `GET` | `/api/alerts/actions` · `POST` | The actions alerts may run / allow one (action, where, parameters, snapshot / verify / rollback, cooldown, enabled) |
+| `GET` · `PUT` · `DELETE` | `/api/alerts/actions/{id}` | Read, change or remove one; the action itself cannot change |
+| `GET` | `/api/alerts/intake` | Whether alerts can get in and what they can set off: intake on, whether the webhook token is set and long enough to act on (never the token), the AI switches, the full-auto mode, how many actions alerts may run, and the last alert by each route |
+| `GET` | `/api/alerts/hosts/{id}` | What alerts may do to one host: the actions they may run there, the full-auto rules that can cover it, and what holds every alert's full auto back on it right now (drives the host page's panel) |
+| `GET` | `/api/ai/alerts` · `POST /api/ai/alerts/{id}/investigate` | **Deprecated** aliases of `/api/alerts` and `/api/alerts/{id}/investigate`, kept for the life of 1.x |
 
-See [ui/alerts.md](./ui/alerts.md) for the intake paths, deduplication, and the auto-investigation policy.
+See [ui/alerts.md](./ui/alerts.md) for the labels, the intake paths, deduplication, and the auto-investigation policy.
 
 ### Grafana metrics (inbound — LabDog reads host metrics)
 | Method | Path | Description |

@@ -65,13 +65,15 @@ parser, bounded by a host allowlist, redacted, and written to the audit log.
 - **AI verification** — a destructive action can ask an LLM whether it left
   the host healthy, judged on evidence LabDog collected rather than anything
   the model went looking for.
-- **Alert-driven investigation and fixes** — point a Grafana contact point
-  at LabDog and eligible alerts get an investigation on their own, gated by
-  severity and budget. It only looks unless you allow more. It can ask
-  for approval for each change. Alerts you mark, with a `labdog_automate`
-  label in Grafana or with rules naming alerts, hosts and groups, may fix
-  the host unattended. Every unattended fix is snapshotted first and
-  checked afterwards, and one that made the host worse is rolled back.
+- **Alert-driven actions, investigation and fixes** — point a Grafana
+  contact point at LabDog and let the alert rule's labels say what
+  happens. `labdog_action` runs an action you have allowed on the alert's
+  host, no AI needed. `labdog_ai` has the assistant investigate, within
+  budget; it only looks unless you allow more, and can ask for approval
+  for each change. `labdog_ai_automate`, or rules naming alerts, hosts and
+  groups, lets it fix the host unattended. Every unattended fix is
+  snapshotted first and checked afterwards, and one that made the host
+  worse is rolled back.
 - **Email** — fired alerts, approvals waiting and automatic fixes, for
   whoever subscribes.
 

@@ -1,7 +1,7 @@
 # Operations
 
 The Operations zone holds the things that *happen* to the fleet: plans,
-drift findings, actions, runs and the audit trail. The rule the zone is
+drift findings, actions, runs, alerts and the audit trail. The rule the zone is
 built on: an operation you start is contextual (every **Plan sync** button
 in the app lands here), and an operation that happened is an object with a
 URL.
@@ -83,6 +83,15 @@ One stream, newest first: sync jobs (applies), action runs, scheduled runs
 and state collections, with kind and status filters. A run with a page of
 its own (action runs, including scheduled ones) opens it; a sync job opens
 its host. The last 100 of each source.
+
+## Alerts
+
+**Path:** `/alerts` (`?tab=handling`)
+
+Alerts received from Grafana and Alertmanager, and what each one set off:
+the action its `labdog_action` label named, an AI investigation, or
+nothing. The Handling tab holds the actions alerts may run. See
+[Alerts](alerts.md).
 
 ## Audit
 
