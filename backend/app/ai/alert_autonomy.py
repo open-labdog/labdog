@@ -4,9 +4,9 @@ An alert investigation used to be read-only by construction. This module
 decides the level instead:
 
 * ``ai.alert_autonomy_level`` — ``read_only`` or ``approval``. What every
-  alert gets.
+  alert that asks for the AI (``labdog_ai=true``) gets.
 * Which alerts may go further and change the host with nobody asked:
-  those labelled ``labdog_automate=true`` in Grafana, or, with
+  those labelled ``labdog_ai_automate=true`` in Grafana, or, with
   ``ai.alert_full_auto_rules_enabled`` on, those matching
   ``ai.alert_full_auto_rules`` — see :mod:`app.ai.full_auto_rules`.
 

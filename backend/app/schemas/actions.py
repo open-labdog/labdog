@@ -114,7 +114,7 @@ class ActionRunOut(BaseModel):
     #: NULL for ad-hoc runs; populated when the run was dispatched by
     #: the unified scheduler or POST /api/scheduled-actions/{id}/run-now.
     scheduled_action_id: int | None = None
-    #: Set when an alert-triggered schedule dispatched the run. The name
+    #: Set when an alert's labdog_action label started the run. The name
     #: is filled in by the run detail endpoint.
     alert_event_id: int | None = None
     alertname: str | None = None

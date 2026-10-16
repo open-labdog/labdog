@@ -531,7 +531,7 @@ async def notify_alert_action(
         subject = f"{name} failed on {host} for {alertname}"
 
     lines = [
-        f"{alertname} fired on {host}, and an alert-triggered schedule ran {name}.",
+        f"{alertname} fired on {host}, and LabDog ran {name}, as its labdog_action label asked.",
         "",
         f"Action:    {one_line(dispatch.action_key, 64)}",
         f"Run:       #{run.id}, {run.status}" if run is not None else "Run:       deleted",
@@ -545,8 +545,8 @@ async def notify_alert_action(
             "The alert has been handed to the AI. Whether it investigates depends on the AI "
             "settings; the Alerts page shows what it did."
             if handed_to_ai
-            else "Nothing more will happen on its own: this schedule does not hand alerts to "
-            "the AI, or the alert already has an investigation or has resolved.",
+            else "Nothing more will happen on its own: the alert is not labelled labdog_ai or "
+            "labdog_ai_automate, or it already has an investigation or has resolved.",
         ]
     return await notify(
         db,

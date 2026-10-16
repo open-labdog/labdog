@@ -44,8 +44,8 @@ EVENT_TYPES: tuple[EventType, ...] = (
     EventType(
         "alert_action",
         "Actions run by alerts",
-        "An alert-triggered schedule ran an action on a host: whether it fixed the alert, and "
-        "whether the alert was handed to the AI.",
+        "An alert's labdog_action label ran an action on a host: whether it fixed the alert, "
+        "and whether the alert was handed to the AI.",
     ),
     EventType(
         "alert_remediation",

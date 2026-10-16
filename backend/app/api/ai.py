@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import service
@@ -27,7 +27,6 @@ from app.ai.models import (
     AISession,
     AIToolCall,
     AIUsageDay,
-    AlertEvent,
 )
 from app.ai.providers.base import LLMProviderError
 from app.ai.providers.factory import (
@@ -51,11 +50,7 @@ from app.ai.schemas import (
     AISessionResponse,
     AIUsageDayResponse,
     AIUsageSummary,
-    AlertActionOut,
     AlertEventResponse,
-    AlertIntakeStatus,
-    HostAlertActionOut,
-    HostFullAutoResponse,
     provider_to_response,
     session_to_response,
 )
@@ -981,297 +976,31 @@ async def get_usage(
 
 
 # ---------------------------------------------------------------------------
-# Alerts
+# Alerts — moved to /api/alerts (app.api.alerts) in 1.0.0
 # ---------------------------------------------------------------------------
 
 
-#: How much of a report to put on an alert row. Long enough for a verdict
-#: ("healthy", "false positive", "the service is down"), short enough that
-#: a list of alerts stays a list.
-_SUMMARY_CHARS = 280
-
-
-def _is_heading(paragraph: str) -> bool:
-    """Whether a paragraph is only a markdown heading.
-
-    Reports vary in how they open. Some begin with the verdict; others
-    begin with ``## Summary`` and put the verdict underneath. Taking the
-    first paragraph blindly turned the second kind into a row that said
-    "## Summary" — a heading, rendered as prose, telling the operator
-    nothing. Caught against real reports rather than the fixtures, which
-    all happened to be of the first kind.
-    """
-    return all(line.lstrip().startswith("#") for line in paragraph.splitlines() if line.strip())
-
-
-def _conclusion(report: str | None) -> str | None:
-    """The first substantive paragraph of a report, trimmed to fit a row.
-
-    Reports open with the verdict and then justify it, so the opening is
-    the part an operator scanning the list needs — but only once any
-    heading above it is skipped. Truncated on a word boundary with an
-    ellipsis, so a cut is visible rather than looking like the assistant
-    stopped mid-sentence.
-    """
-    if not report:
-        return None
-    para = next(
-        (p.strip() for p in report.split("\n\n") if p.strip() and not _is_heading(p.strip())),
-        "",
-    )
-    if not para:
-        return None
-    # Markdown emphasis reads as noise once the markup is not rendered.
-    para = para.replace("**", "").replace("`", "")
-    if len(para) <= _SUMMARY_CHARS:
-        return para
-    return para[:_SUMMARY_CHARS].rsplit(" ", 1)[0] + "…"
-
-
-async def _with_investigation(db: AsyncSession, rows: list[AlertEvent]) -> list[AlertEventResponse]:
-    """Attach each alert's investigation status and conclusion.
-
-    One extra query for the whole page rather than a relationship on the
-    model: this is the only place that needs it, and a lazy-loaded
-    relationship on a list endpoint is how a hundred-row page becomes a
-    hundred queries.
-    """
-    session_ids = [r.investigation_session_id for r in rows if r.investigation_session_id]
-    sessions: dict[int, AISession] = {}
-    if session_ids:
-        found = await db.execute(select(AISession).where(AISession.id.in_(session_ids)))
-        sessions = {s.id: s for s in found.scalars().all()}
-
-    # The latest rollback per alert, automatic or not: a refused automatic
-    # one followed by someone's successful one should read as rolled back.
-    latest_rollback: dict[int, AIRollback] = {}
-    event_ids = [r.id for r in rows]
-    if event_ids:
-        found = await db.execute(
-            select(AIRollback)
-            .where(AIRollback.alert_event_id.in_(event_ids))
-            .order_by(AIRollback.id)
-        )
-        for rollback in found.scalars().all():
-            latest_rollback[rollback.alert_event_id] = rollback
-
-    actions: dict[int, list[AlertActionOut]] = {}
-    if event_ids:
-        from app.actions.registry import ACTION_REGISTRY
-        from app.alerts.models import AlertActionDispatch
-        from app.models.action_run import ActionRun
-
-        found = await db.execute(
-            select(AlertActionDispatch, ActionRun.status)
-            .outerjoin(ActionRun, ActionRun.id == AlertActionDispatch.action_run_id)
-            .where(AlertActionDispatch.alert_event_id.in_(event_ids))
-            .order_by(AlertActionDispatch.id)
-        )
-        for dispatch, run_status in found.all():
-            action = ACTION_REGISTRY.get(dispatch.action_key)
-            actions.setdefault(dispatch.alert_event_id, []).append(
-                AlertActionOut(
-                    id=dispatch.id,
-                    scheduled_action_id=dispatch.scheduled_action_id,
-                    action_key=dispatch.action_key,
-                    action_name=action.name if action else None,
-                    host_id=dispatch.host_id,
-                    action_run_id=dispatch.action_run_id,
-                    run_status=run_status,
-                    outcome=dispatch.outcome,
-                    detail=dispatch.detail,
-                    check_outcome=dispatch.check_outcome,
-                    checked_at=dispatch.checked_at,
-                )
-            )
-
-    out = []
-    for row in rows:
-        response = AlertEventResponse.model_validate(row)
-        response.actions = actions.get(row.id, [])
-        session = sessions.get(row.investigation_session_id or 0)
-        if session is not None:
-            response.investigation_status = session.status
-            response.investigation_summary = _conclusion(session.report_markdown)
-        rollback = latest_rollback.get(row.id)
-        if rollback is not None:
-            response.rollback_status = rollback.status
-            response.rollback_detail = rollback.detail
-        out.append(response)
-    return out
-
-
-@router.get("/alert-intake", response_model=AlertIntakeStatus)
-async def alert_intake_status(
-    _: User = Depends(current_active_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Whether alerts can reach LabDog, and when the last one did.
-
-    The intake switch and the poll interval are settings; the webhook token
-    is in the config file and has no other way to show up in the UI, so an
-    intake that is on but refusing every webhook for want of a token looked
-    exactly like one that was working and quiet.
-    """
-    from app.ai.alert_autonomy import MIN_WEBHOOK_TOKEN_CHARS
-    from app.ai.full_auto_rules import active_rules
-    from app.config import settings
-
-    token = settings.alerts.webhook_token
-    rules_enabled, rules = await active_rules(db)
-    last = dict(
-        (
-            await db.execute(
-                select(AlertEvent.source, func.max(AlertEvent.created_at)).group_by(
-                    AlertEvent.source
-                )
-            )
-        ).all()
-    )
-    return AlertIntakeStatus(
-        intake_enabled=bool(int(await get_setting_typed("alerts.intake_enabled", db))),
-        webhook_path="/api/webhooks/grafana-alerts",
-        token_set=bool(token),
-        token_long_enough_for_full_auto=len(token) >= MIN_WEBHOOK_TOKEN_CHARS,
-        full_auto_rules_enabled=rules_enabled,
-        full_auto_rules=len(rules),
-        poll_minutes=int(await get_setting_typed("alerts.poll_minutes", db)),
-        last_webhook_alert_at=last.get("grafana_webhook"),
-        last_poll_alert_at=last.get("alertmanager_poll"),
-    )
-
-
-@router.get("/full-auto/hosts/{host_id}", response_model=HostFullAutoResponse)
-async def host_full_auto(
-    host_id: int,
-    _: User = Depends(current_active_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Which alerts may fix ``host_id`` without asking.
-
-    The per-host view of the full-auto rules, so a host's page answers
-    "can an alert change this machine unattended?" without reading the
-    whole list. Only the safeguards that hold for every alert are listed
-    as blockers; the cooldown, the daily cap and the rest depend on the
-    alert and the moment, and its row on the Alerts page reports them.
-    """
-    from app.ai.alert_autonomy import MIN_WEBHOOK_TOKEN_CHARS, snapshot_refusal
-    from app.ai.full_auto_rules import active_rules, host_context
-    from app.config import settings
-    from app.models.host import Host
-
-    if await db.get(Host, host_id) is None:
-        raise HTTPException(status_code=404, detail="Host not found")
-    rules_enabled, rules = await active_rules(db)
-    hostname, groups = await host_context(db, host_id)
-    applicable = [r.text for r in rules if hostname and r.applies_to_host(hostname, groups)]
-
-    blockers: list[str] = []
-    if not int(await get_setting_typed("alerts.intake_enabled", db)):
-        blockers.append("alert intake is off (alerts.intake_enabled)")
-    if len(settings.alerts.webhook_token) < MIN_WEBHOOK_TOKEN_CHARS:
-        blockers.append(
-            f"the alert webhook token is shorter than {MIN_WEBHOOK_TOKEN_CHARS} characters, "
-            f"so alerts that arrive by webhook cannot run at full auto"
-        )
-    if int(await get_setting_typed("ai.alert_full_auto_requires_snapshot", db)):
-        refusal = await snapshot_refusal(db, host_id)
-        if refusal:
-            blockers.append(refusal)
-    from app.actions.registry import ACTION_REGISTRY
-    from app.alerts.triggers import alert_triggers, in_scope
-
-    alert_actions = []
-    for schedule in await alert_triggers(db, enabled_only=False):
-        if await in_scope(db, schedule, host_id):
-            action = ACTION_REGISTRY.get(schedule.action_key)
-            alert_actions.append(
-                HostAlertActionOut(
-                    id=schedule.id,
-                    action_key=schedule.action_key,
-                    action_name=action.name if action else None,
-                    alert_match=schedule.alert_match or "",
-                    enabled=schedule.enabled,
-                )
-            )
-    return HostFullAutoResponse(
-        ai_enabled=bool(int(await get_setting_typed("ai.enabled", db))),
-        rules_enabled=rules_enabled,
-        rules=applicable,
-        blockers=blockers,
-        alert_actions=alert_actions,
-    )
-
-
-@router.get("/alerts", response_model=list[AlertEventResponse])
+@router.get("/alerts", response_model=list[AlertEventResponse], deprecated=True)
 async def list_alerts(
     limit: int = 100,
     status: str | None = None,
-    _: User = Depends(current_active_user),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Recent alerts, newest first.
+    """Deprecated alias of ``GET /api/alerts``, kept for the life of 1.x."""
+    from app.api.alerts import list_alerts as moved
 
-    Ordered by ``created_at`` rather than ``starts_at``: an alert that
-    fired an hour ago but only reached LabDog now is new information to
-    the operator reading this list, and burying it an hour down would
-    hide exactly the case the poller exists to catch.
-    """
-    stmt = select(AlertEvent).order_by(AlertEvent.created_at.desc()).limit(min(limit, 500))
-    if status in ("firing", "resolved"):
-        stmt = stmt.where(AlertEvent.status == status)
-    result = await db.execute(stmt)
-    return await _with_investigation(db, list(result.scalars().all()))
+    return await moved(limit=limit, status=status, _=user, db=db)
 
 
-@router.post("/alerts/{alert_id}/investigate", response_model=AlertEventResponse)
+@router.post("/alerts/{alert_id}/investigate", response_model=AlertEventResponse, deprecated=True)
 async def investigate_alert_now(
     alert_id: int,
     user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Start an investigation for one alert by hand.
+    """Deprecated alias of ``POST /api/alerts/{id}/investigate``, kept for
+    the life of 1.x."""
+    from app.api.alerts import investigate_alert_now as moved
 
-    The manual path deliberately skips the severity threshold — an
-    operator asking for this has already made the judgement the threshold
-    exists to automate — but not the kill switch, the provider check, or
-    the budget. Those are about whether LabDog *may* spend, which a
-    button press does not change. Nor does it change the autonomy level,
-    which comes from the same remediation policy as an automatic start.
-    """
-    alert = await db.get(AlertEvent, alert_id)
-    if alert is None:
-        raise HTTPException(status_code=404, detail="Alert not found")
-    if alert.investigation_session_id is not None:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "message": "This alert already has an investigation.",
-                "session_id": alert.investigation_session_id,
-            },
-        )
-
-    try:
-        provider = await service.resolve_provider(db, None)
-        service.assert_can_investigate(provider)
-        await service.assert_within_budget(db, provider)
-    except AIDisabledError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except BudgetExceededError as exc:
-        raise HTTPException(status_code=402, detail=str(exc)) from exc
-
-    from app.tasks import celery_app
-    from app.tasks.ai_alerts import start_investigation
-
-    # The same policy as the automatic path, full auto included: pressing
-    # the button decides that the alert is worth a look, not what the
-    # session may change. That stays with the remediation settings.
-    session = await start_investigation(db, alert, provider, user=user)
-    await db.commit()
-    await db.refresh(alert)
-
-    celery_app.send_task("app.tasks.ai_task.run_chat_session", kwargs={"session_id": session.id})
-    # Through the same helper as the list, so the row the caller renders
-    # immediately after clicking carries the session's status rather than
-    # an empty field that fills in on the next refetch.
-    return (await _with_investigation(db, [alert]))[0]
+    return await moved(alert_id=alert_id, user=user, db=db)

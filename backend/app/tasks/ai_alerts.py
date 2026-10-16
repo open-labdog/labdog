@@ -123,9 +123,13 @@ async def start_investigation(db, event, provider, *, user=None, already_tried=N
 async def _decide_and_run(alert_event_id: int, *, already_tried: str | None = None) -> dict:
     """Apply the auto-investigation policy to one recorded alert.
 
-    ``already_tried`` is set when an alert-triggered action ran first and
-    did not fix the alert (:mod:`app.tasks.alert_handling`); it is added to
-    the mission so the session starts from what was done.
+    The alert must ask for the AI with its labels — ``labdog_ai=true``,
+    or full auto (:func:`app.alerts.labels.wants_ai`).
+
+    ``already_tried`` is set when the alert's ``labdog_action`` ran first
+    and did not fix the alert, or could not run
+    (:mod:`app.tasks.alert_handling`); it is added to the mission so the
+    session starts from what was done.
 
     Every path writes ``investigation_outcome``. "Why did nothing happen
     for this alert?" has half a dozen answers and an operator should not
@@ -133,8 +137,8 @@ async def _decide_and_run(alert_event_id: int, *, already_tried: str | None = No
     rotated.
     """
     from app.ai import service
-    from app.ai.alerts import meets_severity
     from app.ai.models import AlertEvent
+    from app.alerts.labels import wants_ai
     from app.db import task_session
     from app.settings_service import get_setting_typed
 
@@ -161,13 +165,12 @@ async def _decide_and_run(alert_event_id: int, *, already_tried: str | None = No
         if event.investigation_session_id is not None:
             return await _finish(db, event, "skipped_duplicate", "already investigated")
 
-        minimum = str(await get_setting_typed("ai.auto_investigate_min_severity", db))
-        if not meets_severity(event.severity, minimum):
+        if not await wants_ai(db, event):
             return await _finish(
                 db,
                 event,
-                "skipped_severity",
-                f"severity {event.severity!r} does not meet the {minimum!r} threshold",
+                "skipped_no_label",
+                "not labelled labdog_ai=true or labdog_ai_automate=true",
             )
 
         try:
@@ -196,10 +199,10 @@ async def _decide_and_run(alert_event_id: int, *, already_tried: str | None = No
 
 @celery_app.task(name="app.tasks.ai_alerts.investigate_alert")
 def investigate_alert(alert_event_id: int) -> dict:
-    """Kept for messages queued before alert-triggered schedules existed.
+    """Kept for messages queued before ``handle_alert`` existed.
 
-    New alerts go to ``app.tasks.alert_handling.handle_alert``, which runs
-    the triggers first; this does the same, so a message already in the
+    New alerts go to ``app.tasks.alert_handling.handle_alert``, which acts
+    on the alert's labdog_action label first; this does the same, so a message already in the
     queue during an upgrade is not handled the old way.
     """
     from app.tasks.alert_handling import _handle
