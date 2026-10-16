@@ -233,7 +233,7 @@ export function ActionRunDetail({ runId }: { runId: number }) {
             {run.alert_event_id && (
               <>
                 {" "}· triggered by alert{" "}
-                <Link href="/alerts" className="mono underline hover:text-text-2" data-testid="run-alert">{run.alertname ?? `#${run.alert_event_id}`}</Link>
+                <Link href={`/alerts?alert=${run.alert_event_id}`} className="mono underline hover:text-text-2" data-testid="run-alert">{run.alertname ?? `#${run.alert_event_id}`}</Link>
               </>
             )}
             {targetDeleted && <> · {run.target_label} (deleted)</>}

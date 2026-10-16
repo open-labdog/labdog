@@ -520,7 +520,7 @@ class TestStartInvestigation:
         event = await _alert(db, host.id)
 
         with patch("app.tasks.celery_app.send_task") as send:
-            response = await superuser_client.post(f"/api/ai/alerts/{event.id}/investigate")
+            response = await superuser_client.post(f"/api/alerts/{event.id}/investigate")
 
         assert response.status_code == 200, response.text
         body = response.json()

@@ -15,33 +15,32 @@ the metrics and the documented REST calls change incompatibly only in a
 new major version. See
 [Versioning](docs/upgrade.md#versioning) for what that covers. Upgrading
 from 0.10.0 needs no action unless the bundled action pack was your only
-source of actions; see [Upgrading to 1.0.0](docs/upgrade.md#upgrading-to-100).
+source of actions, or alerts are investigated automatically: they now
+need a `labdog_ai=true` label on the Grafana rule. See
+[Upgrading to 1.0.0](docs/upgrade.md#upgrading-to-100).
 
 ### Added
 
-- **An alert can run an action on its host.** A schedule now fires on
-  cron, by hand, or when an alert fires. An alert trigger names its alerts
-  by name and labels, one rule per line, such as `NginxDown` or
-  `labdog_action=restart-nginx`. Its target (a host, a group, or the
-  fleet) says whose alerts count. When a new firing alert matches on a
-  host in the target, LabDog runs the action on that one host, with the
-  schedule's parameters and its snapshot, verify and rollback choices.
-  This needs no AI.
+- **Grafana labels choose what an alert does.** Three labels on the
+  alert rule: `labdog_action=<action key>` runs that action on the alert's
+  host, `labdog_ai=true` has the AI investigate, and
+  `labdog_ai_automate=true` lets the AI fix what it finds. They combine:
+  with an action and an AI label, the action goes first, and the AI is
+  asked only if the run fails or the alert is still firing
+  `alerts.action_check_minutes` (10) after it, with what was tried added
+  to its prompt. A template can make each label depend on the host.
 
-  It runs only for a new firing alert on a managed host, with the
-  32-character webhook token, one run at a time per host, and a cooldown
-  (60 minutes by default). The AI investigation waits for the action.
-  When the run finishes, LabDog checks whether it fixed the alert: the
-  alert resolved, or is still firing `alerts.action_check_minutes` (10)
-  later, or the run failed. If not, it hands the alert to the AI, with
-  what was tried added to the prompt, unless the schedule is set to
-  handle the alert alone. The Alerts page shows what each trigger did, a
-  run page names the alert that started it, and a host's Overview lists
-  the triggers that cover it. In the schedule dialog, **Runs: when an
-  alert fires on a host** turns the When step into the alert rules, the
-  cooldown and the AI fallback. Below the rules, it lists the recent
-  alerts they would have fired on as you type. Each outcome is emailed under **Actions
-  run by alerts**.
+  An action runs only if it is on the **list of actions alerts may run**,
+  under **Operations › Alerts › Handling**, which starts empty. Each
+  entry sets where the action may run (all hosts, a group or a host), its
+  parameters, snapshot, verify and rollback, and a cooldown (60 minutes by
+  default). A run is always the one host the alert names, and needs a new
+  firing alert, a managed host, the 32-character webhook token, and no
+  other alert run of the action going on the host. No AI is needed. The
+  Alerts page shows what each alert's action came to, or why it did not
+  run; a run page names the alert that started it; a host's Overview
+  lists the actions alerts may run there; and each outcome is emailed
+  under **Actions run by alerts**. New `/api/alerts/actions`.
 
 - **The run log is coloured, and can be searched.** Ansible's output is
   stored as plain text, so a `fatal:` line looked like an `ok:` line and a
@@ -153,19 +152,20 @@ source of actions; see [Upgrading to 1.0.0](docs/upgrade.md#upgrading-to-100).
   alert's session may change — `read_only` (the default, so nothing
   changes on upgrade) or `approval`. An alert marked for it may go
   further and change the host without asking. By default that is an alert
-  whose Grafana rule carries the label `labdog_automate=true`, set with a
+  whose Grafana rule carries the label `labdog_ai_automate=true`, set with a
   template if only some hosts should qualify. With
   `ai.alert_full_auto_rules_enabled` on, `ai.alert_full_auto_rules`
   decides instead, one rule per line, matching the alert's name, its
   labels, and the LabDog host it resolved to or that host's groups. For
   example, `NginxDown, host:web-1` or `DiskFull, group:db, !host:db-legacy`.
-  A rule naming a host or group LabDog does not have is refused on save,
+  An alert a rule lets fix its host is also investigated. A rule naming a host or group LabDog does not have is refused on save,
   and flagged beside the list if one disappears later. There is no
   instance-wide full auto for alerts: each one whose fix you trust to run
   unattended is marked, on the alert rule or in a rule. The alert's row
   quotes the rule it matched. A host's Overview has an **automatic
   fixes** panel listing the rules that can cover it and anything that
-  would hold every alert back there.
+  would hold every alert back there, including a fix that made the host
+  worse in the last 24 hours.
 
   A marked alert runs at full auto only while every safeguard holds: it is
   firing and names a LabDog host, which is the only host it may touch; a
@@ -212,6 +212,25 @@ source of actions; see [Upgrading to 1.0.0](docs/upgrade.md#upgrading-to-100).
 
 ### Changed
 
+- **Alerts are investigated only when their labels ask for it.** With
+  `ai.auto_investigate_enabled` on, every alert at or above
+  `ai.auto_investigate_min_severity` used to start an investigation. Now
+  only an alert labelled `labdog_ai=true` or `labdog_ai_automate=true` in
+  Grafana does, or one matching a full-auto rule. The setting is the on
+  and off switch for those. Until a rule carries a label, its alerts are
+  recorded and nothing else happens; see
+  [Upgrading to 1.0.0](docs/upgrade.md#upgrading-to-100). The
+  **investigate** button still works on any alert.
+
+- **Alerts moved to Operations, with Received and Handling tabs.** An
+  alert is no longer just something for the AI, so the page left the
+  Assistant. **Received** is the list as before, with an action column.
+  **Handling** has the actions alerts may run, the labels and how they
+  combine, whether alerts can get in, and whether the AI will answer
+  them. The API moved too: `/api/alerts` and
+  `/api/alerts/{id}/investigate`, with `/api/ai/alerts` kept as a
+  deprecated alias until 2.0.
+
 - **Alert intake settings are `alerts.*`.** `ai.alert_intake_enabled` is
   now `alerts.intake_enabled`, and `ai.alertmanager_poll_minutes` is
   `alerts.poll_minutes`, under **Settings › Fleet defaults › Alert
@@ -237,14 +256,15 @@ source of actions; see [Upgrading to 1.0.0](docs/upgrade.md#upgrading-to-100).
   The Webhooks card listed four endpoint paths, with a grey dot that never
   changed and a button to the same Git repositories page as the Git remotes
   card. It is replaced by **Alert intake**, which shows whether intake is
-  on, the URL for a Grafana contact point and when the last alert arrived.
+  on and when the last alert arrived, and opens Alerts › Handling, which
+  has the URL for a Grafana contact point.
   It warns when the webhook would refuse every alert because
   `[alerts] webhook_token` is not set, and when alerts listed for full auto
   can't get it because the token is shorter than 32 characters. The token
   itself is never shown. The Git remotes card now says how many
   repositories accept push webhooks, which is the ones with a webhook
   secret. The docs said that secret was optional, but LabDog refuses a
-  push without one. New `GET /api/ai/alert-intake`.
+  push without one. New `GET /api/alerts/intake`.
 
 - **Picking which pack runs an action happens right under the action.**
   On **Operations › Actions › Packs**, clicking a contested action key
@@ -503,6 +523,11 @@ source of actions; see [Upgrading to 1.0.0](docs/upgrade.md#upgrading-to-100).
   address, so `node 10.0.2` narrows to that subnet's nodes.
 
 ### Removed
+
+- **`ai.auto_investigate_min_severity`.** An alert's labels now decide
+  whether it is investigated, so a severity threshold has nothing left to
+  decide; a template on the `labdog_ai` label can still depend on the
+  alert. The upgrade deletes the stored value.
 
 - **The bundled action pack.** The image and the `.deb` / `.rpm` /
   `.tar.gz` packages carried a copy of `labdog-playbooks`, cloned at

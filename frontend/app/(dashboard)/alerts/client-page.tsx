@@ -1,24 +1,26 @@
 "use client"
 
-import { useState } from "react"
+import { useCallback, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { apiFetch, ApiError } from "@/lib/api"
 import { toast } from "sonner"
 import { shortAgo } from "@/lib/fleet"
 import { def, ALERT_SEVERITY, ALERT_STATUS, AI_AUTONOMY, AI_ROLLBACK, AI_SESSION_STATUS, REMEDIATION_OUTCOME } from "@/lib/status"
-import { PageHead, RunStatus, Seg, Table, Tag, type Tone } from "@/components/ld"
-import type { AlertAction, AlertEvent } from "@/lib/types"
+import { PageHead, RunStatus, Seg, Table, Tabs, Tag, type Tone } from "@/components/ld"
+import { AlertHandling } from "@/components/alerts/alert-handling"
+import type { AlertDispatch, AlertEvent, AlertIntakeStatus } from "@/lib/types"
 
 /** Why no investigation ran, in words. Every one of these is a decision
  *  LabDog made on the operator's behalf, and each has a different fix —
- *  a setting to flip, a threshold to lower, a budget to raise. */
+ *  a setting to flip, a label to add, a budget to raise. */
 const OUTCOME_LABEL: Record<string, string> = {
   started: "investigating",
   waiting_on_action: "waiting on action",
   handled_by_action: "handled by action",
   skipped_disabled: "auto-investigate off",
+  skipped_no_label: "not labelled for the AI",
   skipped_severity: "below severity threshold",
   skipped_resolved: "already resolved",
   skipped_duplicate: "already investigated",
@@ -65,8 +67,10 @@ function RemediationTags({ alert }: { alert: AlertEvent }) {
   )
 }
 
-/** Why an alert-triggered schedule did not run its action. */
+/** Why the action the alert's labdog_action label named did not run. */
 const ACTION_SKIP: Record<string, string> = {
+  not_allowed: "not allowed",
+  unknown_action: "unknown action",
   skipped_no_host: "no host",
   skipped_token: "token too short",
   skipped_in_flight: "already running",
@@ -81,9 +85,9 @@ const ACTION_CHECK: Record<string, { label: string; tone: Tone }> = {
   run_failed: { label: "run failed", tone: "danger" },
 }
 
-/** What each alert-triggered schedule did with this alert: the run it
- *  started and how that went, or why it did not run. */
-function ActionTags({ actions }: { actions: AlertAction[] }) {
+/** What the alert's labdog_action label came to: the run it started and
+ *  how that went, or why it did not run. */
+function ActionTags({ actions }: { actions: AlertDispatch[] }) {
   if (actions.length === 0) return <span className="text-text-faint">—</span>
   return (
     <span className="flex min-w-0 flex-col gap-0.5" data-testid="alert-actions">
@@ -93,7 +97,7 @@ function ActionTags({ actions }: { actions: AlertAction[] }) {
           return (
             <span key={x.id} className="flex items-center gap-1">
               <span className="trunc text-[11px] text-text-2">{name}</span>
-              <Tag title={x.detail ?? undefined}>{ACTION_SKIP[x.outcome] ?? x.outcome}</Tag>
+              <Tag tone={x.outcome === "not_allowed" || x.outcome === "unknown_action" ? "warn" : undefined} title={x.detail ?? undefined}>{ACTION_SKIP[x.outcome] ?? x.outcome}</Tag>
             </span>
           )
         }
@@ -111,19 +115,63 @@ function ActionTags({ actions }: { actions: AlertAction[] }) {
   )
 }
 
+type Tab = "received" | "handling"
+
+/**
+ * Alerts — Received · Handling. What arrived and what each alert set off;
+ * and what alerts are allowed to do, which their Grafana labels ask for.
+ */
 export default function AlertsPage() {
   const router = useRouter()
+  const search = useSearchParams()
+  const tab = (search.get("tab") as Tab | null) ?? "received"
+  const setTab = (t: string) => router.push(t === "received" ? "/alerts" : `/alerts?tab=${t}`)
+  const { data: intake } = useQuery<AlertIntakeStatus>({ queryKey: ["alert-intake"], queryFn: () => apiFetch<AlertIntakeStatus>("/api/alerts/intake"), retry: false })
+
+  return (
+    <>
+      <PageHead
+        crumbs={[{ label: "operations" }]}
+        title="Alerts"
+        sub={<>Received from Grafana and Alertmanager. The alert rule&apos;s labels say what each one sets off — an action, the AI, or nothing; see <a className="underline hover:text-text-2" href="https://open-labdog.github.io/labdog/ui/alerts/">the guide</a>.</>}
+      >
+        <Tabs
+          tabs={[
+            { k: "received", label: "Received" },
+            { k: "handling", label: "Handling" },
+          ]}
+          value={tab}
+          onChange={setTab}
+          counts={{ handling: intake?.allowed_actions || undefined }}
+        />
+      </PageHead>
+      {tab === "handling" ? <AlertHandling /> : <Received focus={Number(search.get("alert")) || null} />}
+    </>
+  )
+}
+
+/** The alerts that arrived, newest first. ``focus`` is the alert a run
+ *  page linked to: it is highlighted and scrolled to, resolved or not. */
+function Received({ focus }: { focus: number | null }) {
+  const router = useRouter()
   const queryClient = useQueryClient()
-  const [showResolved, setShowResolved] = useState(false)
+  const [showResolved, setShowResolved] = useState(focus !== null)
+  const scrolled = useRef(false)
+  const scrollTo = useCallback((el: HTMLElement | null) => {
+    if (el && !scrolled.current) {
+      scrolled.current = true
+      el.scrollIntoView({ block: "center" })
+    }
+  }, [])
 
   const { data: alerts, isLoading } = useQuery<AlertEvent[]>({
     queryKey: ["alerts", showResolved],
-    queryFn: () => apiFetch<AlertEvent[]>(showResolved ? "/api/ai/alerts" : "/api/ai/alerts?status=firing"),
+    queryFn: () => apiFetch<AlertEvent[]>(showResolved ? "/api/alerts" : "/api/alerts?status=firing"),
     refetchInterval: 30_000,
   })
 
   const investigate = useMutation({
-    mutationFn: (id: number) => apiFetch<AlertEvent>(`/api/ai/alerts/${id}/investigate`, { method: "POST" }),
+    mutationFn: (id: number) => apiFetch<AlertEvent>(`/api/alerts/${id}/investigate`, { method: "POST" }),
     onSuccess: (alert) => {
       queryClient.invalidateQueries({ queryKey: ["alerts"] })
       if (alert.investigation_session_id) router.push(`/assistant?session=${alert.investigation_session_id}`)
@@ -141,13 +189,9 @@ export default function AlertsPage() {
 
   return (
     <>
-      <PageHead
-        crumbs={[{ label: "assistant", href: "/assistant" }]}
-        title="Alerts"
-        sub={<>Received from Grafana and Alertmanager. Recording is separate from investigating — see <a className="underline hover:text-text-2" href="https://open-labdog.github.io/labdog/ui/alerts/">the guide</a>.</>}
-      >
+      <div className="flex shrink-0 items-center gap-[7px] border-b border-line bg-surface px-3.5 py-2">
         <Seg value={showResolved ? "all" : "firing"} onChange={(k) => setShowResolved(k === "all")} options={[{ k: "firing", label: "Firing" }, { k: "all", label: "All" }]} />
-      </PageHead>
+      </div>
 
       <Table<AlertEvent>
         cols={[
@@ -157,7 +201,7 @@ export default function AlertsPage() {
           {
             k: "alert", label: "alert", w: "minmax(140px,1.2fr)", sortable: false,
             cell: (a) => (
-              <span className="flex items-center gap-1.5">
+              <span className="flex items-center gap-1.5" ref={a.id === focus ? scrollTo : undefined}>
                 <span className="mono font-medium text-text">{a.alertname}</span>
                 {a.dedup_count > 1 && <span className="text-[10.5px] text-text-faint" title="How many times LabDog has been told about this same firing">×{a.dedup_count}</span>}
               </span>
@@ -201,6 +245,7 @@ export default function AlertsPage() {
         ]}
         rows={rows}
         keyOf={(a) => a.id}
+        activeKey={focus ?? undefined}
         rowTone={(a) => (a.status === "firing" && a.severity?.toLowerCase() === "critical" ? "danger" : undefined)}
         loading={isLoading}
         empty={

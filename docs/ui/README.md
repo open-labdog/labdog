@@ -16,8 +16,8 @@ host's page.
 |------|------|
 | **Overview** | Summary · Pending · Fleet state · Activity · Upcoming |
 | **Fleet** | Hosts · Groups · Discovery |
-| **Operations** | Plans · Drift · Actions · Runs · Audit |
-| **Assistant** | Sessions · Alerts |
+| **Operations** | Plans · Drift · Actions · Runs · Alerts · Audit |
+| **Assistant** | Sessions |
 
 **Settings** sits at the foot of the rail, with the theme toggle (dark is
 the default; `t` switches), the palette button and your account — the avatar
@@ -38,7 +38,7 @@ rest redirect to their new homes.
 | [Overview](dashboard.md) | The landing page — fleet status bar, the Pending queue, activity, drift trend, stale hosts, upcoming schedules |
 | [Hosts](hosts.md) | Add and manage hosts; filter by status, group, firewall backend, drift check, overrides |
 | [Discovery](hosts.md#discovery) | One screen: pending approval · scan schedules · scan now (`/discovery`) |
-| [Operations](operations.md) | Plans (preview → apply with a URL), Drift findings, Actions library, Runs stream, Audit |
+| [Operations](operations.md) | Plans (preview → apply with a URL), Drift findings, Actions library, Runs stream, Alerts, Audit |
 | [SSH Terminal](hosts.md#terminal) | Browser-based SSH terminal into any managed host |
 | [Groups](groups.md) | Host groups in priority order; each group's own page — Overview · Config · Members · Activity — is where it is edited |
 | [Firewall Rules](groups.md#firewall-rules) | Inbound/outbound TCP/UDP/ICMP rules per group |
@@ -51,7 +51,7 @@ rest redirect to their new homes.
 | [CA Certificates](groups.md#ca-certificates) | Deploy trusted CA certificates into hosts' system trust store (per group or per host) |
 | [Syncing changes](groups.md#syncing-changes) | Preview-then-apply syncs on the Plans screen — per module or all modules, per host or per group — with live progress in the global sync tray; every sync goes through one per-host orchestrator, so two never race on a host |
 | [Schedules](scheduled-actions.md) | Cron-driven runs of any action — pack-supplied or built-in — against hosts, groups, or the entire fleet, with snapshot/rollback for destructive actions (a tab of Operations · Actions) |
-| [Alerts](alerts.md) | Alerts received from Grafana and Alertmanager, with the AI investigation each one did or did not get |
+| [Alerts](alerts.md) | Alerts received from Grafana and Alertmanager, what their labels set off — an action, an AI investigation — and the actions alerts may run (Operations · Alerts) |
 | [Email](notifications.md) | `/notifications` — the mail server, and which alerts, approvals and automatic fixes each person is emailed about (Settings · Integrations) |
 | [Assistant](assistant.md) | Hand an investigation to a connected LLM; it works through LabDog's tools with every command classified, bounded, and audited |
 | [Actions](actions.md) | Ad-hoc playbook runs on hosts or groups; includes snapshot-wrapped destructive actions |

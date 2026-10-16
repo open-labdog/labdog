@@ -109,7 +109,7 @@ function SchedRow({ s, radius, fleet }: { s: ScheduledAction; radius: number; fl
       <div className="min-w-0 flex-1">
         <div className="trunc text-xs text-text">{s.action_name ?? s.action_key}</div>
         <div className="mono trunc text-[10.5px] text-text-3">
-          {s.trigger === "alert" ? "on alert" : s.schedule_cron ?? "manual"} · {s.target_kind === "fleet" ? "all hosts" : `${s.target_kind}: ${s.target_name ?? s.target_id}`}
+          {s.schedule_cron ?? "manual"} · {s.target_kind === "fleet" ? "all hosts" : `${s.target_kind}: ${s.target_name ?? s.target_id}`}
         </div>
       </div>
       {!s.enabled && <Tag>paused</Tag>}
@@ -480,7 +480,7 @@ export default function OverviewPage() {
               </button>
             }
           >
-            {(schedules ?? []).length === 0 ? <Empty title="Nothing scheduled" note="Schedules are actions on a cron or on an alert. Create one from Operations · Actions." /> : (schedules ?? []).map((s) => <SchedRow key={s.id} s={s} radius={radius(s)} fleet={all.length} />)}
+            {(schedules ?? []).length === 0 ? <Empty title="Nothing scheduled" note="Schedules are actions with a cron. Create one from Operations · Actions." /> : (schedules ?? []).map((s) => <SchedRow key={s.id} s={s} radius={radius(s)} fleet={all.length} />)}
             <div className="px-[11px] py-[9px] text-[11.5px] text-text-3">Scheduled runs apply unattended. Snapshot-backed ones are reversible.</div>
           </Panel>
           <IntegrationHealth />

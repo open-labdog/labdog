@@ -1498,7 +1498,7 @@ class TestTheApi:
             alert_event_id=event.id,
         )
 
-        rows = (await superuser_client.get("/api/ai/alerts")).json()
+        rows = (await superuser_client.get("/api/alerts")).json()
         [row] = [r for r in rows if r["id"] == event.id]
         assert row["remediation_outcome"] == "made_worse"
         assert row["remediation_detail"] == "LabDog can no longer reach it."

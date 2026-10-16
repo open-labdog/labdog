@@ -166,7 +166,7 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
     # installing a release never starts sending host data anywhere.
     # --- Alert intake. Not AI settings: recording an alert costs nothing
     # and starts nothing on its own. What happens next is decided by the
-    # alert-triggered schedules and, separately, by ai.auto_investigate_*.
+    # alert's Grafana labels (app.alerts.labels).
     "alerts.intake_enabled": {
         "type": "int",
         "default": 0,
@@ -175,8 +175,9 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "description": "Accept alerts from Grafana and Alertmanager.",
         "help": (
             "Recording alerts costs nothing and starts nothing on its own. What happens next is "
-            "an alert-triggered schedule, if one matches, and an AI investigation, which is a "
-            "separate switch, ai.auto_investigate_enabled. The webhook also needs "
+            "up to the alert's Grafana labels: labdog_action runs an action from the Alerts › "
+            "Handling list, and labdog_ai or labdog_ai_automate asks for an AI investigation, "
+            "which is a separate switch, ai.auto_investigate_enabled. The webhook also needs "
             "[alerts] webhook_token in labdog.toml."
         ),
     },
@@ -198,12 +199,12 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "min": 1,
         "max": 1440,
         "description": (
-            "Minutes after an alert-triggered run finishes before LabDog judges whether it worked."
+            "Minutes after a run an alert started finishes before LabDog judges whether it worked."
         ),
         "help": (
             "If the alert has resolved by then, the action fixed it. If it is still firing, the "
-            "action did not, and a schedule set to hand the alert to the AI does so. Grafana must "
-            "send resolved notifications for this to tell the two apart."
+            "action did not, and an alert labelled labdog_ai or labdog_ai_automate goes to the AI. "
+            "Grafana must send resolved notifications for this to tell the two apart."
         ),
     },
     "ai.enabled": {
@@ -330,10 +331,15 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "default": 0,
         "min": 0,
         "max": 1,
-        "description": "Start an AI investigation when an eligible alert arrives.",
+        "description": (
+            "Start an AI investigation when an alert labelled labdog_ai or labdog_ai_automate "
+            "arrives."
+        ),
         "help": (
-            "This spends money without anyone asking, so it is off by default and bounded by the "
-            "AI budgets. What the investigation may change is ai.alert_autonomy_level."
+            "Grafana's labels decide which alerts ask for the AI: labdog_ai=true to investigate, "
+            "labdog_ai_automate=true to let it fix (see ai.alert_full_auto_rules_enabled). This "
+            "spends money without anyone asking, so it is off by default and bounded by the AI "
+            "budgets. What an investigation may change is ai.alert_autonomy_level."
         ),
     },
     "ai.alert_mission_template": {
@@ -348,16 +354,6 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
             + ". Write {{ and }} for a literal brace. Reset restores the built-in wording."
         ),
     },
-    "ai.auto_investigate_min_severity": {
-        "type": "string",
-        "default": "critical",
-        "choices": ["info", "warning", "critical"],
-        "description": "Lowest alert severity that triggers an auto investigation.",
-        "help": (
-            "Read from the alert's 'severity' label. An alert whose severity is missing or not "
-            "one of these is skipped and says so, rather than being guessed either way."
-        ),
-    },
     # --- Alert remediation. Full auto is per alert, never instance-wide —
     # see app.ai.alert_autonomy for why the level has no full_auto choice.
     "ai.alert_autonomy_level": {
@@ -369,8 +365,8 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
             "read_only: it only looks. approval: each change it wants to make waits in the "
             "approvals queue — LabDog sends no notification yet, so a request nobody opens the "
             "page to see expires after ai.approval_expiry_hours. Alerts labelled "
-            "labdog_automate=true in Grafana, or matching ai.alert_full_auto_rules when the rules "
-            "are on, may go further."
+            "labdog_ai_automate=true in Grafana, or matching ai.alert_full_auto_rules when the "
+            "rules are on, may go further."
         ),
     },
     "ai.alert_full_auto_rules_enabled": {
@@ -382,14 +378,15 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
             "Decide which alerts may change the host without asking by rules, not the label."
         ),
         "help": (
-            "Off: an alert may run at full auto when Grafana labels it labdog_automate=true — put "
-            "the label on the alert rule, with a template if only some hosts should qualify. On: "
-            "ai.alert_full_auto_rules decides, matching alert names, labels, and LabDog hosts and "
-            "groups. Either way an alert runs at full auto — changes made with nobody approving "
-            "them — only while every safeguard holds: it is firing and names a LabDog host, the "
-            "webhook token is at least 32 characters, a snapshot can be taken first, no other "
-            "automatic fix is running on the host, and the cooldown and daily cap allow it. "
-            "Otherwise it runs at ai.alert_autonomy_level, and its row on the Alerts page says why."
+            "Off: an alert may run at full auto when Grafana labels it labdog_ai_automate=true — "
+            "put the label on the alert rule, with a template if only some hosts should qualify. "
+            "On: ai.alert_full_auto_rules decides, matching alert names, labels, and LabDog "
+            "hosts and groups. Either way an alert runs at full auto — changes made with nobody "
+            "approving them — only while every safeguard holds: it is firing and names a LabDog "
+            "host, the webhook token is at least 32 characters, a snapshot can be taken first, "
+            "no other automatic fix is running on the host, and the cooldown and daily cap allow "
+            "it. Otherwise it runs at ai.alert_autonomy_level, and its row on the Alerts page "
+            "says why."
         ),
     },
     "ai.alert_full_auto_rules": {

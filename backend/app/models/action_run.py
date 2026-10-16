@@ -67,7 +67,7 @@ class ActionRun(Base):
         nullable=True,
         index=True,
     )
-    # Set when an alert-triggered schedule dispatched the run: the alert
+    # Set when an alert's labdog_action label started the run: the alert
     # that fired. ``SET NULL`` so pruning old alerts keeps the run.
     alert_event_id: Mapped[int | None] = mapped_column(
         ForeignKey("alert_events.id", ondelete="SET NULL"),

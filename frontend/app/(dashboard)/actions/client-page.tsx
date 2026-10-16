@@ -68,7 +68,7 @@ export default function ActionsPage() {
       <PageHead
         crumbs={[{ label: "operations" }]}
         title="Actions"
-        sub="Bring-your-own Ansible playbooks, exposed as one-click actions. Schedules are the same actions on a cron or on an alert; packs are where they come from."
+        sub="Bring-your-own Ansible playbooks, exposed as one-click actions. Schedules are the same actions with a cron; packs are where they come from."
         actions={
           <>
             <button type="button" className="btn btn-sm" onClick={() => setTab("packs")}>

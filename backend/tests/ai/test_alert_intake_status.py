@@ -1,4 +1,4 @@
-"""GET /api/ai/alert-intake: what the Settings › Integrations card shows.
+"""GET /api/alerts/intake: what the Alerts › Handling tab shows.
 
 The webhook token lives in the config file, so this endpoint is the only
 way the UI learns whether one is set. It must say so without ever
@@ -52,14 +52,17 @@ def _event(source: str, created_at: datetime, fingerprint: str) -> AlertEvent:
 
 async def test_off_by_default_and_refusing_without_a_token(regular_user_client, monkeypatch):
     monkeypatch.setattr(settings.alerts, "webhook_token", "")
-    data = (await regular_user_client.get("/api/ai/alert-intake")).json()
+    data = (await regular_user_client.get("/api/alerts/intake")).json()
     assert data == {
         "intake_enabled": False,
         "webhook_path": "/api/webhooks/grafana-alerts",
         "token_set": False,
         "token_long_enough_for_full_auto": False,
+        "ai_enabled": False,
+        "auto_investigate_enabled": False,
         "full_auto_rules_enabled": False,
         "full_auto_rules": 1,
+        "allowed_actions": 0,
         "poll_minutes": 0,
         "last_webhook_alert_at": None,
         "last_poll_alert_at": None,
@@ -73,7 +76,7 @@ async def test_reports_the_token_without_returning_it(regular_user_client, db, m
     await _set(db, "ai.alert_full_auto_rules_enabled", "1")
     await _set(db, "ai.alert_full_auto_rules", "HostDown\nDiskFull\n")
 
-    resp = await regular_user_client.get("/api/ai/alert-intake")
+    resp = await regular_user_client.get("/api/alerts/intake")
     assert STRONG_TOKEN not in resp.text
     data = resp.json()
     assert data["intake_enabled"] is True
@@ -86,7 +89,7 @@ async def test_reports_the_token_without_returning_it(regular_user_client, db, m
 
 async def test_a_short_token_is_set_but_too_weak_for_full_auto(regular_user_client, monkeypatch):
     monkeypatch.setattr(settings.alerts, "webhook_token", "short")
-    data = (await regular_user_client.get("/api/ai/alert-intake")).json()
+    data = (await regular_user_client.get("/api/alerts/intake")).json()
     assert data["token_set"] is True
     assert data["token_long_enough_for_full_auto"] is False
 
@@ -104,6 +107,20 @@ async def test_the_newest_arrival_per_route(regular_user_client, db):
     )
     await db.commit()
 
-    data = (await regular_user_client.get("/api/ai/alert-intake")).json()
+    data = (await regular_user_client.get("/api/alerts/intake")).json()
     assert datetime.fromisoformat(data["last_webhook_alert_at"]) == late
     assert datetime.fromisoformat(data["last_poll_alert_at"]) == poll
+
+
+async def test_counts_the_enabled_actions_alerts_may_run(regular_user_client, db):
+    from app.alerts.models import AlertAction
+
+    db.add_all(
+        [
+            AlertAction(action_key="restart-nginx"),
+            AlertAction(action_key="clear-tmp", enabled=False),
+        ]
+    )
+    await db.commit()
+    data = (await regular_user_client.get("/api/alerts/intake")).json()
+    assert data["allowed_actions"] == 1

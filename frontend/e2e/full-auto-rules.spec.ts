@@ -1,7 +1,7 @@
 import { test, expect, API_BASE } from "./fixtures"
 import type { APIRequestContext } from "@playwright/test"
 
-// Which alerts may change a host without asking: the labdog_automate label
+// Which alerts may change a host without asking: the labdog_ai_automate label
 // by default, or rules naming alerts, labels, hosts and groups. The host
 // page shows the host's side; the settings page refuses a rule naming a
 // host LabDog does not have, and flags one whose host has since gone.
@@ -26,7 +26,7 @@ test.describe("Full-auto rules", () => {
     await set(request, "ai.enabled", "1")
   })
   test.afterEach(async ({ request }) => {
-    await set(request, RULES, "labdog_automate=true")
+    await set(request, RULES, "labdog_ai_automate=true")
     await set(request, "ai.alert_full_auto_rules_enabled", "0")
     await set(request, "ai.enabled", "0")
   })
@@ -36,7 +36,7 @@ test.describe("Full-auto rules", () => {
     await page.goto(`/hosts/${host.id}`)
     const panel = page.getByTestId("host-full-auto")
     await expect(panel).toContainText("Alerts Grafana labels like this may change this host without asking")
-    await expect(panel).toContainText("labdog_automate=true")
+    await expect(panel).toContainText("labdog_ai_automate=true")
     // Nothing is configured in this backend, so every alert is held back.
     await expect(panel).toContainText("None can right now")
     await expect(panel).toContainText("alert intake is off")

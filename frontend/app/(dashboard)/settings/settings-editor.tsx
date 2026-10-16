@@ -104,7 +104,6 @@ const CATEGORIES: Record<string, Category> = {
       "ai.approval_expiry_hours",
       // Alert investigation. Intake itself is alerts.*, under Fleet defaults.
       "ai.auto_investigate_enabled",
-      "ai.auto_investigate_min_severity",
       "ai.alert_mission_template",
       // Alert remediation.
       "ai.alert_autonomy_level",

@@ -3,12 +3,12 @@
 Two settings decide it:
 
 * ``ai.alert_full_auto_rules_enabled`` off (the default): an alert may run
-  at full auto when it carries the label ``labdog_automate="true"``. The
+  at full auto when it carries the label ``labdog_ai_automate="true"``. The
   label is set on the alert rule in Grafana, where a template can make it
   depend on the host (``$labels.labdog_hostname``, which the alloy-install
   action stamps on every series).
 * On: ``ai.alert_full_auto_rules`` decides, one rule per line. Its default
-  is the single rule ``labdog_automate=true``, so switching the rules on
+  is the single rule ``labdog_ai_automate=true``, so switching the rules on
   changes nothing until the list is edited, and an empty list lets no
   alert run at full auto.
 
@@ -44,7 +44,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 #: The label that marks an alert for full auto when the rules are off.
-AUTOMATE_LABEL = "labdog_automate"
+AUTOMATE_LABEL = "labdog_ai_automate"
 DEFAULT_RULES = f"{AUTOMATE_LABEL}=true"
 
 _LABEL_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")

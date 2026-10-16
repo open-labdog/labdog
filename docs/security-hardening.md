@@ -379,10 +379,18 @@ write rows LabDog might then spend money investigating. Restrict the path
 at the reverse proxy as well if Grafana reaches LabDog over an untrusted
 network.
 
+An alert asks for what it wants with Grafana labels: `labdog_action`
+names an action to run on its host, `labdog_ai=true` an investigation,
+`labdog_ai_automate=true` one that may fix things. **An action runs only
+if it is on the list of actions alerts may run** (Alerts › Handling),
+which starts empty, and only on the hosts its entry allows. Keep that
+list to actions you would be happy to see run at 3 a.m. on any host it
+covers, with the parameters you set there; labels cannot change them.
+
 Alert-driven sessions are **read-only by default**.
 `ai.alert_autonomy_level` can raise every alert to `approval`. Full auto
 is reached only by an alert marked for it: by default one carrying the
-label `labdog_automate=true`, or, with `ai.alert_full_auto_rules_enabled`
+label `labdog_ai_automate=true`, or, with `ai.alert_full_auto_rules_enabled`
 on, one matching a rule in `ai.alert_full_auto_rules`. There is no
 instance-wide full auto for alerts. Under the label default, that label
 is all an alert needs. Whoever can edit alert rules in Grafana, or post
@@ -394,8 +402,8 @@ safeguards matter:
 
 - **The webhook token is the trigger's only lock.** A webhook-delivered
   alert is refused full auto while `[alerts] webhook_token` is shorter
-  than 32 characters, and the same goes for running an
-  [alert-triggered schedule](ui/scheduled-actions.md#when-an-alert-fires). Use `openssl rand -hex 16` or longer, and restrict
+  than 32 characters, and the same goes for running the action its
+  [`labdog_action`](ui/alerts.md#running-an-action) label names. Use `openssl rand -hex 16` or longer, and restrict
   the path at the reverse proxy to Grafana's address.
 - **Alert text is attacker-controlled.** Whoever writes alert rules or
   annotations, or controls a label value such as a job or instance name,

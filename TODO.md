@@ -334,7 +334,7 @@ Guardrails, whichever PR they land in:
 
 **Shipped:** phases 1 and 2. `ai.alert_autonomy_level` (`read_only` |
 `approval`) sets what every alert's session may change, and
-the `labdog_automate=true` label, or with `ai.alert_full_auto_rules_enabled`
+the `labdog_ai_automate=true` label, or with `ai.alert_full_auto_rules_enabled`
 on the rules in `ai.alert_full_auto_rules` (alert names, labels, hosts,
 groups), mark the alerts that may change the host unattended, behind the safeguards in `app/ai/alert_autonomy.py`: firing,
 mapped to a host, a 32-character webhook token, a snapshot precondition,

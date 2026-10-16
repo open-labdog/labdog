@@ -405,12 +405,17 @@ ALERT_STATUSES = ("firing", "resolved")
 #: rather than reconstructed from logs that may have rotated.
 INVESTIGATION_OUTCOMES = (
     "started",
-    # An alert-triggered schedule ran an action for it first. The AI looks
-    # only if that does not fix it (app.tasks.alert_handling), or not at
-    # all when the schedule says the action alone handles it.
+    # The alert's labdog_action label ran an action for it first. The AI
+    # looks only if that does not fix it and the labels ask for the AI
+    # (app.tasks.alert_handling); otherwise the action alone handles it.
     "waiting_on_action",
     "handled_by_action",
     "skipped_disabled",
+    # Not labelled labdog_ai or labdog_ai_automate, and no full-auto rule
+    # matched: the alert did not ask for the AI.
+    "skipped_no_label",
+    # From before 1.0.0, when a severity threshold decided. Kept so old
+    # rows still read.
     "skipped_severity",
     "skipped_resolved",
     "skipped_duplicate",

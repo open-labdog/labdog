@@ -57,7 +57,7 @@ export function usePendingQueue(enabled = true) {
   })
   const alerts = useQuery<AlertEvent[]>({
     queryKey: ["alerts", "firing"],
-    queryFn: () => apiFetch<AlertEvent[]>("/api/ai/alerts?status=firing&limit=100"),
+    queryFn: () => apiFetch<AlertEvent[]>("/api/alerts?status=firing&limit=100"),
     ...q,
   })
   const pendingHosts = useQuery<PendingHostFleet[]>({

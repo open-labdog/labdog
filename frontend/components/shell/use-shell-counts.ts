@@ -34,7 +34,7 @@ export function useShellCounts(enabled = true): ShellCounts {
   })
   const alerts = useQuery<AlertEvent[]>({
     queryKey: ["alerts", "firing"],
-    queryFn: () => apiFetch<AlertEvent[]>("/api/ai/alerts?status=firing&limit=100"),
+    queryFn: () => apiFetch<AlertEvent[]>("/api/alerts?status=firing&limit=100"),
     ...q,
   })
   const schedules = useQuery<ScheduledAction[]>({

@@ -1,18 +1,18 @@
-"""What a new alert sets off: alert-triggered schedules first, then the AI.
+"""What a new alert sets off: its labels' action first, then the AI.
 
 Two tasks:
 
-* ``handle_alert`` — one new firing alert. Applies every alert-triggered
-  schedule (:mod:`app.alerts.triggers`). If one started a run, the AI
-  investigation waits for it: ``waiting_on_action`` when the schedule hands
-  a failure to the AI, ``handled_by_action`` when the action alone handles
-  the alert. If none matched, the alert goes to the AI policy as before
-  (:func:`app.tasks.ai_alerts._decide_and_run`), which works with the AI
-  off by recording that it is off.
+* ``handle_alert`` — one new firing alert. Acts on its ``labdog_action``
+  label (:mod:`app.alerts.labels`). If that started a run, the AI waits
+  for it: ``waiting_on_action`` when the labels also ask for the AI,
+  ``handled_by_action`` when the action alone handles the alert. If no
+  action was asked for, or it could not run, the alert goes to the AI
+  policy (:func:`app.tasks.ai_alerts._decide_and_run`), which records why
+  nothing happened when the labels do not ask for the AI or it is off.
 * ``check_alert_actions`` — every minute. Judges each started run: the run
   failed (``run_failed``), the alert resolved (``fixed``), or the alert is
   still firing ``alerts.action_check_minutes`` after the run finished
-  (``not_effective``). A schedule that hands failures to the AI then starts
+  (``not_effective``). When the labels asked for the AI, it then starts
   the investigation, with what was tried added to its mission.
 """
 
@@ -34,18 +34,14 @@ _OUTPUT_TAIL_LINES = 40
 _OUTPUT_TAIL_CHARS = 4000
 
 
-def _skip_text(dispatches: list[Any]) -> str:
-    return "; ".join(
-        f"{d.action_key}: {d.outcome.removeprefix('skipped_').replace('_', ' ')}"
-        + (f" ({d.detail})" if d.detail else "")
-        for d in dispatches
-    )
+def _why_not(dispatch: Any) -> str:
+    return dispatch.detail or dispatch.outcome.removeprefix("skipped_").replace("_", " ")
 
 
 async def _handle(alert_event_id: int) -> dict:
     from app.actions.registry import ensure_registry_current
     from app.ai.models import AlertEvent
-    from app.alerts.triggers import dispatch_for
+    from app.alerts.labels import dispatch_for
     from app.db import task_session
     from app.tasks.ai_alerts import _decide_and_run
 
@@ -58,37 +54,42 @@ async def _handle(alert_event_id: int) -> dict:
         # process that has not rebuilt since it forked knows only the
         # built-ins (BUG-105).
         await ensure_registry_current(db)
-        dispatches = await dispatch_for(db, event)
-        started = [d for d in dispatches if d.outcome == "started"]
+        dispatch = await dispatch_for(db, event)
         handled = False
         already_tried = None
-        if started:
+        run_id = None
+        if dispatch is not None and dispatch.outcome == "started":
             handled = True
-            fallback = any(d.investigate_on_failure for d in started)
-            event.investigation_outcome = "waiting_on_action" if fallback else "handled_by_action"
-            event.investigation_detail = ", ".join(
-                f"{d.action_key} run #{d.action_run_id}" for d in started
+            run_id = dispatch.action_run_id
+            event.investigation_outcome = (
+                "waiting_on_action" if dispatch.hand_to_ai else "handled_by_action"
             )
-        elif dispatches:
-            if not all(d.investigate_on_failure for d in dispatches):
-                # A matching schedule says its action alone handles this
-                # alert. It could not run, and the AI was not asked for.
-                handled = True
-                event.investigation_outcome = "handled_by_action"
-                event.investigation_detail = _skip_text(dispatches)[:2000]
-            else:
-                already_tried = (
-                    "An alert-triggered schedule matched this alert but did not run its "
-                    f"action: {_skip_text(dispatches)}."
-                )
+            event.investigation_detail = f"{dispatch.action_key} run #{run_id}"
+        elif dispatch is not None and dispatch.outcome == "skipped_in_flight":
+            # The run already going decides, through its own alert. A second
+            # investigation now would race it.
+            handled = True
+            event.investigation_outcome = "handled_by_action"
+            event.investigation_detail = f"{dispatch.action_key}: {_why_not(dispatch)}"[:2000]
+        elif dispatch is not None:
+            already_tried = (
+                f"The alert's labdog_action label asked for the action {dispatch.action_key}, "
+                f"but LabDog did not run it: {_why_not(dispatch)}."
+            )
         await db.commit()
-        run_ids = [d.action_run_id for d in started]
-        summary = [
-            {"action_key": d.action_key, "outcome": d.outcome, "action_run_id": d.action_run_id}
-            for d in dispatches
-        ]
+        summary = (
+            [
+                {
+                    "action_key": dispatch.action_key,
+                    "outcome": dispatch.outcome,
+                    "action_run_id": dispatch.action_run_id,
+                }
+            ]
+            if dispatch is not None
+            else []
+        )
 
-    for run_id in run_ids:
+    if run_id is not None:
         celery_app.send_task("app.tasks.action_orchestrator.run_action", args=[run_id])
 
     if handled:
@@ -99,7 +100,7 @@ async def _handle(alert_event_id: int) -> dict:
 
 @celery_app.task(name="app.tasks.alert_handling.handle_alert")
 def handle_alert(alert_event_id: int) -> dict:
-    """Apply the alert-triggered schedules to one alert, then the AI policy."""
+    """Act on one alert's labdog_action label, then apply the AI policy."""
     return asyncio.run(_handle(alert_event_id))
 
 
@@ -123,15 +124,15 @@ async def _tried(db, dispatch, run, event, verdict: str, host: str) -> str:  # n
     action = ACTION_REGISTRY.get(dispatch.action_key)
     name = f"{action.name} ({dispatch.action_key})" if action else dispatch.action_key
     if run is None:
-        return f"An alert-triggered schedule ran the action {name} on {host}, but its run is gone."
+        return f"LabDog ran the action {name} on {host} for this alert, but its run is gone."
     if verdict == "not_effective":
         ending = "The run succeeded, but the alert is still firing."
     else:
         why = f": {run.error_message}" if run.error_message else ""
         ending = f"The run {run.status}{why}."
     text = [
-        f"When this alert fired, an alert-triggered schedule ran the action {name} on {host} "
-        f"as run #{run.id}. {ending}"
+        f"When this alert fired, LabDog ran the action {name} on {host} as run #{run.id}, "
+        f"as the alert's labdog_action label asked. {ending}"
     ]
     tail = await _output_tail(db, run.id)
     if tail:
@@ -197,7 +198,7 @@ async def _check(now: datetime | None = None) -> dict:
 
             hand_over = (
                 verdict != "fixed"
-                and dispatch.investigate_on_failure
+                and dispatch.hand_to_ai
                 and event is not None
                 and event.investigation_session_id is None
                 and event.status == "firing"
@@ -222,7 +223,7 @@ async def _check(now: datetime | None = None) -> dict:
 
 @celery_app.task(name="app.tasks.alert_handling.check_alert_actions", queue="default")
 def check_alert_actions() -> dict:
-    """Judge finished alert-triggered runs — see the module docstring."""
+    """Judge finished runs that alerts started — see the module docstring."""
     return asyncio.run(_check())
 
 

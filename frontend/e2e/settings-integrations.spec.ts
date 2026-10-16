@@ -12,6 +12,7 @@ type Intake = {
   token_long_enough_for_full_auto: boolean
   full_auto_rules_enabled: boolean
   full_auto_rules: number
+  allowed_actions: number
   poll_minutes: number
   last_webhook_alert_at: string | null
   last_poll_alert_at: string | null
@@ -23,13 +24,14 @@ const OFF: Intake = {
   token_long_enough_for_full_auto: false,
   full_auto_rules_enabled: false,
   full_auto_rules: 1,
+  allowed_actions: 0,
   poll_minutes: 0,
   last_webhook_alert_at: null,
   last_poll_alert_at: null,
 }
 
 async function open(page: Page, intake: Partial<Intake>) {
-  await page.route(/\/api\/ai\/alert-intake\/?$/, (r) =>
+  await page.route(/\/api\/alerts\/intake\/?$/, (r) =>
     r.fulfill({ json: { ...OFF, webhook_path: "/api/webhooks/grafana-alerts", ...intake } }),
   )
   await page.goto("/settings")
@@ -42,7 +44,7 @@ test.describe("Alert intake card", () => {
     await expect(card).toContainText("off")
     await expect(card).toContainText("intake off")
     await expect(card.getByRole("link", { name: "Configure…" })).toHaveAttribute("href", /\/settings\/?\?section=fleet/)
-    await expect(card.getByRole("link", { name: "Alerts" })).toHaveAttribute("href", /\/alerts\/?$/)
+    await expect(card.getByRole("link", { name: "Alert handling" })).toHaveAttribute("href", /\/alerts\/?\?tab=handling$/)
     await expect(page.getByText("Webhooks", { exact: true })).toHaveCount(0)
   })
 
@@ -65,6 +67,12 @@ test.describe("Alert intake card", () => {
     const card = await open(page, { intake_enabled: true, token_set: true, full_auto_rules_enabled: true, full_auto_rules: 2 })
     await expect(card).toContainText("needs attention")
     await expect(card).toContainText("token under 32 characters: no full auto")
+  })
+
+  test("a short token with actions allowed needs attention", async ({ page }) => {
+    const card = await open(page, { intake_enabled: true, token_set: true, allowed_actions: 1 })
+    await expect(card).toContainText("needs attention")
+    await expect(card).toContainText("token under 32 characters: no actions, no full auto")
   })
 
   test("under the label default a short token is a note, not a warning", async ({ page }) => {

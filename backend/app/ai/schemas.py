@@ -401,66 +401,14 @@ class AIUsageSummary(BaseModel):
 # --- alerts --------------------------------------------------------------
 
 
-class AlertIntakeStatus(BaseModel):
-    """Whether alerts can reach LabDog, for the Settings › Integrations card.
-
-    Says whether the webhook token is set, and whether it is long enough
-    for full auto, never what it is: the token is a shared secret kept in
-    the config file precisely so that no API returns it.
-    """
-
-    intake_enabled: bool
-    webhook_path: str
-    #: An unset token makes the webhook refuse every request.
-    token_set: bool
-    #: At least MIN_WEBHOOK_TOKEN_CHARS: below it, a webhook alert is never
-    #: allowed to run at full auto.
-    token_long_enough_for_full_auto: bool
-    #: Off: the labdog_automate=true label decides full auto. On: the rules.
-    full_auto_rules_enabled: bool
-    #: How many rules are in force: 1 (the label) while the rules are off.
-    full_auto_rules: int
-    poll_minutes: int
-    #: When the newest alert first reached LabDog by each route.
-    last_webhook_alert_at: datetime | None
-    last_poll_alert_at: datetime | None
-
-
-class HostAlertActionOut(BaseModel):
-    """An alert-triggered schedule whose target covers a host."""
+class AlertDispatchOut(BaseModel):
+    """What one alert's ``labdog_action`` label came to — see
+    app.alerts.models.AlertActionDispatch."""
 
     id: int
-    action_key: str
-    action_name: str | None = None
-    alert_match: str
-    enabled: bool
-
-
-class HostFullAutoResponse(BaseModel):
-    """Which alerts may fix one host without asking, for its page.
-
-    Worked out from the rules rather than stored: ``rules`` are the ones
-    whose host and group conditions allow this host (their alert-name
-    and label conditions still have to match an alert). ``blockers`` are
-    safeguards that would hold every alert back on this host whatever
-    matched, as far as they can be known without an alert.
-    """
-
-    #: The host page shows nothing about alerts while the AI is off.
-    ai_enabled: bool
-    rules_enabled: bool
-    rules: list[str]
-    blockers: list[str]
-    #: Alert-triggered schedules that cover this host. Shown whether or not
-    #: the AI is on: they need no AI.
-    alert_actions: list[HostAlertActionOut] = []
-
-
-class AlertActionOut(BaseModel):
-    """One alert-triggered schedule's handling of one alert."""
-
-    id: int
-    scheduled_action_id: int | None = None
+    #: The list entry it ran under; None when the action was not on the
+    #: list, or has been taken off it since.
+    alert_action_id: int | None = None
     action_key: str
     action_name: str | None = None
     host_id: int | None = None
@@ -522,7 +470,6 @@ class AlertEventResponse(BaseModel):
     #: running, succeeded, failed, or refused, and what happened.
     rollback_status: str | None = None
     rollback_detail: str | None = None
-    #: What each alert-triggered schedule did with this alert. See
-    #: app.alerts.models.AlertActionDispatch.
-    actions: list[AlertActionOut] = []
+    #: What the alert's labdog_action label came to: at most one entry.
+    actions: list[AlertDispatchOut] = []
     created_at: datetime
