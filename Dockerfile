@@ -52,7 +52,7 @@ RUN uv export --frozen --no-emit-project --extra agent --format requirements-txt
 # (sourced from the repo-root LABDOG_PLAYBOOKS_REF file + the workflow's
 # own configuration). A local ``docker build`` without overrides uses
 # whatever defaults are pinned below.
-FROM alpine/git:v2.45.2@sha256:16ad8e788e1d3b0c30f18da8dde5c0ace3b187445a62d8af893b003ca1e70592 AS bundled-pack-fetcher
+FROM alpine/git:v2.52.0@sha256:4a0e72d49596a1f5d3701aeedafdadc5c0da4062be4657c7bdc4017387f591cc AS bundled-pack-fetcher
 ARG LABDOG_PLAYBOOKS_REPO=https://github.com/open-labdog/labdog-playbooks.git
 ARG LABDOG_PLAYBOOKS_REF=main
 ENV LABDOG_PLAYBOOKS_REPO=${LABDOG_PLAYBOOKS_REPO}
