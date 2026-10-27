@@ -22,10 +22,12 @@ scheduled_actions:
     enabled: true
 
     # 5-field cron, validated by `croniter` at import time.
-    # Time zone: schedules run in UTC.
-    #   "0 3 * * 0"       -- Sundays at 03:00 UTC
-    #   "0 3 * * 1-5"     -- weekdays at 03:00 UTC
-    #   "30 2 1 * *"      -- first of every month at 02:30 UTC
+    # Time zone: the instance's `scheduling.timezone` setting (Settings ›
+    # Fleet), UTC unless changed. The same file means a different instant
+    # on an instance set to another zone.
+    #   "0 3 * * 0"       -- Sundays at 03:00
+    #   "0 3 * * 1-5"     -- weekdays at 03:00
+    #   "30 2 1 * *"      -- first of every month at 02:30
     schedule_cron: "0 3 * * 0"
 
     # Number of hosts processed in parallel. `batch_size: 1` is safest.

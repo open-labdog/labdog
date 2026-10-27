@@ -1,11 +1,8 @@
 "use client"
 
 import { useQuery } from "@tanstack/react-query"
-import { AlertTriangleIcon } from "lucide-react"
 import { apiFetch, ApiError } from "@/lib/api"
-import { useDelayedLoading } from "@/lib/utils"
-import { CardSkeleton } from "@/components/ui/skeleton"
-import { CopyButton } from "@/components/ui/copy-button"
+import { Banner, CodeBlock, Copy, Dot, Facts } from "@/components/ld"
 import type { MetricsStatus } from "@/lib/types"
 
 const SECURITY_HARDENING_URL =
@@ -46,40 +43,10 @@ function buildAlloyConfig(status: MetricsStatus): string {
   ].join("\n")
 }
 
-function StatusDot({ on }: { on: boolean }) {
-  return (
-    <span
-      className={`inline-block h-2 w-2 shrink-0 rounded-full ${on ? "bg-green-500" : "bg-slate-600"}`}
-    />
-  )
-}
+const ext = "text-ld-accent hover:underline"
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-start justify-between gap-8 py-2.5 border-b border-slate-700 last:border-0">
-      <span className="text-sm text-slate-400 shrink-0 w-24">{label}</span>
-      <span className="text-sm text-slate-200 text-right flex-1 flex items-center justify-end gap-2 min-w-0">
-        {children}
-      </span>
-    </div>
-  )
-}
-
-function CodeBlock({ title, code }: { title: string; code: string }) {
-  return (
-    <div className="rounded-md border border-slate-700 bg-slate-950 overflow-hidden">
-      <div className="flex items-center justify-between border-b border-slate-700 bg-slate-900/60 px-3 py-1.5">
-        <span className="text-xs font-medium text-slate-400">{title}</span>
-        <CopyButton text={code} />
-      </div>
-      <pre className="overflow-x-auto px-3 py-2 text-xs font-mono text-slate-300 whitespace-pre">
-        {code}
-      </pre>
-    </div>
-  )
-}
-
-/** Outbound Prometheus scrape card for the Grafana integration page. Reads
+/** Outbound Prometheus scrape status — the body of the "prometheus
+ *  export" panel under Settings › System and on the Grafana screen. Reads
  *  GET /api/metrics/status (authenticated, unlike the /metrics endpoint it
  *  describes). Degrades quietly — not with a red error — when the endpoint
  *  404s, since that just means the metrics-export backend isn't deployed
@@ -91,105 +58,92 @@ export function MetricsScrapeCard() {
     staleTime: 60_000,
     retry: 1,
   })
-  const showLoading = useDelayedLoading(isLoading)
   const notYetAvailable = error instanceof ApiError && error.status === 404
 
+  if (isLoading) return <div className="text-xs text-text-3">Loading…</div>
+  if (error && notYetAvailable) {
+    return (
+      <div className="text-xs text-text-3">
+        Prometheus scrape status isn&apos;t available yet — the metrics export API may not be deployed on this instance.
+      </div>
+    )
+  }
+  if (error || !data) return <div className="text-xs text-danger">Failed to load Prometheus scrape status.</div>
+
   return (
-    <div className="rounded-lg border border-slate-700 bg-slate-900 p-4">
-      {showLoading && <CardSkeleton lines={4} />}
-
-      {!isLoading && error && notYetAvailable && (
-        <p className="text-sm text-slate-400 py-2">
-          Prometheus scrape status isn&apos;t available yet — the metrics export API may not be
-          deployed on this instance.
-        </p>
-      )}
-
-      {!isLoading && error && !notYetAvailable && (
-        <p className="text-sm text-red-400 py-2">Failed to load Prometheus scrape status.</p>
-      )}
-
-      {!isLoading && !error && data && (
-        <div className="space-y-4">
-          <div className="divide-y divide-slate-700">
-            <Row label="Status">
-              <StatusDot on={data.enabled} />
-              <span className={data.enabled ? "text-green-400" : "text-slate-400"}>
-                {data.enabled ? "Enabled" : "Disabled"}
+    <div className="flex flex-col gap-3">
+      <Facts
+        min={150}
+        items={[
+          {
+            k: "status",
+            v: (
+              <span className="inline-flex items-center gap-1.5" style={{ color: data.enabled ? "var(--ok)" : "var(--text-3)" }}>
+                <Dot tone={data.enabled ? "ok" : "idle"} />
+                {data.enabled ? "enabled" : "disabled"}
               </span>
-            </Row>
+            ),
+          },
+          ...(data.enabled
+            ? [
+                {
+                  k: "scrape url",
+                  mono: true,
+                  span: 2,
+                  title: data.scrape_url,
+                  v: (
+                    <span className="inline-flex max-w-full items-center gap-1">
+                      <span className="trunc">{data.scrape_url}</span>
+                      <Copy text={data.scrape_url} className="btn btn-sm btn-ghost -my-1" />
+                    </span>
+                  ),
+                },
+                { k: "auth", v: "none" },
+                { k: "cache ttl", v: `${data.cache_ttl_seconds}s`, mono: true },
+              ]
+            : []),
+        ]}
+      />
 
-            {data.enabled && (
-              <>
-                <Row label="Scrape URL">
-                  <span className="font-mono text-xs text-slate-300 truncate" title={data.scrape_url}>
-                    {data.scrape_url}
-                  </span>
-                  <CopyButton text={data.scrape_url} />
-                </Row>
-                <Row label="Auth">
-                  <span className="text-slate-300">None</span>
-                </Row>
-                <Row label="Cache TTL">
-                  <span className="text-slate-300">{data.cache_ttl_seconds}s</span>
-                </Row>
-              </>
-            )}
-          </div>
-
-          {data.enabled ? (
-            <>
-              <p className="flex items-start gap-1.5 text-xs text-amber-400">
-                <AlertTriangleIcon className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                <span>
-                  Unauthenticated — restrict at your reverse proxy. See{" "}
-                  <a
-                    href={SECURITY_HARDENING_URL}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-400 hover:underline"
-                  >
-                    Security hardening
-                  </a>
-                  .
-                </span>
-              </p>
-
-              <CodeBlock title="config.alloy" code={buildAlloyConfig(data)} />
-            </>
-          ) : (
-            <div className="space-y-3">
-              <p className="text-sm text-slate-400">
-                Add to <span className="font-mono text-slate-300">/etc/labdog/labdog.toml</span> and
-                restart:
-              </p>
-              <CodeBlock title="labdog.toml" code={data.toml_snippet} />
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm text-slate-400">Or set the env var:</span>
-                <code className="font-mono text-xs text-slate-300">{data.env_snippet}</code>
-                <CopyButton text={data.env_snippet} />
-              </div>
-              <p className="text-xs text-slate-500">
-                File-level on purpose: the endpoint is unauthenticated, so enabling it needs server
-                access, not just a LabDog login.
-              </p>
-            </div>
-          )}
-
-          <p className="text-xs text-slate-500">
-            Dashboard + alert rules ship in{" "}
-            <a
-              href={PROMETHEUS_EXAMPLES_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-400 hover:underline"
-            >
-              docs/examples/prometheus/
+      {data.enabled ? (
+        <>
+          <Banner tone="warn">
+            Unauthenticated — restrict at your reverse proxy. See{" "}
+            <a href={SECURITY_HARDENING_URL} target="_blank" rel="noopener noreferrer" className={ext}>
+              Security hardening
             </a>
             .
-          </p>
+          </Banner>
+          <CodeBlock title="config.alloy" actions={<Copy text={buildAlloyConfig(data)} />} wrap={false}>
+            {buildAlloyConfig(data)}
+          </CodeBlock>
+        </>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <div className="text-xs text-text-2">
+            Add to <span className="mono text-text">/etc/labdog/labdog.toml</span> and restart:
+          </div>
+          <CodeBlock title="labdog.toml" actions={<Copy text={data.toml_snippet} />} wrap={false}>
+            {data.toml_snippet}
+          </CodeBlock>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-text-2">
+            <span>Or set the env var:</span>
+            <span className="mono text-[11px] text-text">{data.env_snippet}</span>
+            <Copy text={data.env_snippet} />
+          </div>
+          <div className="text-[11px] text-text-3">
+            File-level on purpose: the endpoint is unauthenticated, so enabling it needs server access, not just a LabDog login.
+          </div>
         </div>
       )}
+
+      <div className="text-[11px] text-text-3">
+        Dashboard + alert rules ship in{" "}
+        <a href={PROMETHEUS_EXAMPLES_URL} target="_blank" rel="noopener noreferrer" className={ext}>
+          docs/examples/prometheus/
+        </a>
+        .
+      </div>
     </div>
   )
 }

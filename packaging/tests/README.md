@@ -17,7 +17,7 @@ installs it the way an operator would, then runs shared assertions:
 
 The assertions ([`smoke.sh`](smoke.sh)) check that the install:
 
-- landed the app code + a working venv, the bundled action pack (4 actions),
+- landed the app code + a working venv and no in-package action pack,
   the systemd unit, tmpfiles.d config, and `/etc/labdog/labdog.toml`;
 - created the `labdog` service account and data directories;
 - produced a venv that imports the `app` package and every key runtime

@@ -224,7 +224,7 @@ class TestDispatchWritesTheSnapshot:
         """A row created without a hostname would only reveal itself once
         the host was gone, which is far too late to notice."""
         from contextlib import asynccontextmanager
-        from unittest.mock import patch
+        from unittest.mock import AsyncMock, patch
 
         from app.tasks.action_orchestrator import _run_action_async
 
@@ -244,24 +244,11 @@ class TestDispatchWritesTheSnapshot:
         async def _fake_session():
             yield db
 
-        class _Result:
-            def join(self, *args, **kwargs):  # noqa: ARG002
-                return []
-
-        def _group(sig_iter):
-            list(sig_iter)
-
-            class _G:
-                def apply_async(self):
-                    return _Result()
-
-            return _G()
-
         with (
             patch("app.db.task_session", new=_fake_session),
             patch("redis.from_url", return_value=_FakeRedis()),
-            patch("app.tasks.action_orchestrator.celery_app.signature", return_value=("sig",)),
-            patch("celery.group", side_effect=_group),
+            patch("app.tasks.action_orchestrator.celery_app.send_task"),
+            patch("app.tasks.action_orchestrator._wait", new=AsyncMock(return_value="go")),
         ):
             await _run_action_async(run_id)
 

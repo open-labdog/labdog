@@ -32,7 +32,7 @@ The Docker command above is the fastest path — see [`openlabdog/labdog`](https
 
 ## ✨ What you get
 
-**Configuration modules** &nbsp;`firewall` · `services` · `hosts` · `packages` · `users` · `cron` · `dns-resolver`
+**Configuration modules** &nbsp;`firewall` · `services` · `hosts` · `packages` · `users` · `cron` · `dns-resolver` · `ca-certs`
 
 Declare state per host or per group. Everything goes through Ansible. Same rule format for nftables and iptables.
 
@@ -65,9 +65,17 @@ parser, bounded by a host allowlist, redacted, and written to the audit log.
 - **AI verification** — a destructive action can ask an LLM whether it left
   the host healthy, judged on evidence LabDog collected rather than anything
   the model went looking for.
-- **Alert-driven investigation** — point a Grafana contact point at LabDog
-  and eligible alerts get a read-only investigation on their own, gated by
-  severity and budget. The prompt it starts from is yours to edit.
+- **Alert-driven actions, investigation and fixes** — point a Grafana
+  contact point at LabDog and let the alert rule's labels say what
+  happens. `labdog_action` runs an action you have allowed on the alert's
+  host, no AI needed. `labdog_ai` has the assistant investigate, within
+  budget; it only looks unless you allow more, and can ask for approval
+  for each change. `labdog_ai_automate`, or rules naming alerts, hosts and
+  groups, lets it fix the host unattended. Every unattended fix is
+  snapshotted first and checked afterwards, and one that made the host
+  worse is rolled back.
+- **Email** — fired alerts, approvals waiting and automatic fixes, for
+  whoever subscribes.
 
 Runs against OpenAI-compatible endpoints (Ollama, vLLM, OpenRouter), the
 Anthropic API, or a Claude subscription. See the
@@ -85,7 +93,7 @@ Anthropic API, or a Claude subscription. See the
 - **SSH** — push config to hosts and serve an in-browser terminal (asyncssh + xterm.js)
 - **Git** — pull GitOps configs and Action packs from any Git server; SSH key or HTTPS PAT auth, credentials encrypted at rest
 - **Proxmox VE** — automatic snapshot + rollback, VM discovery
-- **Grafana Mimir/Loki** — register a Prometheus-compatible endpoint to show instant CPU/memory/disk on the host page; ties into the bundled Alloy install action so metrics flow back automatically
+- **Grafana Mimir/Loki** — register a Prometheus-compatible endpoint to show instant CPU/memory/disk on the host page; ties into the Alloy install action from `labdog-playbooks` so metrics flow back automatically
 - **Prometheus / Alloy** — the other direction: an opt-in `/metrics` endpoint exposing fleet state and LabDog's own health for your existing scraper, with a ready-made Grafana dashboard and alert rules
 - **Webhooks** — inbound triggers from your Git host for GitOps sync, and
   from Grafana Alerting for alert intake
@@ -113,7 +121,7 @@ All technical content lives under **[the documentation site](https://open-labdog
 
 - **Concepts** — [how config is applied](https://open-labdog.github.io/labdog/#how-configuration-is-applied) · [precedence (worked examples)](https://open-labdog.github.io/labdog/examples/precedence/)
 - **Operations** — [installation](https://open-labdog.github.io/labdog/#installation) · [local development](https://open-labdog.github.io/labdog/#local-development) · [API reference](https://open-labdog.github.io/labdog/#api-endpoints)
-- **Guides** — [GitOps](https://open-labdog.github.io/labdog/examples/gitops/) · [Actions & packs](https://open-labdog.github.io/labdog/ui/actions/) · [example packs](https://open-labdog.github.io/labdog/examples/action-packs/) · [Scheduled actions](https://open-labdog.github.io/labdog/ui/scheduled-actions/) · [AI assistant](https://open-labdog.github.io/labdog/ui/assistant/) · [Alerts](https://open-labdog.github.io/labdog/ui/alerts/) · [Live host metrics](https://open-labdog.github.io/labdog/ui/metrics/) · [Metrics export](https://open-labdog.github.io/labdog/metrics-export/)
+- **Guides** — [GitOps](https://open-labdog.github.io/labdog/examples/gitops/) · [Actions & packs](https://open-labdog.github.io/labdog/ui/actions/) · [example packs](https://open-labdog.github.io/labdog/examples/action-packs/) · [Scheduled actions](https://open-labdog.github.io/labdog/ui/scheduled-actions/) · [AI assistant](https://open-labdog.github.io/labdog/ui/assistant/) · [Alerts](https://open-labdog.github.io/labdog/ui/alerts/) · [Live host metrics](https://open-labdog.github.io/labdog/ui/host-metrics/) · [Metrics export](https://open-labdog.github.io/labdog/metrics-export/)
 
 ## 🐛 Found a bug?
 

@@ -156,7 +156,6 @@ def _owner_out(owner):
 
     return KeyOwnerOut(
         key=owner.key,
-        source=owner.source,
         pack_name=owner.pack_name,
         pack_id=owner.pack_id,
     )
@@ -326,9 +325,9 @@ async def activate_repo(
                 )
 
         # Validate the operator has resolved every key this activation
-        # makes contested. A key is "newly contested" when something
-        # already owns it (existing DB pack or bundled, per
-        # existing_key_winners) AND a submitted pack also contributes
+        # makes contested. A key is "newly contested" when an existing
+        # pack already owns it (per existing_key_winners) AND a
+        # submitted pack also contributes
         # it. The wizard surfaces a per-key radio for these and must
         # echo the operator's pick in body.key_resolutions.
         contested_keys: dict[str, list[str]] = {}
@@ -352,9 +351,7 @@ async def activate_repo(
                 },
             )
         for r in body.key_resolutions:
-            picks = sum(
-                1 for v in (r.winner_pack_path, r.winner_existing_pack_id, r.winner_is_bundled) if v
-            )
+            picks = sum(1 for v in (r.winner_pack_path, r.winner_existing_pack_id) if v)
             if picks != 1:
                 raise HTTPException(
                     status_code=422,
@@ -362,9 +359,8 @@ async def activate_repo(
                         "kind": "ambiguous_key_resolution",
                         "action_key": r.action_key,
                         "message": (
-                            "Exactly one of winner_pack_path, "
-                            "winner_existing_pack_id, winner_is_bundled "
-                            "must be set."
+                            "Exactly one of winner_pack_path and "
+                            "winner_existing_pack_id must be set."
                         ),
                     },
                 )
@@ -432,11 +428,9 @@ async def activate_repo(
                             "winner_pack_path": r.winner_pack_path,
                         },
                     )
-                resolved_pack_id: int | None = pack_id
-            elif r.winner_existing_pack_id is not None:
-                resolved_pack_id = r.winner_existing_pack_id
+                resolved_pack_id = pack_id
             else:
-                resolved_pack_id = None  # bundled wins
+                resolved_pack_id = r.winner_existing_pack_id
             db.add(
                 ActionResolution(
                     action_key=r.action_key,

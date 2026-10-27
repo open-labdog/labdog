@@ -58,13 +58,8 @@ test.describe("Hosts page", () => {
     // Select SSH key from native select
     await page.locator("#ssh_key").selectOption({ value: String(sshKey.id) })
 
-    // GroupMultiSelect uses a custom dropdown — click the trigger to open it
-    await page.getByText("Select groups...").click()
-    // Now the dropdown is open — check the group by its label text
+    // GroupMultiSelect is an always-visible checkbox list — no dropdown to open
     await page.getByLabel(group.name).check()
-    // Close the dropdown by clicking outside the component (hostname field)
-    // so the floating dropdown doesn't intercept the submit button click
-    await page.locator("#hostname").click()
 
     await page.getByRole("button", { name: "Add Host" }).click()
 
@@ -96,5 +91,23 @@ test.describe("Hosts page", () => {
 
     await page.goto(`/hosts/${host.id}`)
     await expect(page.getByText(host.hostname).first()).toBeVisible()
+    // The header offers what the tabs don't: Run action… opens the action
+    // picker; the terminal is its own tab, not a header button.
+    await expect(page.getByRole("button", { name: "Run action…" })).toBeVisible()
+    await expect(page.getByRole("tab", { name: "Terminal" })).toBeVisible()
+  })
+
+  test("metrics tab explains a missing metrics backend", async ({ request, page }) => {
+    // This backend has no Mimir instance. The tab used to render an empty
+    // panel; it must say why and link to where one is added.
+    const hostRes = await request.post(`${API_BASE}/api/hosts`, {
+      data: { hostname: `e2e-metrics-host-${Date.now()}`, ip_address: "10.0.0.2", ssh_port: 22, group_ids: [] },
+    })
+    const host = await hostRes.json()
+
+    await page.goto(`/hosts/${host.id}`)
+    await page.getByRole("tab", { name: "Metrics" }).click()
+    await expect(page.getByText("No metrics backend")).toBeVisible()
+    await expect(page.getByRole("link", { name: "Add a Mimir instance…" })).toHaveAttribute("href", /^\/grafana\/?$/)
   })
 })

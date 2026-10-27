@@ -22,6 +22,7 @@ from app.actions.builtins import (
 from app.actions.manifest import ActionManifest
 from app.actions.packs import Pack, load_pack
 from app.actions.registry import ACTION_REGISTRY
+from app.actions.types import ActionDefinition
 
 
 def test_three_builtins_registered() -> None:
@@ -115,7 +116,7 @@ def test_pack_loader_skips_underscore_keyed_manifests(tmp_path: Path) -> None:
     )
     (good_dir / "playbook.yml").write_text("---\n- name: x\n  hosts: all\n  tasks: []\n")
 
-    pack = Pack(name="evil-pack", path=pack_dir)
+    pack = Pack(name="evil-pack", path=pack_dir, pack_id=1)
     defns = load_pack(pack)
 
     keys = [d.key for d in defns]
@@ -125,7 +126,13 @@ def test_pack_loader_skips_underscore_keyed_manifests(tmp_path: Path) -> None:
 
 def test_action_definition_supports_fleet_default_is_false() -> None:
     """Pack-supplied actions default conservatively to supports_fleet=False."""
-    bundled_keys = [d for d in ACTION_REGISTRY.values() if not d.is_builtin]
-    # The bundled pack's existing actions don't set supports_fleet.
-    for defn in bundled_keys:
-        assert defn.supports_fleet is False, f"{defn.key} unexpectedly has supports_fleet=True"
+    defn = ActionDefinition(
+        key="demo",
+        name="Demo",
+        description="",
+        icon="Zap",
+        playbook_path=None,
+        version="1.0",
+        estimated_duration="1 min",
+    )
+    assert defn.supports_fleet is False

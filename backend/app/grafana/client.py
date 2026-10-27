@@ -242,7 +242,7 @@ class PrometheusClient:
             raise PrometheusError(
                 "No Alertmanager API at this endpoint. Mimir serves it under "
                 "/alertmanager on the same host; check the instance URL, or "
-                "leave ai.alertmanager_poll_minutes at 0 and use the webhook.",
+                "leave alerts.poll_minutes at 0 and use the webhook.",
                 404,
             )
         if resp.status_code >= 400:

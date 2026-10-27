@@ -112,6 +112,9 @@ export interface Host {
   labdog_source_ip: string | null
   drift_check_enabled: boolean; last_sync_at: string | null
   last_drift_check_at: string | null; ssh_key_id: number | null
+  /** When LabDog last confirmed the host's state: a successful collection,
+   *  drift check or sync. What "stale" is measured against. */
+  last_verified_at: string | null
   group_ids: number[]
   created_at: string; updated_at: string
   os_codename: string | null
@@ -229,8 +232,11 @@ export interface HostMetricValue {
 }
 
 export interface HostMetrics {
-  /** False when no Grafana instance is registered (→ "set up" CTA). */
+  /** False when there is no Mimir instance to query (→ "set up" CTA). */
   configured: boolean
+  /** Why `configured` is false: none registered, or several with none
+   *  marked default. Null when configured. */
+  unconfigured_reason: "no_instance" | "no_default" | null
   sampled_at: string | null
   cpu: HostMetricValue | null
   memory: HostMetricValue | null
@@ -301,7 +307,7 @@ export interface ClaimAllKeysResponse {
 }
 
 export interface ResolutionPack {
-  pack_id: number | null
+  pack_id: number
   pack_name: string
 }
 
@@ -326,8 +332,7 @@ export interface ContestedActionKey {
 }
 
 export interface ActionResolutionRequest {
-  /** Null = bundled wins. */
-  pack_id: number | null
+  pack_id: number
 }
 
 // ---------------------------------------------------------------------------
@@ -355,9 +360,8 @@ export interface DetectedGitopsFile {
 
 export interface KeyOwner {
   key: string
-  source: "bundled" | "db_pack"
   pack_name: string
-  pack_id: number | null
+  pack_id: number
 }
 
 export interface KeyConflict {
@@ -383,10 +387,8 @@ export interface ActivateKeyResolution {
   action_key: string
   /** Path inside the submitted activation set whose pack wins. */
   winner_pack_path?: string | null
-  /** An existing DB pack wins (operator kept the prior winner). */
+  /** An existing pack wins (operator kept the prior winner). */
   winner_existing_pack_id?: number | null
-  /** Bundled wins. */
-  winner_is_bundled?: boolean
 }
 
 export interface ActivateGitopsBinding {
@@ -812,9 +814,9 @@ export interface ActionDefinition {
   parameters: ActionParameter[]
   /** Pack whose manifest provided this action. */
   pack_name: string
-  /** ActionPack.id of the winning pack. Null for built-in actions,
-   * bundled-pack actions (no DB row), and **unresolved** contested
-   * keys (the operator hasn't pinned a winner). */
+  /** ActionPack.id of the winning pack. Null for built-in actions and
+   * **unresolved** contested keys (the operator hasn't pinned a
+   * winner). */
   winning_pack_id: number | null
   /** True when the action key is contested by multiple packs and the
    * operator has not pinned a winner. The Run button must be disabled
@@ -877,6 +879,10 @@ export interface ActionRun {
   /** NULL for ad-hoc runs; populated when the run was dispatched by the
    *  unified scheduler or POST /api/scheduled-actions/{id}/run-now. */
   scheduled_action_id: number | null
+  /** Set when an alert's labdog_action label started the run; the name
+   *  is filled in by the run detail endpoint only. */
+  alert_event_id?: number | null
+  alertname?: string | null
   parameters: Record<string, unknown>
   parallelism: number
   /** Universal destructive-flow toggles, mirrored from the schedule
@@ -971,6 +977,8 @@ export interface ValidateCronResponse {
   valid: boolean
   message: string | null
   next_run_at: string[]
+  /** The `scheduling.timezone` the expression was read in. */
+  timezone: string
 }
 
 // ---------------------------------------------------------------------------
@@ -1181,6 +1189,41 @@ export interface AISessionDetail extends AISession {
   messages: AIMessage[]
   tool_calls: AIToolCall[]
   approvals: AIApprovalRequest[]
+  /** Every attempt to put a host back, oldest first, refused ones included. */
+  rollbacks: AIRollback[]
+  /** Each host the session changed, and whether it can be rolled back now. */
+  rollback_targets: AIRollbackTarget[]
+}
+
+export type AIRollbackStatus = "running" | "succeeded" | "failed" | "refused"
+
+/** One attempt to restore a host to the snapshot a session took before
+ *  its first change there. `automatic` ones come from the check after a
+ *  full-auto fix made the host worse. */
+export interface AIRollback {
+  id: number
+  session_id: number | null
+  host_id: number | null
+  alert_event_id: number | null
+  hostname: string
+  snapshot_name: string | null
+  trigger: "automatic" | "manual"
+  requested_by_user_id: number | null
+  status: AIRollbackStatus
+  detail: string | null
+  started_at: string
+  finished_at: string | null
+}
+
+export interface AIRollbackTarget {
+  host_id: number
+  hostname: string
+  /** What a rollback restores: the snapshot from before the first change. */
+  snapshot_name: string | null
+  snapshot_taken_at: string | null
+  /** Why the button is off. Null means it can be pressed — which checks
+   *  everything again before anything happens. */
+  unavailable_reason: string | null
 }
 
 export interface AIUsageDay {
@@ -1211,6 +1254,86 @@ export interface AIUsageSummary {
   days: AIUsageDay[]
 }
 
+/** GET /api/alerts/intake — whether alerts can reach LabDog and what they
+ *  can set off. The token itself is never returned, only whether it is
+ *  set and long enough. */
+export interface AlertIntakeStatus {
+  intake_enabled: boolean
+  webhook_path: string
+  token_set: boolean
+  /** At least 32 characters: below it a webhook alert runs no action and
+   *  no full auto. */
+  token_long_enough_for_full_auto: boolean
+  ai_enabled: boolean
+  auto_investigate_enabled: boolean
+  /** Off: the labdog_ai_automate=true label decides; on: the rules. */
+  full_auto_rules_enabled: boolean
+  /** Rules in force: 1 (the label) while the rules are off. */
+  full_auto_rules: number
+  /** Enabled entries on the list of actions alerts may run. */
+  allowed_actions: number
+  poll_minutes: number
+  last_webhook_alert_at: string | null
+  last_poll_alert_at: string | null
+}
+
+/** GET /api/alerts/hosts/{id} — what alerts may do to one host: the
+ *  actions they may run there, the full-auto rules whose host and group
+ *  conditions allow it, and what holds every alert's full auto back on it
+ *  right now. */
+export interface HostAlerts {
+  ai_enabled: boolean
+  auto_investigate_enabled: boolean
+  rules_enabled: boolean
+  rules: string[]
+  blockers: string[]
+  alert_actions: { id: number; action_key: string; action_name: string | null; scope: string; enabled: boolean }[]
+}
+
+/** One entry on the list of actions alerts may run (/api/alerts/actions). */
+export interface AlertActionEntry {
+  id: number
+  action_key: string
+  target_kind: "host" | "group" | "fleet"
+  target_id: number | null
+  parameters: Record<string, unknown>
+  snapshot_enabled: boolean
+  verify_enabled: boolean
+  auto_rollback: boolean
+  cooldown_minutes: number
+  enabled: boolean
+  created_at: string
+  updated_at: string
+  /** Null when no loaded pack has the action any more. */
+  action_name: string | null
+  pack_name: string | null
+  destructive: boolean
+  target_name: string | null
+  last_run_id: number | null
+  last_run_status: string | null
+  last_run_at: string | null
+}
+
+export type AlertActionEntryIn = Pick<
+  AlertActionEntry,
+  "action_key" | "target_kind" | "target_id" | "parameters" | "snapshot_enabled" | "verify_enabled" | "auto_rollback" | "cooldown_minutes" | "enabled"
+>
+
+/** What one alert's labdog_action label came to. */
+export interface AlertDispatch {
+  id: number
+  alert_action_id: number | null
+  action_key: string
+  action_name: string | null
+  host_id: number | null
+  action_run_id: number | null
+  run_status: string | null
+  outcome: "started" | "not_allowed" | "unknown_action" | "skipped_no_host" | "skipped_token" | "skipped_in_flight" | "skipped_cooldown" | "failed"
+  detail: string | null
+  check_outcome: "fixed" | "not_effective" | "run_failed" | null
+  checked_at: string | null
+}
+
 /** One alert as LabDog received it, deduplicated by fingerprint. */
 export interface AlertEvent {
   id: number
@@ -1233,7 +1356,10 @@ export interface AlertEvent {
    */
   investigation_outcome:
     | "started"
+    | "waiting_on_action"
+    | "handled_by_action"
     | "skipped_disabled"
+    | "skipped_no_label"
     | "skipped_severity"
     | "skipped_resolved"
     | "skipped_duplicate"
@@ -1258,5 +1384,71 @@ export interface AlertEvent {
     | null
   /** The assistant's conclusion — the report's opening, not the transcript. */
   investigation_summary: string | null
+  /**
+   * What the investigation was allowed to change, and — when a safeguard
+   * decided it or downgraded an alert on the full-auto list — why. Null on
+   * rows from before alert remediation, which were all read-only.
+   */
+  investigation_autonomy: AIAutonomyLevel | null
+  investigation_autonomy_note: string | null
+  /**
+   * Whether a full-auto fix worked, as LabDog checked it afterwards. Null
+   * when there was nothing to check — the session could not change the
+   * host, or did not.
+   */
+  remediation_outcome: "checking" | "fixed" | "not_effective" | "made_worse" | "unchecked" | null
+  remediation_detail: string | null
+  remediation_checked_at: string | null
+  /** The latest rollback of this alert's session, if there was one. */
+  rollback_status: AIRollbackStatus | null
+  rollback_detail: string | null
+  /** What the alert's labdog_action label came to: at most one entry. */
+  actions: AlertDispatch[]
   created_at: string
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+export type SMTPTLSMode = "none" | "starttls" | "tls"
+
+/** The mail server. `password_set` is all that ever comes back about the
+ *  password — it is write-only. */
+export interface EmailSettings {
+  enabled: boolean
+  host: string
+  port: number
+  tls_mode: SMTPTLSMode
+  username: string | null
+  password_set: boolean
+  from_address: string
+  updated_at: string | null
+  /** `notifications.public_url` — nothing with a link is sent without it. */
+  public_url: string
+  /** On, complete, and with a public URL: notifications will go out. */
+  ready: boolean
+}
+
+export interface NotificationEventType {
+  key: string
+  label: string
+  description: string
+}
+
+/** One queued message — the outbox row and its delivery record. */
+export interface NotificationDelivery {
+  id: number
+  event_type: string
+  channel: string
+  user_id: number | null
+  recipient: string
+  subject: string
+  status: "pending" | "sent" | "failed"
+  attempts: number
+  next_attempt_at: string
+  last_attempt_at: string | null
+  last_error: string | null
+  created_at: string
+  sent_at: string | null
 }

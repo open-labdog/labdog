@@ -1,6 +1,9 @@
 # Assistant
 
-**Path:** `/assistant`
+**Path:** `/assistant` (Assistant · Sessions; `/assistant?session=<id>`
+opens one session)
+
+![Assistant — a session paused at an approval gate](screenshots/assistant.png)
 
 The Assistant lets you hand an investigation to a connected language model.
 You describe what you want checked; it works through LabDog's own tools,
@@ -9,22 +12,39 @@ log.
 
 It is off by default. Two things must be true before it will do anything:
 a provider is configured on the [AI Providers](#ai-providers) page, and
-`ai.enabled` is set to `1` under [Settings](settings.md).
+`ai.enabled` is set to `1` under [Settings › AI](settings.md#ai). Until
+then the page says which is missing, with a link to fix it.
+
+The page has three columns: your **sessions** on the left, the
+**transcript** and the composer in the middle, and on the right either the
+new session's choices or, once one is open, what it is and what it has
+done — its autonomy and scope, turns / commands / tokens / cost, tool calls
+by verdict, the snapshots it took, and the fleet-wide budget meters for
+today and this month. Below 1024px the columns stack: sessions, transcript,
+composer, then the right-hand column.
 
 ---
 
 ## Starting a session
 
-1. Pick an **autonomy level** (see below).
-2. Tick the **hosts in scope**. The assistant can only touch hosts on this
-   list — it cannot reach anything else, even if you mention it by name in
-   the prompt.
-3. Describe the task and press **Start session** (or Ctrl+Enter).
+**New session** in the head (or `/assistant` with nothing selected)
+shows the choices in the right-hand column:
 
-Output streams in as it is produced. Each command the assistant runs
-appears as a badge showing the command, its safety classification, and a
-one-line result, so you can follow the reasoning without re-reading the
-raw log output it read.
+1. The **provider** — any enabled provider that can run tools. Providers
+   that cannot are named, so their absence is explained.
+2. An **autonomy** level — **Read-only · Approval · Full auto** (see
+   [Autonomy levels](#autonomy-levels)). Above read-only, a **snapshots**
+   box lets you skip the rollback snapshot for this session.
+3. The **hosts in scope**, with a filter. The assistant can only touch
+   hosts on this list — it cannot reach anything else, even if you mention
+   it by name in the prompt.
+
+Then describe the task in the composer and press **Start session** (or
+Ctrl+Enter).
+
+Output streams in as it is produced. Each command the assistant runs is a
+block — its verdict, the command, the host and a one-line result — so you
+can follow the reasoning without re-reading the raw log output it read.
 
 When the session finishes you can ask follow-up questions in the same
 conversation; it keeps the full context of what it already found.
@@ -112,13 +132,22 @@ are actually consuming your budget.
 | Level | What it may do |
 |-------|----------------|
 | **Read-only** (default) | Only commands that report state. Anything that would change a host is refused and reported back. |
-| **Approval required** | Reads run immediately. A change pauses the session and waits for you — see [Approving a change](#approving-a-change). |
+| **Approval required** (*Approval* on the switch) | Reads run immediately. A change pauses the session and waits for you — see [Approving a change](#approving-a-change). |
 | **Full auto** | May change hosts on its own. |
 
 A command's classification comes from parsing the command, not from what
 the model says it does. Anything LabDog does not recognise as read-only is
 treated as a change, so an unfamiliar command is never run unsupervised at
 the read-only level.
+
+What counts as read-only is a list of commands, and of the subcommands and
+options that only read: `docker ps` and `docker logs` but not `docker rm`,
+`systemctl status` but not `systemctl restart`, `curl` for a GET or HEAD
+request but not one that posts data or saves a file. The list ships with
+LabDog in `backend/app/ai/command_policy.yaml`, and the file explains its
+own format. When a session is refused a command, the refusal names the
+read-only forms of that command, so the assistant can usually find one that
+answers the same question.
 
 **A denylist applies at every level, including full auto.** Commands that
 destroy data or take a host off the network — `rm -rf /`, `mkfs`, writing
@@ -169,8 +198,9 @@ A few things worth knowing:
   question, so there is nothing to approve — it is refused outright.
 
 Sessions waiting on you are listed in a banner at the top of the Assistant
-page, so a scheduled run that paused overnight is not buried in the session
-list.
+page, counted on the Assistant zone's rail badge, and queued in the
+[Overview's Pending lane](dashboard.md#pending), so a scheduled run that
+paused overnight is not buried in the session list.
 
 ---
 
@@ -213,6 +243,38 @@ them off instance-wide cannot be undone per session.
 Hosts with no VM mapping — bare metal, unmapped containers — are changed
 without a snapshot either way. That is deliberate: refusing them would
 make write autonomy useless on exactly the hosts most likely to need it.
+
+### Rolling back
+
+A session that changed a host shows **Roll back** for it in the right
+column. It restores the snapshot taken before the session's **first**
+change there — never a later one, which would leave the earlier changes
+in place and call them undone. Proxmox restores the disk and LabDog
+starts the machine, waits for SSH to answer, and marks the host out of
+sync. The machine restarts, and **everything written on it since the
+snapshot is lost**, not only the session's changes — the dialog says so
+before anything happens.
+
+It is refused, with the reason, while the session is still running, while
+LabDog's own sync, action run or another rollback is working on the host,
+once that host has already been rolled back for this session, when the
+snapshot has expired or was never taken before the first change, when a
+later rollback of the host went back past this snapshot — restoring it
+would bring back what that rollback undid — and on the machine LabDog
+itself runs on, where the rollback would stop LabDog with nothing left to
+start the machine again. The button is greyed out with the same reason.
+Every rollback, refused ones included, is listed under the button and in
+the audit log.
+
+While it runs, the rollback holds the host the way a sync does: syncs and
+action runs for the host wait, and run after it. On ZFS storage, which
+can only restore a VM's newest snapshot, LabDog first deletes the
+session's own later snapshots; when a newer snapshot is anyone else's, it
+refuses without deleting anything.
+
+Full-auto alert sessions are also rolled back without anyone asking when
+the fix made the host worse — see
+[Checking the fix](alerts.md#checking-the-fix-and-rolling-back).
 
 One gap to know about: deleting a session removes the record of any
 snapshot it took, so the sweep can no longer find it. The names are
@@ -328,7 +390,11 @@ Two further settings apply only to approvals:
 
 ## AI Providers
 
-**Path:** `/ai-providers`
+**Path:** `/ai-providers` (Settings › AI › **Manage providers…**)
+
+Each provider row shows its name, type, model, pricing and whether it keeps
+data local or sends it **off-site**, with **test**, **edit** and **delete** (which
+asks first). **Add provider…** opens the form.
 
 Three kinds of provider are supported:
 
@@ -553,17 +619,17 @@ which is the true cost of a model you host yourself. A preset for a paid
 hosted model deliberately leaves the rate fields alone rather than guessing —
 a stale figure that looks authoritative is worse than a blank one.
 
-Every field with a small **i** beside it explains itself when clicked,
+Fields with a **why** under them explain themselves when opened,
 including what separates input from output cost and how the per-provider cap
 relates to the global budgets.
 
-The **Usage and budget** panel shows spend today and this month against
+The **usage and budget** panel shows spend today and this month against
 your limits, plus a per-day breakdown.
 
 | Setting | Meaning |
 |---------|---------|
-| `ai.budget_daily_usd` | Maximum spend per day (`0` = unlimited) |
-| `ai.budget_monthly_usd` | Maximum spend per calendar month (`0` = unlimited) |
+| `ai.budget_daily` | Maximum spend per day (`0` = unlimited) |
+| `ai.budget_monthly` | Maximum spend per calendar month (`0` = unlimited) |
 | `ai.budget_warn_pct` | Warn once this percentage of a budget is spent |
 | Per-provider **Monthly cap** | A ceiling for one provider, useful when a free local model and a paid one are both configured |
 

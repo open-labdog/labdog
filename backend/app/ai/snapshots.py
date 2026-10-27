@@ -70,9 +70,6 @@ async def resolve_target(db: AsyncSession, host_id: int) -> SnapshotTarget | Non
     differently from the code that took the snapshots would delete the
     wrong ones, or nothing.
     """
-    from app.crypto.encryption import decrypt_ssh_key
-    from app.crypto.key_management import get_master_key
-    from app.proxmox.client import ProxmoxClient
     from app.proxmox.models import ProxmoxNode
     from app.proxmox.vm_mapping import VMMapping
 
@@ -91,18 +88,26 @@ async def resolve_target(db: AsyncSession, host_id: int) -> SnapshotTarget | Non
             f"longer configured in LabDog."
         )
 
-    token_secret = decrypt_ssh_key(node.encrypted_token_secret, get_master_key())
     return SnapshotTarget(
-        client=ProxmoxClient(
-            api_url=node.api_url,
-            token_id=node.token_id,
-            token_secret=token_secret,
-            verify_ssl=node.verify_ssl,
-            ca_cert_pem=node.ca_cert_pem,
-        ),
+        client=client_for(node),
         pve_node=mapping.pve_node_name,
         vmid=mapping.vmid,
         vm_type=mapping.vm_type,
+    )
+
+
+def client_for(node: Any) -> Any:
+    """An API client for a configured ``ProxmoxNode``."""
+    from app.crypto.encryption import decrypt_ssh_key
+    from app.crypto.key_management import get_master_key
+    from app.proxmox.client import ProxmoxClient
+
+    return ProxmoxClient(
+        api_url=node.api_url,
+        token_id=node.token_id,
+        token_secret=decrypt_ssh_key(node.encrypted_token_secret, get_master_key()),
+        verify_ssl=node.verify_ssl,
+        ca_cert_pem=node.ca_cert_pem,
     )
 
 

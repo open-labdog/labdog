@@ -554,10 +554,107 @@ class TestScanConfigsAPI:
         config_id = create_resp.json()["id"]
 
         with patch("app.tasks.celery_app.send_task") as mock_send:
+            mock_send.return_value.id = "task-123"
             resp = await superuser_client.post(f"/api/scans/{config_id}/run")
 
         assert resp.status_code == 202
-        mock_send.assert_called_once_with("scans.run_config", args=[config_id])
+        assert resp.json() == {"queued": True, "task_id": "task-123"}
+        # A manual run, so dismissed hosts come back (BUG-112).
+        mock_send.assert_called_once_with(
+            "scans.run_config", args=[config_id], kwargs={"is_manual": True}
+        )
+
+    async def test_run_now_on_disabled_config_returns_409(self, superuser_client, db):
+        from unittest.mock import patch
+
+        key = await create_ssh_key(db)
+        create_resp = await superuser_client.post(
+            "/api/scans",
+            json={
+                "name": "runnow-disabled",
+                "cidrs": ["10.0.9.0/24"],
+                "ssh_key_id": key.id,
+                "interval_minutes": 60,
+                "enabled": False,
+            },
+        )
+        config_id = create_resp.json()["id"]
+
+        with patch("app.tasks.celery_app.send_task") as mock_send:
+            resp = await superuser_client.post(f"/api/scans/{config_id}/run")
+
+        assert resp.status_code == 409
+        mock_send.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("state", "result", "expected"),
+        [
+            ("PENDING", None, {"status": "pending"}),
+            ("STARTED", None, {"status": "pending"}),
+            (
+                "SUCCESS",
+                {"hosts_added": 2, "hosts_pending": 1, "config_id": None},
+                {"status": "done", "hosts_added": 2, "hosts_pending": 1},
+            ),
+            (
+                "SUCCESS",
+                {"hosts_added": 0, "hosts_pending": 0, "skipped": True, "config_id": None},
+                {"status": "skipped"},
+            ),
+            (
+                "FAILURE",
+                RuntimeError("ssh key missing"),
+                {"status": "error", "error": "ssh key missing"},
+            ),
+        ],
+    )
+    async def test_run_status(self, superuser_client, db, state, result, expected):
+        from unittest.mock import MagicMock, patch
+
+        key = await create_ssh_key(db)
+        create_resp = await superuser_client.post(
+            "/api/scans",
+            json={
+                "name": "runstatus-scan",
+                "cidrs": ["10.0.9.0/24"],
+                "ssh_key_id": key.id,
+                "interval_minutes": 60,
+            },
+        )
+        config_id = create_resp.json()["id"]
+        if isinstance(result, dict):
+            result["config_id"] = config_id
+
+        fake = MagicMock(state=state, result=result, info=result)
+        with patch("celery.result.AsyncResult", return_value=fake):
+            resp = await superuser_client.get(f"/api/scans/{config_id}/runs/task-123")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        for k, v in expected.items():
+            assert body[k] == v
+
+    async def test_run_status_rejects_task_of_another_config(self, superuser_client, db):
+        from unittest.mock import MagicMock, patch
+
+        key = await create_ssh_key(db)
+        create_resp = await superuser_client.post(
+            "/api/scans",
+            json={
+                "name": "runstatus-other",
+                "cidrs": ["10.0.9.0/24"],
+                "ssh_key_id": key.id,
+                "interval_minutes": 60,
+            },
+        )
+        config_id = create_resp.json()["id"]
+
+        result = {"hosts_added": 1, "hosts_pending": 0, "config_id": config_id + 1}
+        fake = MagicMock(state="SUCCESS", result=result, info=result)
+        with patch("celery.result.AsyncResult", return_value=fake):
+            resp = await superuser_client.get(f"/api/scans/{config_id}/runs/task-123")
+
+        assert resp.status_code == 404
 
     async def test_create_rejects_loopback_cidr(self, superuser_client, db):
         key = await create_ssh_key(db)

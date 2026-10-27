@@ -266,6 +266,24 @@ class DismissResponse(BaseModel):
     dismissed: int
 
 
+class ScanRunQueued(BaseModel):
+    queued: bool
+    task_id: str
+
+
+class ScanRunStatus(BaseModel):
+    """Outcome of one queued run, read from its Celery result.
+
+    ``pending`` covers both waiting for a worker or a scan slot and running;
+    ``skipped`` means the schedule was disabled or deleted before it ran.
+    """
+
+    status: Literal["pending", "done", "skipped", "error"]
+    hosts_added: int = 0
+    hosts_pending: int = 0
+    error: str | None = None
+
+
 # ---------------------------------------------------------------------------
 # Summary schema
 # ---------------------------------------------------------------------------

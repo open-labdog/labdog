@@ -4,14 +4,14 @@ Covers what the older `test_gitops_workflow.py` doesn't:
 
 * **Multi-module YAML** — every section in `LabDogGroupYAML` (firewall,
   services, packages, hosts entries, cron jobs, users, linux groups,
-  resolver, workflow) on a single push, verified end-to-end against
+  resolver) on a single push, verified end-to-end against
   the live import dispatcher.
 * **`_global.yaml`** — drift interval + scan-config rows imported
   through the global dispatcher, with name-based ssh_key /
   default_groups resolution exercised.
 * **Webhook receiver** — full HMAC path: build a GitHub-shaped
   payload, sign it with the right secret, POST to
-  `/webhooks/github`, intercept the celery dispatch and invoke
+  `/api/webhooks/github`, intercept the celery dispatch and invoke
   the task body inline so we exercise webhook → task → import →
   per-host sync trigger in one pass.
 
@@ -111,13 +111,6 @@ resolver:
   search_domains:
     - e2e.local
   resolver_type: resolv_conf
-
-workflow:
-  enabled: false
-  schedule_cron: "0 3 * * 0"
-  batch_size: 1
-  pre_update_snapshot: true
-  auto_rollback: true
   auto_reboot: true
   action_key: linux-upgrade
   action_parameters: {}
@@ -169,16 +162,6 @@ resolver:
     - 1.1.1.1
   search_domains: []
   resolver_type: resolv_conf
-
-workflow:
-  enabled: true
-  schedule_cron: "0 4 * * 0"
-  batch_size: 2
-  pre_update_snapshot: true
-  auto_rollback: true
-  auto_reboot: true
-  action_key: linux-upgrade
-  action_parameters: {}
 """
 
 
@@ -314,7 +297,6 @@ class TestMultiModuleGroupYAML:
                 "cron_jobs",
                 "resolver",
                 "users",
-                "workflow",
             } <= modules_seen
 
             # Per-table assertions.
@@ -374,9 +356,8 @@ class TestMultiModuleGroupYAML:
             assert resolver is not None
             assert list(resolver.nameservers) == ["1.1.1.1", "9.9.9.9"]
 
-            # Workflow imports are now exercised through scheduled_actions
-            # in test_gitops_scheduled_actions.py — the legacy `workflow:`
-            # block is dropped from this fixture.
+            # Scheduled actions, which replaced the legacy `workflow:`
+            # block, are covered by test_gitops_scheduled_actions.py.
 
             await db.refresh(group)
             assert group.gitops_status == GitOpsStatus.synced
@@ -683,7 +664,7 @@ class TestWebhookReceiver:
             async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as ac:
                 with patch("app.api.webhooks.celery_app.send_task", new=fake_send_task):
                     resp = await ac.post(
-                        "/webhooks/github",
+                        "/api/webhooks/github",
                         content=body,
                         headers={
                             "Content-Type": "application/json",
@@ -771,7 +752,7 @@ class TestWebhookReceiver:
             transport = ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as ac:
                 resp = await ac.post(
-                    "/webhooks/github",
+                    "/api/webhooks/github",
                     content=body,
                     headers={
                         "Content-Type": "application/json",
@@ -814,7 +795,7 @@ class TestWebhookReceiver:
             transport = ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as ac:
                 resp = await ac.post(
-                    "/webhooks/github",
+                    "/api/webhooks/github",
                     content=body,
                     headers={
                         "Content-Type": "application/json",

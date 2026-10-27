@@ -3,10 +3,13 @@
 Replaces the old ``app.tasks.workflow_schedule.check_scheduled_workflows``
 task. RedBeat ticks ``check_due`` every 60 s; the task walks every
 enabled ``ScheduledAction`` row, computes whether each is due since
-``last_dispatched_at`` (falling back to ``created_at``), and dispatches
-an ``ActionRun`` via the existing ``app.tasks.action_orchestrator
-.run_action`` Celery task. The orchestrator handles per-host fork-out
-and fleet target resolution (C5).
+``ScheduledAction.walk_start()`` (the later of ``last_dispatched_at``
+and ``schedule_changed_at``, falling back to ``created_at``), and
+dispatches an ``ActionRun`` via the existing
+``app.tasks.action_orchestrator.run_action`` Celery task. The
+orchestrator handles per-host fork-out and fleet target resolution
+(C5). Cron expressions are read in the ``scheduling.timezone``
+setting's zone; ``app.cron_walk`` has the daylight-saving rules.
 
 Idempotency:
 
@@ -38,12 +41,12 @@ def check_due() -> dict:
 
 
 async def _check_due_async() -> dict:
-    from croniter import croniter
     from sqlalchemy import select
 
-    from app.actions.registry import ACTION_REGISTRY
+    from app.actions.registry import ACTION_REGISTRY, ensure_registry_current
     from app.actions.run_target import describe_target
     from app.audit.logger import log_action
+    from app.cron_walk import get_schedule_timezone, next_fire_time
     from app.db import task_session
     from app.models.action_run import ActionRun
     from app.models.scheduled_action import ScheduledAction
@@ -56,6 +59,12 @@ async def _check_due_async() -> dict:
     now = datetime.now(UTC)
 
     async with task_session() as db:
+        # Before any lookup below. This runs on whichever pool process the
+        # tick lands on, and one that had not rebuilt since it was forked
+        # held the built-ins alone: every pack schedule was skipped
+        # as unknown until a tick happened to land elsewhere (BUG-105).
+        await ensure_registry_current(db)
+        tz = await get_schedule_timezone(db)
         rows = (
             (
                 await db.execute(
@@ -71,12 +80,7 @@ async def _check_due_async() -> dict:
 
         for sa in rows:
             try:
-                reference = sa.last_dispatched_at or sa.created_at
-                if reference.tzinfo is None:
-                    reference = reference.replace(tzinfo=UTC)
-                next_run_at = croniter(sa.schedule_cron, reference).get_next(datetime)
-                if next_run_at.tzinfo is None:
-                    next_run_at = next_run_at.replace(tzinfo=UTC)
+                next_run_at = next_fire_time(sa.schedule_cron, sa.walk_start(), tz)
                 if now < next_run_at:
                     continue
 
@@ -118,8 +122,10 @@ async def _check_due_async() -> dict:
                 action = ACTION_REGISTRY.get(sa.action_key)
                 if action is None:
                     # The pack was disabled or removed; the schedule
-                    # outlived its action. Log and move on — operators
-                    # see this in the row's UI as "action not found".
+                    # outlived its action — the registry was brought up
+                    # to date above, so the miss is real. Log and move on
+                    # — operators see this in the row's UI as "action not
+                    # found".
                     logger.warning(
                         "scheduled_action %d references unknown action %r; skipping",
                         sa.id,

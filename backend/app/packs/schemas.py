@@ -38,8 +38,6 @@ def _validate_name(v: str) -> str:
     v = v.strip()
     if not v:
         raise ValueError("name must not be empty")
-    if v == "bundled":
-        raise ValueError("'bundled' is reserved for the built-in pack")
     return v
 
 
@@ -309,15 +307,14 @@ class ClaimAllKeysResponse(BaseModel):
 class ActionResolutionRequest(BaseModel):
     """Body for ``PUT /api/action-resolutions/{action_key}``.
 
-    ``pack_id`` chooses the winner — ``None`` means bundled. The
-    server validates the chosen pack actually contributes the key
-    before persisting; otherwise the operator could pin a pack that
-    doesn't even define the action.
+    ``pack_id`` chooses the winner. The server validates the chosen
+    pack actually contributes the key before persisting; otherwise the
+    operator could pin a pack that doesn't even define the action.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    pack_id: int | None = None
+    pack_id: int
 
 
 class ActionResolutionPackOut(BaseModel):
@@ -325,8 +322,7 @@ class ActionResolutionPackOut(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    pack_id: int | None
-    """``None`` for bundled — bundled has no DB row."""
+    pack_id: int
     pack_name: str
 
 

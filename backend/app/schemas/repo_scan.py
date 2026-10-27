@@ -9,8 +9,6 @@ maps what the wizard needs.
 
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import BaseModel, ConfigDict
 
 
@@ -38,9 +36,8 @@ class DetectedGitopsFileOut(BaseModel):
 
 class KeyOwnerOut(BaseModel):
     key: str
-    source: Literal["bundled", "db_pack"]
     pack_name: str
-    pack_id: int | None = None
+    pack_id: int
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -97,15 +94,15 @@ class ActivateKeyResolution(BaseModel):
     """One operator decision for an action key contested by activation.
 
     The wizard surfaces a per-key radio for every key contributed by
-    a newly-activated pack that collides with an existing pack
-    (including bundled). ``winner`` identifies which pack should win
+    a newly-activated pack that collides with an existing pack.
+    ``winner`` identifies which pack should win
     the key on the rebuilt registry.
 
     ``winner_pack_path`` references one of the submitted ``packs[].path``
     entries — the activation endpoint resolves the path to the
     just-inserted pack id and writes an ``action_resolution`` row.
-    Mutually exclusive with the bundled / existing-pack winner forms;
-    exactly one of the four winner fields must be set.
+    Mutually exclusive with ``winner_existing_pack_id``; exactly one of
+    the two must be set.
     """
 
     action_key: str
@@ -113,8 +110,6 @@ class ActivateKeyResolution(BaseModel):
     """Path inside the submitted activation set whose pack wins."""
     winner_existing_pack_id: int | None = None
     """An existing DB pack wins (operator kept the prior winner)."""
-    winner_is_bundled: bool = False
-    """Bundled wins — emits a row with ``pack_id NULL``."""
 
 
 class ActivateGitopsBinding(BaseModel):

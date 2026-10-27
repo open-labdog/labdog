@@ -404,7 +404,8 @@ async def _drift_service(host_id: int, hms: HostModuleStatus, db: AsyncSession) 
         hms.error_message = None
         return
 
-    # collected_state from list_all_services: [{"unit", "active_state", "sub_state", ...}]
+    # collected_state from list_all_services:
+    # [{"unit", "active_state", "sub_state", ..., "enabled"}]
     # Build a lookup of service states from the raw systemctl output
     svc_map: dict[str, dict] = {}
     for entry in hms.collected_state:
@@ -421,7 +422,15 @@ async def _drift_service(host_id: int, hms: HostModuleStatus, db: AsyncSession) 
                 active_state = "running"
             else:
                 active_state = "stopped"
-            enabled = raw.get("enabled", raw.get("sub_state") == "enabled")
+            # Enablement is a unit-file state, not a runtime one: sub_state
+            # is running/exited/dead and never "enabled", so reading it there
+            # flagged every enabled service as drifted, and no sync could
+            # clear that (BUG-87). State collected before list_all_services
+            # recorded enablement has nothing to compare, so it is not
+            # reported as a mismatch.
+            enabled = raw.get("enabled")
+            if enabled is None:
+                enabled = svc.enabled
         else:
             active_state = "stopped"
             enabled = False

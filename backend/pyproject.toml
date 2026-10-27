@@ -45,7 +45,11 @@ dependencies = [
     # repository URLs and refs to GitPython in app/gitops/git_service.py and
     # app/packs/, so option-forwarding and argument-injection classes in this
     # package are directly reachable rather than theoretical.
-    "gitpython>=3.1.59",
+    #
+    # 3.2.1 adds CVE-2026-110855..110859 and CVE-2026-114145 (arbitrary
+    # code execution via improper submodule path validation; HIGH in
+    # trivy).
+    "gitpython>=3.2.1",
     # asyncssh>=2.23.1 clears CVE-2026-45309 (a server-role AuthorizedKeysFile
     # traversal; LabDog is a client, so not directly exposed, but kept current).
     "asyncssh>=2.23.1",

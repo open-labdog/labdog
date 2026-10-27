@@ -257,7 +257,8 @@ async def grafana_alerts_webhook(
     """Receive alerts from a Grafana contact point.
 
     Records every alert in the payload and returns immediately. Deciding
-    whether any of them is worth an AI investigation happens in a Celery
+    what each one sets off — the action its labdog_action label names,
+    an AI investigation, or nothing — happens in a Celery
     task, per alert — Grafana retries a webhook that does not answer
     quickly, and doing policy work inline would turn a slow provider into
     duplicate notifications.
@@ -272,7 +273,7 @@ async def grafana_alerts_webhook(
     if not _authorized(request):
         raise HTTPException(status_code=401, detail="Invalid or missing webhook token")
 
-    if not int(await get_setting_typed("ai.alert_intake_enabled", db)):
+    if not int(await get_setting_typed("alerts.intake_enabled", db)):
         return {"status": "ignored", "reason": "alert intake is disabled"}
 
     try:
@@ -290,16 +291,19 @@ async def grafana_alerts_webhook(
         logger.info("grafana-alerts: payload contained no usable alerts")
         return {"status": "accepted", "recorded": 0, "investigating": 0}
 
+    from app.notifications.service import notify_alert_fired
+
     new_ids: list[int] = []
     for alert in alerts:
         event, created = await record(db, alert, source="grafana_webhook")
         if created and alert.is_firing:
             new_ids.append(event.id)
+            await notify_alert_fired(db, event)
     await db.commit()
 
     for event_id in new_ids:
         celery_app.send_task(
-            "app.tasks.ai_alerts.investigate_alert", kwargs={"alert_event_id": event_id}
+            "app.tasks.alert_handling.handle_alert", kwargs={"alert_event_id": event_id}
         )
 
     logger.info(

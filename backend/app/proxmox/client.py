@@ -272,6 +272,35 @@ class ProxmoxClient:
             f"/api2/json/nodes/{pve_node}/{guest}/{vmid}/snapshot/{name}",
         )
 
+    async def list_snapshots(
+        self, pve_node: str, vmid: int, *, vm_type: str = "qemu"
+    ) -> list[dict]:
+        """Return a VM/container's snapshots.
+
+        Each entry has ``name`` and, for a real snapshot, ``snaptime``
+        (epoch seconds) and ``parent``. The list includes a pseudo-entry
+        named ``current`` for the running state.
+
+        GET /api2/json/nodes/{pve_node}/{vm_type}/{vmid}/snapshot
+        """
+        guest = "lxc" if vm_type == "lxc" else "qemu"
+        return await self._request("GET", f"/api2/json/nodes/{pve_node}/{guest}/{vmid}/snapshot")
+
+    async def get_vm_config(self, pve_node: str, vmid: int, *, vm_type: str = "qemu") -> dict:
+        """Return a VM/container's configuration, disks included.
+
+        GET /api2/json/nodes/{pve_node}/{vm_type}/{vmid}/config
+        """
+        guest = "lxc" if vm_type == "lxc" else "qemu"
+        return await self._request("GET", f"/api2/json/nodes/{pve_node}/{guest}/{vmid}/config")
+
+    async def list_node_storage(self, pve_node: str) -> list[dict]:
+        """Return the storages the token can see on a node, with their ``type``.
+
+        GET /api2/json/nodes/{pve_node}/storage
+        """
+        return await self._request("GET", f"/api2/json/nodes/{pve_node}/storage")
+
     async def rollback_snapshot(
         self, pve_node: str, vmid: int, name: str, *, vm_type: str = "qemu"
     ) -> str:

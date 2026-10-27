@@ -4,7 +4,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
 test.describe("Toast notifications (Sonner)", () => {
   test("Toaster component is rendered in DOM", async ({ page }) => {
-    await page.goto("/dashboard")
+    await page.goto("/overview")
 
     // Sonner v2 renders a <section> wrapper element always (even with no toasts).
     // The <ol data-sonner-toaster> only mounts when there are active toasts.

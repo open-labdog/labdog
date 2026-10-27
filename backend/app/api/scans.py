@@ -25,6 +25,8 @@ from app.schemas.scans import (
     ScanConfigCreate,
     ScanConfigResponse,
     ScanConfigUpdate,
+    ScanRunQueued,
+    ScanRunStatus,
 )
 
 router = APIRouter(prefix="/scans", tags=["scans"])
@@ -190,28 +192,6 @@ async def delete_scan_config(
     config = await _get_config_or_404(config_id, db)
     await db.delete(config)
     await db.commit()
-
-
-# ---------------------------------------------------------------------------
-# Run now
-# ---------------------------------------------------------------------------
-
-
-@router.post("/{config_id}/run", status_code=202)
-async def run_scan_config_now(
-    config_id: int,
-    _: User = Depends(current_active_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Enqueue an immediate run of the scan config, bypassing the schedule."""
-    # Verify it exists first.
-    await _get_config_or_404(config_id, db)
-
-    # Import at call time to keep the fast-path import chain clean.
-    from app.tasks import celery_app  # noqa: PLC0415
-
-    celery_app.send_task("scans.run_config", args=[config_id])
-    return {"status": "queued", "config_id": config_id}
 
 
 # ---------------------------------------------------------------------------
@@ -410,7 +390,7 @@ async def dismiss_pending_hosts(
     return DismissResponse(dismissed=dismissed)
 
 
-@router.post("/{config_id}/run", status_code=202)
+@router.post("/{config_id}/run", status_code=202, response_model=ScanRunQueued)
 async def run_scan_now(
     config_id: int,
     _: User = Depends(current_active_user),
@@ -422,11 +402,53 @@ async def run_scan_now(
     previously dismissed IPs will appear in the pending queue again if
     they are still reachable.  Useful when an operator changes their mind
     about a dismissed host.
+
+    Returns the Celery task id; ``GET /{config_id}/runs/{task_id}`` reports
+    this run's outcome, which the schedule's ``last_run_*`` fields cannot
+    tell apart from a scheduled run of the same config.
     """
     config = await _get_config_or_404(config_id, db)
     if not config.enabled:
         raise HTTPException(status_code=409, detail="Scan config is disabled")
     from app.tasks import celery_app  # noqa: PLC0415
 
-    celery_app.send_task("scans.run_config", args=[config_id], kwargs={"is_manual": True})
-    return {"queued": True}
+    task = celery_app.send_task("scans.run_config", args=[config_id], kwargs={"is_manual": True})
+    return ScanRunQueued(queued=True, task_id=task.id)
+
+
+@router.get("/{config_id}/runs/{task_id}", response_model=ScanRunStatus)
+async def get_scan_run_status(
+    config_id: int,
+    task_id: str,
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Report the outcome of a run queued by ``POST /{config_id}/run``.
+
+    Celery reports an unknown or expired task id as pending too, so a
+    caller has to stop polling on its own after a while.
+    """
+    await _get_config_or_404(config_id, db)
+    from celery.result import AsyncResult  # noqa: PLC0415
+
+    from app.tasks import celery_app  # noqa: PLC0415
+
+    result = AsyncResult(task_id, app=celery_app)
+    state = result.state
+    if state == "SUCCESS":
+        data = result.result if isinstance(result.result, dict) else {}
+        # The task id is only meaningful for the config it was queued for.
+        if data.get("config_id") != config_id:
+            raise HTTPException(status_code=404, detail="Run not found for this scan config")
+        if data.get("skipped"):
+            return ScanRunStatus(status="skipped")
+        return ScanRunStatus(
+            status="done",
+            hosts_added=data.get("hosts_added", 0),
+            hosts_pending=data.get("hosts_pending", 0),
+        )
+    if state in ("FAILURE", "REVOKED"):
+        return ScanRunStatus(
+            status="error", error=str(result.info) if result.info else "Scan failed"
+        )
+    return ScanRunStatus(status="pending")

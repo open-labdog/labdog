@@ -272,7 +272,7 @@ class TestWhatTheAlertRowSaysAboutItsInvestigation:
     """
 
     def test_the_conclusion_is_the_reports_first_paragraph(self) -> None:
-        from app.api.ai import _conclusion
+        from app.api.alerts import _conclusion
 
         report = (
             "**Verdict: false positive** — the host is healthy.\n\n"
@@ -285,7 +285,7 @@ class TestWhatTheAlertRowSaysAboutItsInvestigation:
     def test_a_long_conclusion_is_cut_on_a_word_and_marked(self) -> None:
         """A hard character cut mid-word reads as the assistant trailing
         off rather than as the UI abbreviating."""
-        from app.api.ai import _SUMMARY_CHARS, _conclusion
+        from app.api.alerts import _SUMMARY_CHARS, _conclusion
 
         summary = _conclusion("word " * 200)
 
@@ -298,7 +298,7 @@ class TestWhatTheAlertRowSaysAboutItsInvestigation:
     def test_nothing_to_quote_yields_nothing(self, report) -> None:
         """A running session has no report yet. Returning "" would put an
         empty quote block on the row."""
-        from app.api.ai import _conclusion
+        from app.api.alerts import _conclusion
 
         assert _conclusion(report) is None
 
@@ -311,7 +311,7 @@ class TestWhatTheAlertRowSaysAboutItsInvestigation:
         an operator nothing. Found against real reports — every fixture
         here happened to be of the first kind.
         """
-        from app.api.ai import _conclusion
+        from app.api.alerts import _conclusion
 
         report = "## Summary\n\n**Verdict:** the host is healthy.\n\nDetail follows."
 
@@ -319,6 +319,6 @@ class TestWhatTheAlertRowSaysAboutItsInvestigation:
 
     def test_a_report_that_is_only_headings_yields_nothing(self) -> None:
         """Better an empty row than one quoting a heading back."""
-        from app.api.ai import _conclusion
+        from app.api.alerts import _conclusion
 
         assert _conclusion("## Summary\n\n### Detail") is None

@@ -117,6 +117,38 @@ class TestParking:
         assert rows[0].approval_id is not None
         assert rows[0].status == "proposed", "deferred is not the same as blocked"
 
+    @pytest.mark.parametrize("named", [987_654, "other", True])
+    async def test_a_host_outside_the_targets_is_not_recorded(
+        self, db, make_session, named
+    ) -> None:
+        """The model names the host, and the request keeps it in a foreign
+        key. An id that is not a host failed the insert, and the session
+        with it; one that is a host but not a target would be refused when
+        it ran. Either way the request is kept, without a host."""
+        host = await _host(db)
+        other = await _host(db)
+        session = await make_session(
+            "Fix nginx.", autonomy_level="approval", target_host_ids=[host.id]
+        )
+        host_id = other.id if named == "other" else named
+
+        approval = await approvals.park(
+            db,
+            session,
+            tool_name="run_ssh_command",
+            arguments={"host_id": host_id, "command": RESTART},
+            verdict=classify_command(RESTART),
+        )
+        await db.commit()
+
+        assert approval.target_host_id is None
+        [record] = (
+            (await db.execute(select(AIToolCall).where(AIToolCall.session_id == session.id)))
+            .scalars()
+            .all()
+        )
+        assert record.target_host_id is None
+
 
 class TestTheGateDecidesWhatCanPark:
     def test_a_denylisted_command_never_parks(self) -> None:

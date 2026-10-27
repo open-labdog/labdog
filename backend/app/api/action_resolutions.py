@@ -122,9 +122,10 @@ async def upsert_action_resolution(
     user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Set ``action_resolution[action_key] = pack_id`` (or NULL=bundled).
+    """Set ``action_resolution[action_key] = pack_id``.
 
-    Validates that the chosen pack actually contributes the key — pins
+    Re-sending the current winner confirms a frozen pin: the row gets
+    the operator as its decider. Validates that the chosen pack actually contributes the key — pins
     pointing at packs that don't define the action are nonsensical.
     Triggers a registry rebuild on success.
     """
@@ -135,7 +136,7 @@ async def upsert_action_resolution(
             detail=f"action key {action_key!r} is not contributed by any pack",
         )
     if not any(c.pack_id == body.pack_id for c in contribs):
-        choices = sorted({c.pack_id for c in contribs}, key=lambda v: (v is None, v))
+        choices = sorted({c.pack_id for c in contribs})
         raise HTTPException(
             status_code=409,
             detail={
@@ -149,13 +150,12 @@ async def upsert_action_resolution(
                 ),
             },
         )
-    if body.pack_id is not None:
-        exists = await db.scalar(select(ActionPack.id).where(ActionPack.id == body.pack_id))
-        if exists is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"pack_id={body.pack_id} does not exist",
-            )
+    exists = await db.scalar(select(ActionPack.id).where(ActionPack.id == body.pack_id))
+    if exists is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"pack_id={body.pack_id} does not exist",
+        )
 
     existing = (
         await db.execute(select(ActionResolution).where(ActionResolution.action_key == action_key))

@@ -26,6 +26,7 @@ from app.api.action_resolutions import router as action_resolutions_router
 from app.api.actions import router as actions_router
 from app.api.admin_users import router as admin_users_router
 from app.api.ai import router as ai_router
+from app.api.alerts import router as alerts_router
 from app.api.audit import router as audit_router
 from app.api.auth_setup import router as auth_setup_router
 from app.api.ca_cert_actions import router as ca_cert_actions_router
@@ -47,6 +48,7 @@ from app.api.linux_groups import router as linux_groups_router
 from app.api.linux_users import router as linux_users_router
 from app.api.metrics import router as metrics_router
 from app.api.metrics import status_router as metrics_status_router
+from app.api.notifications import router as notifications_router
 from app.api.package_sync import router as package_sync_router
 from app.api.packages import router as packages_router
 from app.api.proxmox_discovery import router as proxmox_discovery_router
@@ -492,7 +494,14 @@ async def _sync_packs_then_reload() -> None:
     Nothing here is on the critical path: the registry has already been
     loaded from what is on disk before this starts, so the process is
     serving actions the whole time. This only picks up commits pushed
-    since the last run.
+    since the last run — and, on a container with no volume for the
+    packs, the packs themselves.
+
+    The ``work`` worker does the same at the same moment. Each pack's git
+    run and each registry rebuild is locked across processes, so the two
+    take turns rather than racing: the API's rebuild used to lose that
+    race on the snapshot table, and the API went on serving the bundled
+    pack alone (BUG-96).
     """
     logger = logging.getLogger(__name__)
     try:
@@ -514,8 +523,8 @@ async def _sync_packs_then_reload() -> None:
 async def _lifespan(app: FastAPI):
     """Startup: fold the packs already on disk into the action registry,
     then refresh them from their git remotes in the background. Failures
-    are logged but don't prevent the app from booting — bundled actions
-    are always available."""
+    are logged but don't prevent the app from booting — the built-in
+    actions are always available."""
     logger = logging.getLogger(__name__)
 
     # Warm the settings cache before serving. The synchronous readers used
@@ -544,7 +553,7 @@ async def _lifespan(app: FastAPI):
         async with AsyncSessionLocal() as session:
             await reload_registry_async(session)
     except Exception:
-        logger.exception("action registry load failed; bundled pack only")
+        logger.exception("action registry load failed; built-in actions only")
 
     sync_task = asyncio.create_task(_sync_packs_then_reload())
     try:
@@ -738,6 +747,8 @@ def create_app() -> FastAPI:
     app.include_router(proxmox_discovery_router, prefix="/api")
     app.include_router(grafana_router, prefix="/api")
     app.include_router(ai_router, prefix="/api")
+    app.include_router(alerts_router, prefix="/api")
+    app.include_router(notifications_router, prefix="/api")
     app.include_router(metrics_status_router, prefix="/api")
     app.include_router(ssh_terminal_router)
 

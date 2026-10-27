@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,16 +25,14 @@ from app.packs.repo_scanner import ScanResult
 class KeyOwner:
     """Whoever currently owns a particular action key in the running registry.
 
-    ``source="bundled"`` means the in-image bundled pack
-    (``app.actions.registry.BUNDLED_PACK_NAME``). ``source="db_pack"``
-    means an installed ``ActionPack`` row; ``pack_id`` references the
-    ``ActionPack.id`` so the UI can link to it.
+    ``pack_id`` references the installed ``ActionPack`` row so the UI
+    can link to it, and is what the activation sends back when the
+    operator keeps the current owner.
     """
 
     key: str
-    source: Literal["bundled", "db_pack"]
     pack_name: str
-    pack_id: int | None = None
+    pack_id: int
 
 
 @dataclass(frozen=True)
@@ -84,7 +81,7 @@ async def annotate_scan(db: AsyncSession, result: ScanResult) -> AnnotatedScanRe
 def _existing_key_winners(result: ScanResult) -> dict[str, KeyOwner]:
     # Deferred import: ACTION_REGISTRY pulls in the action subsystem
     # which we don't want at module load.
-    from app.actions.registry import ACTION_REGISTRY, BUNDLED_PACK_NAME
+    from app.actions.registry import ACTION_REGISTRY
 
     scanned_keys: set[str] = set()
     for pack in result.packs:
@@ -93,12 +90,11 @@ def _existing_key_winners(result: ScanResult) -> dict[str, KeyOwner]:
     winners: dict[str, KeyOwner] = {}
     for key in scanned_keys:
         defn = ACTION_REGISTRY.get(key)
-        if defn is None:
+        # An unresolved key has no owner to keep; the activation's own
+        # pick decides it.
+        if defn is None or defn.winning_pack_id is None:
             continue
-        if defn.pack_name == BUNDLED_PACK_NAME:
-            winners[key] = KeyOwner(key=key, source="bundled", pack_name=defn.pack_name)
-        else:
-            winners[key] = KeyOwner(key=key, source="db_pack", pack_name=defn.pack_name)
+        winners[key] = KeyOwner(key=key, pack_name=defn.pack_name, pack_id=defn.winning_pack_id)
     return winners
 
 

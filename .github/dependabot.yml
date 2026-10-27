@@ -10,10 +10,16 @@
 # frontend/package-lock.json; both have their own audit jobs in ci.yml
 # that fail on a vulnerable dependency, which is a stronger signal than a
 # bump PR and one this repo already acts on.
+#
+# Both updates target `dev`, like every other change: `main` takes release
+# PRs only, and its protection blocks anything else. Dependabot reads this
+# file from the default branch (`main`), so a change here takes effect
+# with the release that carries it.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
+    target-branch: dev
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
@@ -30,6 +36,7 @@ updates:
     directories:
       - /
       - /frontend
+    target-branch: dev
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
@@ -37,3 +44,14 @@ updates:
       prefix: "ci"
     labels:
       - dependencies
+    # A new Node major or Python minor changes the runtime under the whole
+    # app, and CI pins the same versions (`node-version: 24`,
+    # `python-version: "3.12"` in ci.yml), so moving either is a deliberate
+    # upgrade of images and CI together — not a base-image bump. (Odd Node
+    # majors never become LTS in any case.) Digest and patch updates of the
+    # pinned lines still come through.
+    ignore:
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]

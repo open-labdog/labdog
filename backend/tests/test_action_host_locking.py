@@ -139,7 +139,7 @@ async def test_action_host_runs_when_no_op_on_host(db, fake_redis):
     runner.events = []
 
     with patch("app.ansible_runtime.runner.run_ansible", return_value=runner):
-        # Use drift_check action which isn't in the bundled registry —
+        # Use drift_check action which isn't in the registry —
         # the per-host path will fail because ACTION_REGISTRY.get returns
         # None, but it'll still pass through claim-or-defer and the
         # finally block. We assert lock plumbing, not pipeline.

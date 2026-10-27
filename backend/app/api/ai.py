@@ -19,13 +19,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import service
 from app.ai.models import (
+    TERMINAL_SESSION_STATUSES,
     AIApprovalRequest,
     AIMessage,
     AIProvider,
+    AIRollback,
     AISession,
     AIToolCall,
     AIUsageDay,
-    AlertEvent,
 )
 from app.ai.providers.base import LLMProviderError
 from app.ai.providers.factory import (
@@ -40,6 +41,9 @@ from app.ai.schemas import (
     AIProviderResponse,
     AIProviderTestResponse,
     AIProviderUpdate,
+    AIRollbackRequest,
+    AIRollbackResponse,
+    AIRollbackTarget,
     AISessionCreate,
     AISessionDetail,
     AISessionMessageRequest,
@@ -63,7 +67,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 SESSION_CHANNEL = "ai.session.{id}"
-TERMINAL_STATES = {"succeeded", "failed", "cancelled"}
+TERMINAL_STATES = frozenset(TERMINAL_SESSION_STATUSES)
 
 
 # ---------------------------------------------------------------------------
@@ -428,7 +432,147 @@ async def get_session(
     detail.messages = [m for m in messages if m.role != "system"]
     detail.tool_calls = list(tool_calls)
     detail.approvals = await _with_snapshot_expectation(db, list(requests))
+    rollbacks = (
+        (
+            await db.execute(
+                select(AIRollback)
+                .where(AIRollback.session_id == session_id)
+                .order_by(AIRollback.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    detail.rollbacks = [AIRollbackResponse.model_validate(r) for r in rollbacks]
+    detail.rollback_targets = await _rollback_targets(db, session, list(tool_calls))
     return detail
+
+
+async def _rollback_targets(
+    db: AsyncSession, session: AISession, tool_calls: list[AIToolCall]
+) -> list[AIRollbackTarget]:
+    """Each host the session changed, with what a rollback would restore.
+
+    The same rules as the endpoint (``remediation.check_rollback``), but
+    answered from the database alone — a page load opens no SSH
+    connections — so pressing the button checks everything again, live.
+    """
+    from app.ai import remediation
+    from app.ai.alert_autonomy import REACHED_HOST
+    from app.models.host import Host
+
+    firsts: dict[int, AIToolCall] = {}
+    for call in tool_calls:
+        if (
+            call.classification == "mutating"
+            and call.status in REACHED_HOST
+            and call.target_host_id is not None
+        ):
+            firsts.setdefault(call.target_host_id, call)
+    if not firsts:
+        return []
+
+    hosts = {
+        h.id: h for h in (await db.execute(select(Host).where(Host.id.in_(list(firsts))))).scalars()
+    }
+    out: list[AIRollbackTarget] = []
+    for host_id, first in firsts.items():
+        host = hosts.get(host_id)
+        if host is None:
+            continue
+        reason = None
+        try:
+            await remediation.check_rollback(db, session=session, host=host, ask=False)
+        except remediation.RollbackRefused as exc:
+            reason = str(exc)
+        out.append(
+            AIRollbackTarget(
+                host_id=host_id,
+                hostname=host.hostname,
+                snapshot_name=first.snapshot_name,
+                snapshot_taken_at=first.started_at if first.snapshot_name else None,
+                unavailable_reason=reason,
+            )
+        )
+    return out
+
+
+@router.post("/sessions/{session_id}/rollback", response_model=AIRollbackResponse, status_code=202)
+async def roll_back_session(
+    session_id: int,
+    payload: AIRollbackRequest,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Restore a host to the snapshot taken before this session changed it.
+
+    Accepted, then carried out by a worker: Proxmox restores the disk, the
+    machine restarts, and LabDog waits for SSH to answer, which takes
+    minutes. Everything that would refuse it is checked here first, so a
+    refusal comes back at once rather than as a failed row later.
+
+    Open to any signed-in user, like approving the change was. The undo
+    is no more privileged than the change it undoes.
+    """
+    from app.ai import remediation
+    from app.ai.alert_autonomy import REACHED_HOST
+    from app.tasks import celery_app
+
+    session = await db.get(AISession, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    host_id = payload.host_id
+    if host_id is None:
+        changed = (
+            (
+                await db.execute(
+                    select(AIToolCall.target_host_id)
+                    .where(
+                        AIToolCall.session_id == session_id,
+                        AIToolCall.classification == "mutating",
+                        AIToolCall.status.in_(REACHED_HOST),
+                        AIToolCall.target_host_id.is_not(None),
+                    )
+                    .distinct()
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not changed:
+            raise HTTPException(status_code=409, detail="This session did not change any host.")
+        if len(changed) > 1:
+            raise HTTPException(
+                status_code=400,
+                detail=f"This session changed {len(changed)} hosts. Say which to roll back.",
+            )
+        host_id = changed[0]
+
+    try:
+        rollback, _plan = await remediation.prepare_rollback(
+            db,
+            session=session,
+            host_id=host_id,
+            trigger="manual",
+            user_id=user.id,
+            alert_event_id=session.alert_event_id,
+        )
+    except remediation.HostBusy as exc:
+        raise HTTPException(
+            status_code=409, detail=f"{exc}. Try again when it has finished."
+        ) from exc
+    except remediation.RollbackRefused as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    # Also the host's claim: from here its running row keeps syncs and
+    # action runs off the host until the worker has finished.
+    await db.commit()
+    await db.refresh(rollback)
+
+    celery_app.send_task(
+        "app.tasks.ai_remediation.run_rollback", kwargs={"rollback_id": rollback.id}
+    )
+    return AIRollbackResponse.model_validate(rollback)
 
 
 @router.post("/sessions/{session_id}/messages", response_model=AISessionResponse)
@@ -832,165 +976,31 @@ async def get_usage(
 
 
 # ---------------------------------------------------------------------------
-# Alerts
+# Alerts — moved to /api/alerts (app.api.alerts) in 1.0.0
 # ---------------------------------------------------------------------------
 
 
-#: How much of a report to put on an alert row. Long enough for a verdict
-#: ("healthy", "false positive", "the service is down"), short enough that
-#: a list of alerts stays a list.
-_SUMMARY_CHARS = 280
-
-
-def _is_heading(paragraph: str) -> bool:
-    """Whether a paragraph is only a markdown heading.
-
-    Reports vary in how they open. Some begin with the verdict; others
-    begin with ``## Summary`` and put the verdict underneath. Taking the
-    first paragraph blindly turned the second kind into a row that said
-    "## Summary" — a heading, rendered as prose, telling the operator
-    nothing. Caught against real reports rather than the fixtures, which
-    all happened to be of the first kind.
-    """
-    return all(line.lstrip().startswith("#") for line in paragraph.splitlines() if line.strip())
-
-
-def _conclusion(report: str | None) -> str | None:
-    """The first substantive paragraph of a report, trimmed to fit a row.
-
-    Reports open with the verdict and then justify it, so the opening is
-    the part an operator scanning the list needs — but only once any
-    heading above it is skipped. Truncated on a word boundary with an
-    ellipsis, so a cut is visible rather than looking like the assistant
-    stopped mid-sentence.
-    """
-    if not report:
-        return None
-    para = next(
-        (p.strip() for p in report.split("\n\n") if p.strip() and not _is_heading(p.strip())),
-        "",
-    )
-    if not para:
-        return None
-    # Markdown emphasis reads as noise once the markup is not rendered.
-    para = para.replace("**", "").replace("`", "")
-    if len(para) <= _SUMMARY_CHARS:
-        return para
-    return para[:_SUMMARY_CHARS].rsplit(" ", 1)[0] + "…"
-
-
-async def _with_investigation(db: AsyncSession, rows: list[AlertEvent]) -> list[AlertEventResponse]:
-    """Attach each alert's investigation status and conclusion.
-
-    One extra query for the whole page rather than a relationship on the
-    model: this is the only place that needs it, and a lazy-loaded
-    relationship on a list endpoint is how a hundred-row page becomes a
-    hundred queries.
-    """
-    session_ids = [r.investigation_session_id for r in rows if r.investigation_session_id]
-    sessions: dict[int, AISession] = {}
-    if session_ids:
-        found = await db.execute(select(AISession).where(AISession.id.in_(session_ids)))
-        sessions = {s.id: s for s in found.scalars().all()}
-
-    out = []
-    for row in rows:
-        response = AlertEventResponse.model_validate(row)
-        session = sessions.get(row.investigation_session_id or 0)
-        if session is not None:
-            response.investigation_status = session.status
-            response.investigation_summary = _conclusion(session.report_markdown)
-        out.append(response)
-    return out
-
-
-@router.get("/alerts", response_model=list[AlertEventResponse])
+@router.get("/alerts", response_model=list[AlertEventResponse], deprecated=True)
 async def list_alerts(
     limit: int = 100,
     status: str | None = None,
-    _: User = Depends(current_active_user),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Recent alerts, newest first.
+    """Deprecated alias of ``GET /api/alerts``, kept for the life of 1.x."""
+    from app.api.alerts import list_alerts as moved
 
-    Ordered by ``created_at`` rather than ``starts_at``: an alert that
-    fired an hour ago but only reached LabDog now is new information to
-    the operator reading this list, and burying it an hour down would
-    hide exactly the case the poller exists to catch.
-    """
-    stmt = select(AlertEvent).order_by(AlertEvent.created_at.desc()).limit(min(limit, 500))
-    if status in ("firing", "resolved"):
-        stmt = stmt.where(AlertEvent.status == status)
-    result = await db.execute(stmt)
-    return await _with_investigation(db, list(result.scalars().all()))
+    return await moved(limit=limit, status=status, _=user, db=db)
 
 
-@router.post("/alerts/{alert_id}/investigate", response_model=AlertEventResponse)
+@router.post("/alerts/{alert_id}/investigate", response_model=AlertEventResponse, deprecated=True)
 async def investigate_alert_now(
     alert_id: int,
     user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Start an investigation for one alert by hand.
+    """Deprecated alias of ``POST /api/alerts/{id}/investigate``, kept for
+    the life of 1.x."""
+    from app.api.alerts import investigate_alert_now as moved
 
-    The manual path deliberately skips the severity threshold — an
-    operator asking for this has already made the judgement the threshold
-    exists to automate — but not the kill switch, the provider check, or
-    the budget. Those are about whether LabDog *may* spend, which a
-    button press does not change.
-    """
-    alert = await db.get(AlertEvent, alert_id)
-    if alert is None:
-        raise HTTPException(status_code=404, detail="Alert not found")
-    if alert.investigation_session_id is not None:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "message": "This alert already has an investigation.",
-                "session_id": alert.investigation_session_id,
-            },
-        )
-
-    try:
-        provider = await service.resolve_provider(db, None)
-        service.assert_can_investigate(provider)
-        await service.assert_within_budget(db, provider)
-    except AIDisabledError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except BudgetExceededError as exc:
-        raise HTTPException(status_code=402, detail=str(exc)) from exc
-
-    from app.ai.loop import build_system_prompt
-    from app.tasks import celery_app
-    from app.tasks.ai_alerts import build_mission
-
-    mission = await build_mission(db, alert)
-    session = AISession(
-        provider_id=provider.id,
-        mode="alert_investigation",
-        title=f"Alert: {alert.alertname}"[:200],
-        mission=mission,
-        autonomy_level="read_only",
-        status="queued",
-        target_host_ids=[alert.host_id] if alert.host_id else [],
-        alert_event_id=alert.id,
-        created_by_user_id=user.id,
-    )
-    db.add(session)
-    await db.flush()
-    await service.append_message(
-        db, session.id, role="system", content=build_system_prompt("read_only")
-    )
-    await service.append_message(db, session.id, role="user", content=mission)
-
-    alert.investigation_session_id = session.id
-    alert.investigation_outcome = "started"
-    alert.investigation_detail = f"started by {user.email}"
-    await db.commit()
-    await db.refresh(alert)
-
-    celery_app.send_task("app.tasks.ai_task.run_chat_session", kwargs={"session_id": session.id})
-    # Through the same helper as the list, so the row the caller renders
-    # immediately after clicking carries the session's status rather than
-    # an empty field that fills in on the next refetch.
-    return (await _with_investigation(db, [alert]))[0]
+    return await moved(alert_id=alert_id, user=user, db=db)
