@@ -399,6 +399,8 @@ jobs:
   # ---- BUILD & PUBLISH --------------------------------------------------
   #
   # build-image     — push/dispatch to main  → :latest + :<sha>
+  #                   (tag-release-image, after the release job, adds
+  #                   :X.Y.Z, :X.Y and :X to that same image)
   # build-dev-image — push to dev           → :dev-latest + :dev-<short_sha>
   # build-test-image — PRs + workflow_dispatch (non-main) → :test + :test-<short_sha>
   # All three log into Docker Hub using DOCKER_HUB_PAT.
@@ -923,6 +925,54 @@ jobs:
             packaging/dist/SHA256SUMS
           generate_release_notes: true
           fail_on_unmatched_files: true
+
+  tag-release-image:
+    # Version tags for the image build-image pushed: :X.Y.Z, and for a
+    # final release also :X.Y and :X. They are added to the :<sha> image,
+    # not rebuilt, so every tag of a release has the same digest. Runs
+    # only after the release job, so an image never carries a version
+    # that has no GitHub Release. A re-run sets the same tags again.
+    needs: [build-image, release-artifacts]
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0  # tags, to check v$VERSION is this commit
+      - name: Work out the tags
+        id: tags
+        run: |
+          set -euo pipefail
+          V=$(tr -d '[:space:]' < VERSION)
+          TAGGED=$(git rev-parse --verify --quiet "refs/tags/v${V}^{commit}" || true)
+          if [ "$TAGGED" != "$GITHUB_SHA" ]; then
+            echo "::error::v${V} is not this commit (${TAGGED:-no tag}), so the image is not given version tags."
+            exit 1
+          fi
+          TAGS="$V"
+          if [[ "$V" =~ ^([0-9]+)\.([0-9]+)\.[0-9]+$ ]]; then
+            TAGS="$TAGS ${BASH_REMATCH[1]}.${BASH_REMATCH[2]} ${BASH_REMATCH[1]}"
+          fi
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+          echo "Tagging ${GITHUB_SHA} as: $TAGS"
+      - name: Derive Docker Hub username from DOCKER_HUB_REPO
+        id: hub
+        run: echo "user=$(echo '${{ vars.DOCKER_HUB_REPO }}' | cut -d/ -f1)" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ steps.hub.outputs.user }}
+          password: ${{ secrets.DOCKER_HUB_PAT }}
+      - name: Add the tags to the image
+        env:
+          REPO: ${{ vars.DOCKER_HUB_REPO }}
+          TAGS: ${{ steps.tags.outputs.tags }}
+        run: |
+          set -euo pipefail
+          args=()
+          for t in $TAGS; do args+=(-t "${REPO}:${t}"); done
+          docker buildx imagetools create "${args[@]}" "${REPO}:${GITHUB_SHA}"
 
 
   # ---- SECURITY SCANS ---------------------------------------------------

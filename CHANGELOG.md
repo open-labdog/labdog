@@ -7,6 +7,19 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+### Added
+
+- **Docker images are tagged with their version.** Each release is
+  published as `openlabdog/labdog:X.Y.Z`, `X.Y` and `X`, all the same
+  image as `latest`, so an install can pin a version as the upgrade
+  guide says.
+
+### Fixed
+
+- **The upgrade and production guides named an image LabDog is not
+  published as** (`ghcr.io/open-labdog/labdog:0.6.1`). They now use
+  `openlabdog/labdog` on Docker Hub.
+
 ## [1.0.0] — 2026-10-27
 
 The first stable release. From here LabDog follows Semantic Versioning:

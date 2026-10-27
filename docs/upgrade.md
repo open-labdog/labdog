@@ -343,15 +343,17 @@ run `alembic upgrade head` manually for a normal release upgrade.
 ### Docker
 
 Pin the tag to a specific version — never run `:latest` in
-production. The `dev` and `latest` floating tags exist for testing,
-not for stable installs.
+production. Each release is tagged on Docker Hub as `X.Y.Z`, `X.Y` and
+`X`: `openlabdog/labdog:1.0.0` never changes, while `1.0` follows the
+patch releases of 1.0 and `1` every 1.x release. `latest` follows every
+release, and the `dev-*` and `test-*` tags are unreleased builds.
 
 ```bash
 # 1. Note the version you're on, in case rollback is needed.
 docker inspect labdog | grep -i 'image\|labdog/labdog'
 
 # 2. Pull the new image and recreate the container.
-docker pull ghcr.io/open-labdog/labdog:0.6.1
+docker pull openlabdog/labdog:1.0.0
 docker compose -f /etc/labdog/compose.yaml up -d labdog
 
 # 3. Watch the logs as alembic runs.
@@ -365,13 +367,13 @@ points at:
 ```yaml
 services:
   labdog:
-    image: ghcr.io/open-labdog/labdog:0.6.1
+    image: openlabdog/labdog:1.0.0
 ```
 
 ### Debian / Ubuntu (.deb)
 
 ```bash
-VERSION=0.3.0
+VERSION=1.0.0
 curl -LO https://github.com/open-labdog/labdog/releases/download/v${VERSION}/labdog_${VERSION}-1_amd64.deb
 sudo apt install ./labdog_${VERSION}-1_amd64.deb
 
@@ -383,7 +385,7 @@ sudo journalctl -u labdog -f
 ### RHEL / Fedora / Rocky (.rpm)
 
 ```bash
-VERSION=0.3.0
+VERSION=1.0.0
 curl -LO https://github.com/open-labdog/labdog/releases/download/v${VERSION}/labdog-${VERSION}-1.x86_64.rpm
 sudo dnf install ./labdog-${VERSION}-1.x86_64.rpm
 

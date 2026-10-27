@@ -346,6 +346,9 @@ GitHub Actions pipeline (`.github/workflows/ci.yml`):
 - **build-image**: publishes `:latest` and `:<sha>` to Docker Hub —
   runs on push to `main` (PR-from-dev merges only; direct pushes are
   blocked by branch protection)
+- **tag-release-image**: after `release-artifacts`, adds `:X.Y.Z`,
+  `:X.Y` and `:X` (only `:X.Y.Z` for a pre-release) to that same
+  image, without rebuilding it
 - **pages-build / pages-deploy**: builds the docusaurus site under
   `website/` and deploys to GitHub Pages — runs on push to `main`
 - **release-artifacts**: builds `.tar.gz`, `.deb`, `.rpm`, `SHA256SUMS`
