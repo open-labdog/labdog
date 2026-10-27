@@ -858,6 +858,14 @@ need a `labdog_ai=true` label on the Grafana rule. See
 
 ### Security
 
+- **Dependencies patched for advisories published before release.**
+  GitPython 3.2.1 (CVE-2026-114145, code execution through submodule
+  paths, and five more; LabDog hands it the repositories you add), certifi
+  2026.10.23 and dnspython 2.9.0 in the backend; Next.js 16.4.3
+  (GHSA-2464-fhr4-w9xw and two more, in the image optimizer, server
+  actions and `use cache`, none of which run in LabDog's static export)
+  and zod 4.6.7 in the frontend.
+
 - **A read-only AI session could write a file.** The command classifier
   skipped any redirect with a number in front of it, so that `2>/dev/null`
   would pass, and with it `2>file`, `1>file`, `2>>file` and `word9>file`,
