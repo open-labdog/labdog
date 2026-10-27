@@ -7,7 +7,7 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
-## [1.0.0] — 2026-10-09
+## [1.0.0] — 2026-10-27
 
 The first stable release. From here LabDog follows Semantic Versioning:
 configuration keys, the pack and GitOps formats, the webhook endpoints,
