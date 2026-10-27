@@ -366,7 +366,7 @@ jobs:
       - name: Server log
         if: always()
         run: tail -n 200 /tmp/labdog-server.log || true
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: playwright-report
@@ -894,7 +894,7 @@ jobs:
         # Mirror the artifacts onto the workflow run so a failed
         # release-create still lets you download what was built.
         if: steps.ver.outputs.skip != 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-artifacts-${{ steps.ver.outputs.version }}
           path: packaging/dist/
