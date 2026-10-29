@@ -184,8 +184,10 @@ lin-manager's `sync_jobs` and audit rows.
       Symptom: lin-manager's `add-hosts` group maps both
       `loki.lan.tyresson.se` (priority 100) and `mimir.lan.tyresson.se`
       (priority 101) to 10.10.200.3. nextcloud's effective view and its
-      `/etc/hosts` carry only the mimir line; loki does not resolve there,
-      and nothing in the UI says why.
+      file preview carry only the mimir line, and nothing in the UI says
+      why. Its `/etc/hosts` still has both: the file was last written
+      2026-08-21, five minutes after LabDog's sync, apparently by hand. The
+      next hosts sync there drops loki.
 
       Root cause: the merge is keyed on the resolved address (`first_wins`
       with the IP as key), so per address only the highest-priority entry
