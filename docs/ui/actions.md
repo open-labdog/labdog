@@ -818,7 +818,8 @@ Four module categories overwrite the host with labdog's complete
 desired state on every sync (i.e. unknown entries get removed):
 
 - **firewall** — rebuilds the nftables ruleset from scratch
-- **hosts-file** — overwrites `/etc/hosts` with desired entries
+- **hosts-file** — overwrites `/etc/hosts` with desired entries (on a
+  host any entry applies to; others are left alone)
 - **resolver** — overwrites resolver config (resolv.conf / NM /
   systemd-resolved) with desired settings
 - **SSH keys** (within `linux-users`) — exclusive mode; deletes all

@@ -78,10 +78,9 @@ content policy.
 
 ## Open — 2026-10-29 valheim
 
-Filed 2026-10-29 while tuning the valheim game-server VM. Confirmed
-against the host's syslog and the renderer at `3c2fe450`. BUG-116 to
-BUG-118 came out of tracing why that sync ran at all, against
-lin-manager's `sync_jobs` and audit rows.
+Filed 2026-10-29 while tracing why a hosts sync rewrote `/etc/hosts` on
+the valheim game-server VM (BUG-115, since fixed), against lin-manager's
+`sync_jobs` and audit rows.
 
 ### Correctness — High
 
@@ -97,7 +96,7 @@ lin-manager's `sync_jobs` and audit rows.
       host. Their `sync_completed` audit rows show `module_filter: null`
       and an outcome for all seven modules: two full syncs, firewall and
       `/etc/hosts` included, that nobody asked for. They are the rewrite
-      in BUG-115.
+      that BUG-115 traced.
 
       Root cause: `dispatch_post_run_sync` stores the canonical module name
       (`packages`) in `SyncJob.module_type` and leaves `module_filter`
@@ -120,36 +119,6 @@ lin-manager's `sync_jobs` and audit rows.
       state to its host, firewall included, hours after it finished.
 
 ### Correctness — Medium
-
-- [ ] **BUG-115** `backend/app/hosts_mgmt/merge.py:47-55`,
-      `backend/app/hosts_mgmt/merge.py:126` — a synced `/etc/hosts` has no
-      line for the host's own name, so the host cannot resolve itself
-
-      Symptom: the hosts sync on valheim (2026-10-25 04:08) replaced the
-      Debian `/etc/hosts` with the LabDog header and the two localhost
-      lines, dropping `127.0.1.1 valheim`. No hosts entries apply to
-      valheim, and nobody asked for that sync (BUG-116). The host's
-      resolver is 1.1.1.1, which has no answer for the name either. From
-      then on every `sudo` printed "unable to resolve host valheim", waited
-      on a DNS lookup, and mailed root a "problem parsing sudoers" security
-      notice — over 90 in five days, LabDog's own runs among them, since it
-      connects as a sudo user. `hostname -f` and anything else that
-      resolves the local name fail the same way.
-
-      Root cause: `SYSTEM_ENTRIES` seeds only `127.0.0.1 localhost` and
-      `::1 localhost …`, nothing adds the host's own name, and
-      `render_hosts_file` writes the merged entries as the whole file —
-      even when no entry applies and those two lines are all there is. The
-      Debian installer and cloud-init's `manage_etc_hosts` both write
-      `127.0.1.1 <fqdn> <short>`; that is the line the sync removes. A host
-      whose own name resolves in DNS does not show the bug, which is why it
-      surfaced on a host with a public resolver.
-
-      Workaround: a host-level hosts entry `127.0.1.1 <hostname>`, or
-      `libnss-myhostname` on the host (applied on valheim 2026-10-29).
-
-      Severity Medium: every synced host whose own name is not in DNS
-      loses self-resolution; no data at risk.
 
 - [ ] **BUG-117** `backend/app/tasks/action_host.py:1181-1237`,
       `backend/app/tasks/action_host.py:1342-1357` — a post-run sync queued

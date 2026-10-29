@@ -135,7 +135,11 @@ export function HostsFileTab({
             <span className="tt">/etc/hosts preview</span>
             <button type="button" className="btn btn-sm btn-ghost" onClick={() => setPreview(null)}>close</button>
           </div>
-          <pre className="mono max-h-64 overflow-y-auto text-[11px] text-text-2">{preview}</pre>
+          {preview ? (
+            <pre className="mono max-h-64 overflow-y-auto text-[11px] text-text-2">{preview}</pre>
+          ) : (
+            <p className="text-[11px] text-text-3">No entries apply, so a sync leaves this host&apos;s /etc/hosts as it is.</p>
+          )}
         </div>
       )}
 
@@ -164,7 +168,7 @@ export function HostsFileTab({
         rows={rows}
         keyOf={(e) => `${e.source}-${e.source_id}-${e.ip_address}-${e.hostname}`}
         loading={isLoading}
-        empty="No hosts file entries. Add a host override or assign entries to a group."
+        empty="No hosts file entries, so LabDog leaves this host's /etc/hosts as it is. Add a host override or assign entries to a group."
       />
 
       {dialogOpen && (

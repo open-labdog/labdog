@@ -262,8 +262,13 @@ async def build_host_sync_plan(
         from app.hosts_mgmt.merge import get_effective_hosts_entries, render_hosts_file
 
         entries = await get_effective_hosts_entries(host_id, db)
-        rendered = render_hosts_file(entries)
-        fragments.append(fragment_hosts_file(rendered_content=rendered, ssh_port=host.ssh_port))
+        # No entry applies → /etc/hosts is unmanaged for this host, as
+        # with the resolver below: skip the fragment, and the module
+        # reports "no_tasks". Writing the file anyway left a host with only
+        # the loopback lines (BUG-115).
+        if entries:
+            rendered = render_hosts_file(entries)
+            fragments.append(fragment_hosts_file(rendered_content=rendered, ssh_port=host.ssh_port))
 
     if "cron" in modules_to_run:
         from app.cron.merge import get_effective_cron_jobs
@@ -299,7 +304,7 @@ async def build_host_sync_plan(
             )
 
     # BUG-40: when the only requested module skipped its fragment (the
-    # resolver block is the only one with a "skip when no config"
+    # hosts-file and resolver blocks have a "skip when no config"
     # branch), ``fragments`` is empty. An empty playbook is not a
     # runnable one — see execute_host_sync_plan, which reads the empty
     # ``playbook_yaml`` as "no managed config applies → no-op".

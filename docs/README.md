@@ -136,7 +136,7 @@ When you sync, LabDog computes the full effective configuration and pushes it to
 |--------|----------|---------------------|-----------------------|
 | **Firewall (nftables)** | Full replacement | Writes complete `/etc/nftables.conf` (includes `flush ruleset`), validates, reloads | Overwritten |
 | **Firewall (iptables)** | Full replacement | Writes complete iptables rules via `iptables-restore`, validates, persists | Overwritten |
-| **/etc/hosts** | Full replacement | Writes complete `/etc/hosts` via atomic copy, validates localhost entry exists | Overwritten |
+| **/etc/hosts** | Full replacement, once an entry applies | Writes complete `/etc/hosts` via atomic copy, validates localhost entry exists. A host no entry applies to keeps its file untouched | Overwritten |
 | **Services** | Per-service tasks | Deploys unit files (full or override) if configured, sets `state` (started/stopped) and `enabled` (true/false), cleans up orphaned LabDog-managed files | Preserved (unmanaged services are left alone) |
 | **Packages** | Per-package tasks | Installs/removes individual packages via `apt`/`dnf`/`yum` (auto-detected) | Preserved (unmanaged packages are left alone) |
 | **Linux users** | Per-user tasks | Creates/removes users, sets authorized_keys (`exclusive=true`), writes `/etc/sudoers.d/{user}` | Preserved (unmanaged users are left alone) |
@@ -161,7 +161,7 @@ the Plans screen, delegate to the same orchestrator.
 ### Automatic Safety Rules
 
 - **SSH lockout prevention**: An SSH ACCEPT rule for the LabDog server IP is always injected at the top of the firewall ruleset (priority 999999). This rule cannot be deleted and ensures you never lock yourself out.
-- **System /etc/hosts entries**: `127.0.0.1 localhost` and `::1 localhost` are always injected into the rendered hosts file, regardless of what you configure.
+- **System /etc/hosts entries**: `127.0.0.1 localhost` and `::1 localhost` are always injected into the rendered hosts file, regardless of what you configure. So is `127.0.1.1 <full name> <short name>` with the name the host reports, unless one of your entries already maps one of those names or uses `127.0.1.1`.
 - **Protected service deny-list**: Critical services (`sshd`, `systemd-*`) are blocked from management to prevent accidental lockout.
 - **DNS resolver header**: A `# Managed by LabDog` comment is injected into rendered resolver config files.
 
@@ -499,7 +499,7 @@ Two `audit_log` rows per sync: `sync_triggered` at API entry,
 | `GET/POST/PUT/DELETE` | `/api/groups/{id}/hosts-entries` | Manage hosts file entries per group |
 | `GET/POST/PUT/DELETE` | `/api/hosts/{id}/hosts-entries` | Host-level hosts file overrides |
 | `GET` | `/api/hosts/{id}/effective-hosts-entries` | Merged effective entries |
-| `GET` | `/api/hosts/{id}/hosts-file-preview` | Preview rendered /etc/hosts |
+| `GET` | `/api/hosts/{id}/hosts-file-preview` | Preview rendered /etc/hosts (empty when no entry applies, as a sync then leaves the file alone) |
 | `POST` | `/api/hosts-mgmt/hosts/{id}/plan` | Preview hosts file changes |
 | `POST` | `/api/hosts-mgmt/hosts/{id}/sync` | Sync /etc/hosts via Ansible (delegated to the orchestrator with `module_filter=["hosts-file"]`) |
 | `POST` | `/api/hosts-mgmt/hosts/{id}/drift-check` | Check hosts file drift |
