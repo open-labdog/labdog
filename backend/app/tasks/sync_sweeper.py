@@ -50,6 +50,7 @@ async def _sweep_stale_syncs_async() -> dict:
     """
     from app.models.sync_job import JobStatus, SyncJob
     from app.tasks.host_sync_orchestrator import (
+        UnknownModuleType,
         _dispatch_next_pending_for_host,
         _finalise_run,
         _resolve_modules,
@@ -85,25 +86,33 @@ async def _sweep_stale_syncs_async() -> dict:
             if job is None or job.status != JobStatus.running:
                 continue
 
-            module_filter = module_filter_for(job)
-            seeded_modules = _resolve_modules(module_filter)
-            synthesized_outcomes = {m: "error" for m in seeded_modules}
             error_message = (
                 f"Stuck in 'running' for >{STALE_THRESHOLD_MINUTES} min "
                 "— assumed worker died; swept by sync_sweeper."
             )
-
-            await _finalise_run(
-                db=db,
-                job_id=job.id,
-                host_id=job.host_id,
-                module_filter=module_filter,
-                seeded_modules=seeded_modules,
-                module_outcomes=synthesized_outcomes,
-                triggered_by_user_id=job.triggered_by_user_id,
-                firewall_pre_error=False,
-                error_message=error_message,
-            )
+            try:
+                module_filter = module_filter_for(job)
+            except UnknownModuleType:
+                # Not a sync — a CA certificate deploy whose worker died.
+                # Fail the row and nothing else: it touched no module, and
+                # reading it as a sync marked all seven ``error`` (BUG-116).
+                job.status = JobStatus.failed
+                job.completed_at = datetime.now(UTC)
+                job.error_message = error_message
+                await db.commit()
+            else:
+                seeded_modules = _resolve_modules(module_filter)
+                await _finalise_run(
+                    db=db,
+                    job_id=job.id,
+                    host_id=job.host_id,
+                    module_filter=module_filter,
+                    seeded_modules=seeded_modules,
+                    module_outcomes={m: "error" for m in seeded_modules},
+                    triggered_by_user_id=job.triggered_by_user_id,
+                    firewall_pre_error=False,
+                    error_message=error_message,
+                )
             swept.append(job.id)
 
             # Dispatch the queued successor in a fresh session so the

@@ -5,14 +5,56 @@ imperative deploy. It does NOT update ``HostModuleStatus`` and does NOT
 mutate the host's ``sync_status`` badge. Execution status is recorded
 solely on the ``SyncJob`` row, which is reused as the action-run record
 (distinguished by ``module_type='ca_cert'``).
+
+It takes its turn in the per-host queue like every other operation: it
+waits while the host is busy, and hands the host on when it finishes.
+It used to do neither, so it ran alongside whatever else was on the host
+and left everything that had queued behind it waiting for the next
+operation there — on valheim, an action's follow-up syncs for eight
+hours (BUG-119).
 """
 
+import asyncio
 import os
 import shutil
 import tempfile
 from datetime import UTC, datetime
 
 from app.tasks import celery_app
+
+
+async def _claim_or_defer(job_id: int, host_id: int) -> bool:
+    """Take the host for this deploy, or leave the job ``pending``.
+
+    The same gate as the sync orchestrator's: under the host's advisory
+    lock, claim when nothing else is running there and flip the job to
+    ``running`` in that transaction. A busy host gets the blocker stamped
+    on the job and is retried by the host queue when it frees up. A job
+    that is no longer pending — the queue can send one twice — is left
+    alone.
+    """
+    from sqlalchemy import select
+
+    from app.db import task_session
+    from app.enum_utils import enum_str
+    from app.models.sync_job import JobStatus, SyncJob
+    from app.tasks.host_lock import acquire_host_lock, check_host_busy, format_pending_reason
+
+    async with task_session() as db:
+        await acquire_host_lock(db, host_id)
+        job = (await db.execute(select(SyncJob).where(SyncJob.id == job_id))).scalar_one_or_none()
+        if job is None or enum_str(job.status) != JobStatus.pending:
+            return False
+        blocker = await check_host_busy(db, host_id)
+        if blocker is not None:
+            job.pending_reason = await format_pending_reason(db, blocker)
+            await db.commit()
+            return False
+        job.status = JobStatus.running
+        job.started_at = datetime.now(UTC)
+        job.pending_reason = None
+        await db.commit()
+        return True
 
 
 @celery_app.task(
@@ -27,9 +69,12 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
     private_data_dir = tempfile.mkdtemp(prefix="labdog-ca-")
     fd, ssh_key_path = tempfile.mkstemp(dir="/dev/shm", prefix="labdog-ca-", suffix=".key")
     os.close(fd)
+    claimed = False
 
     try:
-        import asyncio
+        claimed = asyncio.run(_claim_or_defer(job_id, host_id))
+        if not claimed:
+            return {"job_id": job_id, "status": "deferred"}
 
         import yaml
         from sqlalchemy import select
@@ -45,11 +90,6 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
 
         async def _prepare():
             async with task_session() as db:
-                job = (await db.execute(select(SyncJob).where(SyncJob.id == job_id))).scalar_one()
-                job.status = "running"
-                job.started_at = datetime.now(UTC)
-                await db.commit()
-
                 host = (await db.execute(select(Host).where(Host.id == host_id))).scalar_one()
 
                 ssh_key = (
@@ -126,8 +166,6 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
     except Exception as e:
         error_msg = str(e)
 
-        import asyncio
-
         from sqlalchemy import select
 
         from app.db import task_session
@@ -160,3 +198,13 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
         remove_known_hosts(ssh_key_path)
         if os.path.exists(private_data_dir):
             shutil.rmtree(private_data_dir, ignore_errors=True)
+
+        # The job is terminal by now, on every path that claimed the host.
+        if claimed:
+            from app.tasks.host_lock import release_host_queue
+
+            asyncio.run(
+                release_host_queue(
+                    host_id, after=f"ca_cert job_id={job_id}", exclude_sync_job_id=job_id
+                )
+            )

@@ -688,7 +688,8 @@ async def dispatch_next_pending_for_host(
     For each candidate:
 
     - SyncJob → dispatches via ``run_host_sync.delay(...)`` (same
-      task name the orchestrator already uses).
+      task name the orchestrator already uses), or via
+      ``run_ca_cert_action.delay(...)`` for a CA certificate deploy.
     - ActionRun with no per-host rows yet → dispatches via
       ``app.tasks.action_orchestrator.run_action.delay(...)`` (which
       routes to action_group based on the action's `supports_host`
@@ -734,11 +735,22 @@ async def dispatch_next_pending_for_host(
     # and re-query, the just-failed row drops out of the candidate set.
     while True:
         # ------------------------------------------------------------------
-        # SyncJob candidate: pending + host_id matches + not excluded.
+        # SyncJob candidate: pending + host_id matches + not excluded, and
+        # a row this queue knows how to run: a sync, or a CA certificate
+        # deploy, which is a ``sync_jobs`` row with a task of its own.
+        # Anything else used to go out as a sync of every module — the CA
+        # deploy included (BUG-116).
         # ------------------------------------------------------------------
+        from app.ca_certs.actions import CA_CERT_MODULE_TYPE
+        from app.tasks.host_sync_orchestrator import SYNC_MODULE_TYPES
+
         sync_stmt = (
             select(SyncJob)
-            .where(SyncJob.host_id == host_id, SyncJob.status == JobStatus.pending)
+            .where(
+                SyncJob.host_id == host_id,
+                SyncJob.status == JobStatus.pending,
+                SyncJob.module_type.in_([*SYNC_MODULE_TYPES, CA_CERT_MODULE_TYPE]),
+            )
             .order_by(SyncJob.created_at.asc())
             .limit(1)
         )
@@ -888,6 +900,12 @@ async def dispatch_next_pending_for_host(
                 # re-examined on every subsequent dispatch, forever.
                 await db.commit()
                 continue
+            if sync_row.module_type == CA_CERT_MODULE_TYPE:
+                from app.tasks.ca_cert_action import run_ca_cert_action
+
+                run_ca_cert_action.delay(job_id=sync_row.id, host_id=sync_row.host_id)
+                return ("sync", sync_row.id)
+
             # Dispatch via the existing run_host_sync task. Import lazily
             # to avoid a circular import at module load.
             from app.tasks.host_sync_orchestrator import (

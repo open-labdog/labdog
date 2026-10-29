@@ -883,6 +883,7 @@ def test_filter_from_module_type_canonical():
     """Unit-test the helper across all canonical mappings + bulk + unknown."""
     from app.tasks.host_sync_orchestrator import (
         _MODULE_TYPE_MAPPING,
+        UnknownModuleType,
         _filter_from_module_type,
     )
 
@@ -902,8 +903,9 @@ def test_filter_from_module_type_canonical():
     # ``bulk`` is the C-3 sentinel for "all modules".
     assert _filter_from_module_type("bulk") is None
 
-    # Unknown values fall back to "all" rather than getting stuck.
-    assert _filter_from_module_type("not-a-module") is None
+    # Unknown values are refused, not read as "all" (BUG-116).
+    with pytest.raises(UnknownModuleType):
+        _filter_from_module_type("not-a-module")
 
 
 async def test_dispatch_uses_correct_filter_for_bulk_type(db: AsyncSession, tmp_path):

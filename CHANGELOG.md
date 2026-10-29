@@ -9,6 +9,29 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **An action's follow-up sync runs only the modules it names.** A
+  `post_run_sync` or `post_run_register` sync that had to wait for its
+  host was later run as a sync of every module: on valheim, alloy-install's
+  packages and services follow-ups rewrote the firewall and `/etc/hosts`
+  too. Each now records its module and runs that one. The host queue no
+  longer runs a row it cannot read as a sync at all, which also stops a
+  waiting CA certificate deploy from going out as a full sync. Waiting
+  follow-ups from before the upgrade are repaired. (BUG-116)
+
+- **Work queued behind an action starts when the action finishes.** An
+  action handed its host on before closing its run, so whatever was
+  waiting found the host still busy and waited again — until the next
+  operation on that host. The run is now closed first, for pack actions
+  and the built-in ones (`_builtin.sync`, drift check, collect state)
+  alike. (BUG-117)
+
+- **A CA certificate deploy takes its turn on the host.** It ran without
+  waiting for whatever else was working on the host, and when it finished
+  it did not hand the host on, so everything queued behind it waited for
+  the next operation there: eight hours, for valheim's follow-up syncs. It
+  now waits while the host is busy and starts the next queued operation
+  when it is done. (BUG-119)
+
 - **A synced `/etc/hosts` keeps the host's own name.** A hosts sync wrote
   the file with only the two localhost lines and LabDog's entries, so the
   `127.0.1.1 <name>` line the Debian installer and cloud-init put there

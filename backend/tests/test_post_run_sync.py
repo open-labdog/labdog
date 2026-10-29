@@ -1,6 +1,6 @@
 """Tests for the post-run module sync feature.
 
-Covers the manifest field, the dispatch helper, and the
+Covers the manifest field, the queueing helper, and the
 ``ActionDefinitionOut`` API surface. The end-to-end "action runs ->
 sync fires" wiring is intentionally not covered here: it would
 require the full action_host / action_group pipeline. Lint + the
@@ -17,7 +17,8 @@ from sqlalchemy import select
 
 from app.actions.manifest import ActionManifest
 from app.models.sync_job import SyncJob
-from app.sync.post_run import dispatch_post_run_sync
+from app.sync.post_run import queue_post_run_sync
+from app.tasks.host_sync_orchestrator import module_filter_for
 from tests.conftest import create_host, create_ssh_key
 
 pytestmark = pytest.mark.integration
@@ -63,93 +64,88 @@ class TestManifestPostRunSync:
 
 
 # ---------------------------------------------------------------------------
-# dispatch_post_run_sync helper
+# queue_post_run_sync helper
 # ---------------------------------------------------------------------------
 
 
-class TestDispatchPostRunSync:
-    """Direct unit tests of the helper.
+def _no_sync_dispatch():
+    """Fail the test if the helper dispatches anything itself: the rows
+    are for the host queue to start once the action lets go of the host
+    (BUG-117)."""
+    return patch(
+        "app.tasks.host_sync_orchestrator.run_host_sync.delay",
+        new=MagicMock(side_effect=AssertionError("post-run syncs are queued, not dispatched")),
+    )
 
-    ``run_host_sync.delay`` is patched out so the broker isn't hit;
-    the helper's job is to create SyncJob rows and call ``.delay()``
-    with the right arguments.
-    """
 
+class TestQueuePostRunSync:
     async def test_empty_module_list_is_noop(self, db):
-        delay_calls: list[tuple] = []
-        with patch(
-            "app.tasks.host_sync_orchestrator.run_host_sync.delay",
-            new=MagicMock(side_effect=lambda *a, **kw: delay_calls.append((a, kw))),
-        ):
-            ids = await dispatch_post_run_sync(db, host_id=1, modules=[], triggered_by_user_id=None)
+        with _no_sync_dispatch():
+            ids = await queue_post_run_sync(db, host_id=1, modules=[], triggered_by_user_id=None)
         assert ids == []
-        assert delay_calls == []
 
-    async def test_creates_syncjob_and_dispatches_per_module(self, db):
+    async def test_queues_one_row_per_module_as_the_queue_reads_it(self, db):
+        """BUG-116: the short name in ``module_type`` and the module in
+        ``module_filter`` — what ``module_filter_for`` reads back when the
+        queue re-dispatches the row. ``packages`` there read back as every
+        module."""
         ssh_key = await create_ssh_key(db)
         host = await create_host(db, ssh_key_id=ssh_key.id)
-        delay_calls: list[tuple] = []
 
-        with patch(
-            "app.tasks.host_sync_orchestrator.run_host_sync.delay",
-            new=MagicMock(side_effect=lambda *a, **kw: delay_calls.append((a, kw))),
-        ):
-            ids = await dispatch_post_run_sync(
+        with _no_sync_dispatch():
+            ids = await queue_post_run_sync(
                 db,
                 host_id=host.id,
-                modules=["packages", "services"],
+                modules=["packages", "services", "hosts-file"],
                 triggered_by_user_id=None,
             )
 
-        assert len(ids) == 2
         jobs = (
             (await db.execute(select(SyncJob).where(SyncJob.id.in_(ids)).order_by(SyncJob.id)))
             .scalars()
             .all()
         )
-        assert [j.module_type for j in jobs] == ["packages", "services"]
+        assert [(j.module_type, j.module_filter) for j in jobs] == [
+            ("package", ["packages"]),
+            ("service", ["services"]),
+            ("hosts_file", ["hosts-file"]),
+        ]
         for j in jobs:
             assert j.host_id == host.id
             assert j.status == "pending"
-
-        # One .delay() per module, with the explicit module_filter.
-        assert len(delay_calls) == 2
-        for (args, kwargs), expected_module in zip(
-            delay_calls, ["packages", "services"], strict=True
-        ):
-            assert kwargs == {"module_filter": [expected_module]}
-            # args = (job_id, host_id)
-            assert args[1] == host.id
+            assert module_filter_for(j) == j.module_filter
 
     async def test_skips_module_already_active(self, db):
         """The active-row partial unique index on (host_id, module_type)
-        rejects a second pending/running row. The helper treats this as
-        'already queued, nothing more to do' and continues."""
+        rejects a second pending/running row — now including an operator's
+        own sync of the module, which uses the same short name. The helper
+        treats this as 'already queued, nothing more to do' and continues."""
         ssh_key = await create_ssh_key(db)
         host = await create_host(db, ssh_key_id=ssh_key.id)
 
-        # Pre-seed an active SyncJob for ``packages``. The helper's
-        # ``packages`` insert should collide and be skipped.
-        pre_existing = SyncJob(host_id=host.id, module_type="packages", status="pending")
-        db.add(pre_existing)
+        # An operator's packages sync, already waiting on the host.
+        db.add(SyncJob(host_id=host.id, module_type="package", status="pending"))
         await db.commit()
 
-        delay_calls: list[tuple] = []
-        with patch(
-            "app.tasks.host_sync_orchestrator.run_host_sync.delay",
-            new=MagicMock(side_effect=lambda *a, **kw: delay_calls.append((a, kw))),
-        ):
-            ids = await dispatch_post_run_sync(
+        with _no_sync_dispatch():
+            ids = await queue_post_run_sync(
                 db,
                 host_id=host.id,
                 modules=["packages", "services"],
                 triggered_by_user_id=None,
             )
 
-        # ``packages`` collided -> skipped; ``services`` succeeded.
         assert len(ids) == 1
         new_job = (await db.execute(select(SyncJob).where(SyncJob.id == ids[0]))).scalar_one()
-        assert new_job.module_type == "services"
-        # Only one .delay() call -- the skipped insert never dispatched.
-        assert len(delay_calls) == 1
-        assert delay_calls[0][1] == {"module_filter": ["services"]}
+        assert new_job.module_type == "service"
+
+    async def test_skips_a_name_that_is_not_a_module(self, db):
+        ssh_key = await create_ssh_key(db)
+        host = await create_host(db, ssh_key_id=ssh_key.id)
+
+        with _no_sync_dispatch():
+            ids = await queue_post_run_sync(
+                db, host_id=host.id, modules=["ca_cert"], triggered_by_user_id=None
+            )
+
+        assert ids == []
