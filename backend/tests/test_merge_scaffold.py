@@ -177,6 +177,9 @@ class TestHostsEntriesKeepTheirAsymmetry:
                 ip_address="127.0.0.1", hostname="hijacked", group_id=group.id, priority=9999
             )
         )
+        # An ordinary entry too: with only the refused one, nothing would
+        # apply and the merge would return no entries at all (BUG-115).
+        db.add(HostsEntry(ip_address="10.0.0.5", hostname="db01", group_id=group.id))
         await db.flush()
 
         entries = await get_effective_hosts_entries(host.id, db)

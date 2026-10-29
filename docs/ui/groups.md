@@ -224,8 +224,15 @@ The dialog also takes a GPG key URL.
 | priority | Decides between groups declaring the same hostname |
 | comment | Optional note |
 
-LabDog always keeps `127.0.0.1 localhost` and the host's own entry; they
-cannot be removed from the UI.
+LabDog writes `/etc/hosts` only on a host at least one entry applies to;
+any other host's file is left as it is. When it does write the file it
+adds `127.0.0.1 localhost`, `::1 localhost` and the host's own name on
+`127.0.1.1` — the full name and the short one, as the host reports them,
+the line the Debian installer and cloud-init write. These show as
+*system* on the host's Config tab and cannot be edited there. To put the
+host's name somewhere else, such as a Proxmox node's real address, add an
+entry that maps it; the `127.0.1.1` line is then left out. It is also left
+out when an entry uses `127.0.1.1`.
 
 ---
 

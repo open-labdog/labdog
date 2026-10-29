@@ -28,9 +28,11 @@
 #
 # Merge identity key: `ip_address` (literal variant).
 #
-# System entries (127.0.0.1 localhost, ::1 localhost, etc.) are ALWAYS
-# emitted and are NEVER touched by GitOps imports. Do not try to
-# redeclare them here.
+# System entries (127.0.0.1 localhost, ::1 localhost, and the host's
+# own name on 127.0.1.1) are emitted on every host an entry applies to
+# and are NEVER touched by GitOps imports. Do not try to redeclare
+# them here. To put a host's own name on its real address instead,
+# declare that entry: the 127.0.1.1 line is then left out.
 
 group: hosts-entries-reference
 priority: 100

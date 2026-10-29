@@ -221,6 +221,9 @@ async def _hosts_file_changes(
     from app.hosts_mgmt.merge import get_effective_hosts_entries
 
     desired = await get_effective_hosts_entries(host.id, db)
+    # No entry applies → /etc/hosts is unmanaged for this host → no-op.
+    if not desired:
+        return []
     current = await collect_hosts_file(host, db, private_key_pem)
     diff = compute_hosts_diff(current, desired)
 

@@ -71,6 +71,32 @@ def _detect_firewall_backend(nft_probe: str, iptables_probe: str) -> str:
     return "unknown"
 
 
+def _pick_reported_hostname(nodename: str, full_name: str) -> str | None:
+    """The name the host calls itself, from ``hostname`` and ``hostname -f``.
+
+    ``hostname -f`` gives the full name, but it gets it by resolving the
+    short one, so it fails on a host that cannot resolve itself — the
+    hosts BUG-115 left behind — and can answer with a name that is not the
+    host's at all: ``localhost``, when ``/etc/hosts`` lists the name on
+    the 127.0.0.1 line. Take it only when its first label is the kernel
+    hostname's; otherwise the kernel hostname is the answer.
+
+    Returns ``None`` when neither is a valid hostname.
+    """
+    from app.hosts_mgmt.schemas import HOSTNAME_RE
+
+    nodename = nodename.strip()
+    full_name = full_name.strip()
+    first_label = nodename.split(".", 1)[0].lower()
+    if "." in full_name and full_name.split(".", 1)[0].lower() == first_label:
+        candidate = full_name
+    else:
+        candidate = nodename
+    if not candidate or len(candidate) > 253 or not HOSTNAME_RE.match(candidate):
+        return None
+    return candidate
+
+
 async def _collect_host_facts_async(host_id: int) -> None:
     """Coroutine body of ``collect_host_facts``.
 
@@ -122,6 +148,10 @@ async def _collect_host_facts_async(host_id: int) -> None:
                 client_keys=[imported_key],
             ) as conn:
                 hostname_cmd = await conn.run("hostname", check=False)
+                # ``timeout``: on a host that cannot resolve its own name
+                # this waits on DNS, and an SSH-level timeout would throw
+                # away every other fact collected here.
+                full_name_cmd = await conn.run("timeout 10 hostname -f", check=False)
                 os_release = await conn.run("cat /etc/os-release", check=False)
                 uname_r = await conn.run("uname -r", check=False)
                 uname_s = await conn.run("uname -s", check=False)
@@ -152,6 +182,11 @@ async def _collect_host_facts_async(host_id: int) -> None:
             backend_str = _detect_firewall_backend(nft.stdout or "", iptables.stdout or "")
             host.firewall_backend = FirewallBackend(backend_str)
             host.os_facts_collected_at = datetime.now(UTC)
+            reported = _pick_reported_hostname(
+                hostname_cmd.stdout or "", full_name_cmd.stdout or ""
+            )
+            if reported is not None:
+                host.reported_hostname = reported
 
             # Auto-heal the discovery placeholder. Only rewrite
             # ``Host.hostname`` when it still matches ``host-<ip>`` --
@@ -196,8 +231,9 @@ def collect_host_facts(host_id: int):
     backend probes, and the remote hostname — the result is persisted on
     the Host row so the UI can pre-populate version pickers and pick the
     right firewall backend module without re-probing on every page load.
-    The hostname auto-heals the discovery placeholder; see
-    ``_collect_host_facts_async`` for the precise rule.
+    The hostname, with ``hostname -f``, becomes ``Host.reported_hostname``,
+    the host's own line in /etc/hosts. It also auto-heals the discovery
+    placeholder; see ``_collect_host_facts_async`` for the precise rule.
     """
     import asyncio
 

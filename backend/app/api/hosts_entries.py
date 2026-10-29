@@ -380,5 +380,7 @@ async def hosts_file_preview(
         raise HTTPException(status_code=404, detail="Host not found")
 
     entries = await get_effective_hosts_entries(host_id, db)
-    content = render_hosts_file(entries)
+    # Empty when no entry applies: a sync then leaves the file alone, so
+    # there is no file to show.
+    content = render_hosts_file(entries) if entries else ""
     return PlainTextResponse(content=content)

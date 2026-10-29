@@ -160,7 +160,9 @@ the host. LabDog only manages what you explicitly define.
 ## 3. /etc/hosts
 
 Identity key: `ip_address`. Host-level overrides fully replace the group
-entry for that IP. System entries (`127.0.0.1`, `::1`) are always injected.
+entry for that IP. System entries (`127.0.0.1`, `::1`, and `127.0.1.1` for
+the host's own name) are injected whenever any entry applies. A host no
+entry applies to keeps its own file.
 
 ### Example: Conflicting IP mappings
 
@@ -176,8 +178,9 @@ Same IP address = same identity key. Higher-priority group wins.
 
 ```
 Effective /etc/hosts for web-prod-01:
-  127.0.0.1    localhost                          (system, always present)
-  ::1          localhost                          (system, always present)
+  127.0.0.1    localhost                          (system)
+  127.0.1.1    web-prod-01.example.com web-prod-01  (system, own name)
+  ::1          localhost                          (system)
   10.0.0.5     primary-db.internal               (from "production")
 ```
 
@@ -196,12 +199,14 @@ Host override wins.
 ```
 Effective /etc/hosts for web-prod-01:
   127.0.0.1    localhost                          (system)
+  127.0.1.1    web-prod-01.example.com web-prod-01  (system)
   ::1          localhost                          (system)
   10.0.0.5     local-db.internal                 (from host override)
 ```
 
 On sync, the entire `/etc/hosts` file is replaced. Any entries not defined in
-LabDog (and not system entries) will be removed.
+LabDog (and not system entries) will be removed. The `127.0.1.1` line is left
+out when an entry already maps `web-prod-01` or uses `127.0.1.1`.
 
 ---
 
