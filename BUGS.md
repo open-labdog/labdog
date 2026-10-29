@@ -33,7 +33,7 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-114`, `SEC-38`,
+ID counter as of last housekeeping pass: `BUG-115`, `SEC-38`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry.
 
@@ -73,3 +73,40 @@ content policy.
       follow redirects by default — and a documented homelab decision. Git
       repo URLs *do* block these (`app/schemas/git_repos.py:18-25`). Filed
       so it is not re-discovered as new, not because it needs changing.
+
+---
+
+## Open — 2026-10-29 valheim
+
+Filed 2026-10-29 while tuning the valheim game-server VM. Confirmed
+against the host's syslog and the renderer at `3c2fe450`.
+
+### Correctness — Medium
+
+- [ ] **BUG-115** `backend/app/hosts_mgmt/merge.py:47-55`,
+      `backend/app/hosts_mgmt/merge.py:126` — a synced `/etc/hosts` has no
+      line for the host's own name, so the host cannot resolve itself
+
+      Symptom: the hosts sync on valheim (2026-10-25 04:08) replaced the
+      Debian `/etc/hosts` with the LabDog header and the two localhost
+      lines, dropping `127.0.1.1 valheim`. The host's resolver is 1.1.1.1,
+      which has no answer for the name either. From then on every `sudo`
+      printed "unable to resolve host valheim", waited on a DNS lookup,
+      and mailed root a "problem parsing sudoers" security notice — over
+      90 in five days, LabDog's own runs among them, since it connects as
+      a sudo user. `hostname -f` and anything else that resolves the local
+      name fail the same way.
+
+      Root cause: `SYSTEM_ENTRIES` seeds only `127.0.0.1 localhost` and
+      `::1 localhost …`, nothing adds the host's own name, and
+      `render_hosts_file` writes the merged entries as the whole file. The
+      Debian installer and cloud-init's `manage_etc_hosts` both write
+      `127.0.1.1 <fqdn> <short>`; that is the line the sync removes. A host
+      whose own name resolves in DNS does not show the bug, which is why it
+      surfaced on a host with a public resolver.
+
+      Workaround: a host-level hosts entry `127.0.1.1 <hostname>`, or
+      `libnss-myhostname` on the host (applied on valheim 2026-10-29).
+
+      Severity Medium: every synced host whose own name is not in DNS
+      loses self-resolution; no data at risk.
