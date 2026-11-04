@@ -6,7 +6,7 @@ Covers:
   existing per-module Create schemas.
 * The dispatch helper inserts host-scope rows for each declared item,
   skips on uniqueness collision (operator-declared rows win), and
-  fires a follow-up sync for the affected modules.
+  queues a follow-up sync for the affected modules.
 
 The end-to-end "action runs -> registration fires" wiring is not
 covered here (full action_host pipeline setup is heavy); the
@@ -23,6 +23,7 @@ from sqlalchemy import select
 
 from app.actions.manifest import ActionManifest
 from app.models.audit_log import AuditLog
+from app.models.sync_job import SyncJob
 from app.packages.models import PackageRule
 from app.services.models import ServiceRule
 from app.sync.post_run import dispatch_post_run_register
@@ -103,18 +104,19 @@ class TestManifestPostRunRegister:
 # ---------------------------------------------------------------------------
 
 
-def _no_op_sync_delay():
-    """Patch run_host_sync.delay so the helper's follow-up sync
-    dispatch doesn't try to talk to the broker."""
+def _no_sync_dispatch():
+    """Fail the test if the helper dispatches a sync itself: the follow-up
+    rows are for the host queue to start once the action lets go of the
+    host (BUG-117)."""
     return patch(
         "app.tasks.host_sync_orchestrator.run_host_sync.delay",
-        new=MagicMock(side_effect=lambda *a, **kw: None),
+        new=MagicMock(side_effect=AssertionError("post-run syncs are queued, not dispatched")),
     )
 
 
 class TestDispatchPostRunRegister:
     async def test_empty_declarations_is_noop(self, db):
-        with _no_op_sync_delay():
+        with _no_sync_dispatch():
             result = await dispatch_post_run_register(
                 db, host_id=1, declarations={}, triggered_by_user_id=None
             )
@@ -124,7 +126,7 @@ class TestDispatchPostRunRegister:
         ssh_key = await create_ssh_key(db)
         host = await create_host(db, ssh_key_id=ssh_key.id)
 
-        with _no_op_sync_delay():
+        with _no_sync_dispatch():
             inserted = await dispatch_post_run_register(
                 db,
                 host_id=host.id,
@@ -185,7 +187,7 @@ class TestDispatchPostRunRegister:
         db.add(pre_existing)
         await db.commit()
 
-        with _no_op_sync_delay():
+        with _no_sync_dispatch():
             inserted = await dispatch_post_run_register(
                 db,
                 host_id=host.id,
@@ -211,15 +213,11 @@ class TestDispatchPostRunRegister:
         assert by_name["alloy"].state == "absent"  # unchanged
         assert by_name["grafana-agent"].state == "present"
 
-    async def test_dispatches_follow_up_sync_for_affected_modules(self, db):
+    async def test_queues_follow_up_sync_for_affected_modules(self, db):
         ssh_key = await create_ssh_key(db)
         host = await create_host(db, ssh_key_id=ssh_key.id)
-        delay_calls: list[tuple] = []
 
-        with patch(
-            "app.tasks.host_sync_orchestrator.run_host_sync.delay",
-            new=MagicMock(side_effect=lambda *a, **kw: delay_calls.append((a, kw))),
-        ):
+        with _no_sync_dispatch():
             await dispatch_post_run_register(
                 db,
                 host_id=host.id,
@@ -237,10 +235,12 @@ class TestDispatchPostRunRegister:
                 triggered_by_user_id=None,
             )
 
-        # One follow-up sync per affected module.
-        assert len(delay_calls) == 2
-        modules = sorted(kw["module_filter"][0] for _, kw in delay_calls)
-        assert modules == ["packages", "services"]
+        # One follow-up sync per affected module, as the queue reads it.
+        jobs = (await db.execute(select(SyncJob).where(SyncJob.host_id == host.id))).scalars()
+        assert sorted((j.module_type, j.module_filter, j.status) for j in jobs) == [
+            ("package", ["packages"], "pending"),
+            ("service", ["services"], "pending"),
+        ]
 
     async def test_skips_follow_up_sync_when_nothing_inserted(self, db):
         """If every insert collided, no follow-up sync should fire."""
@@ -259,11 +259,7 @@ class TestDispatchPostRunRegister:
         )
         await db.commit()
 
-        delay_calls: list[tuple] = []
-        with patch(
-            "app.tasks.host_sync_orchestrator.run_host_sync.delay",
-            new=MagicMock(side_effect=lambda *a, **kw: delay_calls.append((a, kw))),
-        ):
+        with _no_sync_dispatch():
             inserted = await dispatch_post_run_register(
                 db,
                 host_id=host.id,
@@ -274,7 +270,8 @@ class TestDispatchPostRunRegister:
             )
 
         assert inserted == {}
-        assert delay_calls == []
+        queued = await db.scalar(select(SyncJob.id).where(SyncJob.host_id == host.id).limit(1))
+        assert queued is None
 
     async def test_emits_audit_log_per_insert(self, db):
         """Each successful insert must produce a matching audit_log row."""
@@ -298,7 +295,7 @@ class TestDispatchPostRunRegister:
         ssh_key = await create_ssh_key(db)
         host = await create_host(db, ssh_key_id=ssh_key.id)
 
-        with _no_op_sync_delay():
+        with _no_sync_dispatch():
             await dispatch_post_run_register(
                 db,
                 host_id=host.id,
