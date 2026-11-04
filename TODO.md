@@ -97,6 +97,48 @@ filling in the action dialog again by hand.
 
 ---
 
+## Action runs — hand a run's log to the assistant
+
+**Context:** Finding out why a run failed means reading its log on the
+run page (`components/action-run-detail.tsx`), or opening `/assistant`
+and pasting it in. Alerts already have the one-click version: their
+"investigate" button (`POST /api/alerts/{id}/investigate`, through
+`start_investigation` in `app/tasks/ai_alerts.py`) builds a session from
+the alert, dispatches it, and opens `/assistant?session=<id>`.
+
+**Sketch:** an "Investigate with AI" button on the run page, for the
+whole run or for the host selected in the log window, backed by
+something like `POST /api/actions/runs/{id}/investigate`.
+
+- **Same gates as the alert button:** `resolve_provider`,
+  `assert_can_investigate` and `assert_within_budget`; commit, then send
+  `run_chat_session`. Read-only autonomy, scoped to the run's hosts
+  (`target_host_ids`).
+- **The mission cannot be the whole log.** `ActionHostRun.output` holds
+  up to 1 MiB per host (`MAX_OUTPUT_BYTES` in `app/tasks/action_host.py`).
+  Send the action key and version, the parameters, each host's status,
+  every failed task with the lines before it, and the `PLAY RECAP`. The
+  failure finder in `lib/ansible-log.ts` is frontend-only, so the
+  backend needs its own. Give the model a read-only tool that pages
+  through the rest of a run's output: that is half of the "action
+  history" tool the AI section below lists as missing.
+- **Link the session to the run with a new column** (say
+  `ai_sessions.investigates_action_run_id`), not `action_run_id`. That
+  one means "the run that owns this session" (`_builtin.ai_task`), and
+  the busy guard passes it as `exclude_action_run_id`
+  (`app/ai/alert_autonomy.py`), so reusing it would let the session's
+  commands ignore the run. The run page then shows "investigated in
+  session N" and links to it.
+- **Say where the log goes.** It leaves LabDog for the provider. The
+  button should name the provider, since an Ansible log can hold more
+  than an alert's labels do (a task without `no_log`).
+
+Open: start at once, or open the composer prefilled so the operator can
+add what they know; and whether a second press opens the existing
+session or starts another.
+
+---
+
 ## Protected hosts — a per-host "never write config here" flag
 
 **Context:** Some hosts are worth inventorying and watching but must
@@ -283,6 +325,53 @@ Follow-ups it leaves open:
   saying nothing (leaves the signal unused), and closing as done (the
   panel keeps lying to subscription users). Move the window-label map
   out of `runner.py` into a shared module when doing this.
+
+---
+
+## Assistant — clearing out old sessions
+
+**Context:** Sessions go one at a time, from the hover "delete" in the
+session list (`DELETE /api/ai/sessions/{id}`, refused while live), and
+nothing prunes them: `run_retention` covers action runs and sync jobs,
+and `ai_snapshots` only the snapshots. Alert investigations add one
+session per alert. The list also shows only the newest 50
+(`GET /api/ai/sessions` defaults to `limit=50`, caps at 200, has no
+paging), so older sessions cannot be reached from the UI at all.
+
+**Deleting loses more than the transcript:**
+
+- **Full-auto safeguards count sessions.** The cooldown, the daily cap,
+  and the in-flight and unjudged-fix checks are queries over
+  `alert_investigation` sessions (`app/ai/alert_autonomy.py`,
+  `app/ai/remediation.py`). Deleting today's sessions resets a host's
+  cap, and an unjudged fix stops blocking the next one.
+- **The rollback goes.** `POST /api/ai/sessions/{id}/rollback` works
+  from the session's tool calls. After a delete the snapshot is still on
+  the hypervisor, named only in the audit row's `snapshots_left_behind`,
+  and outside the retention sweep.
+- **The alert forgets it was investigated.**
+  `alert_events.investigation_session_id` is `SET NULL`, so `/alerts`
+  offers "investigate" again.
+
+Spend is unaffected: `ai_usage_days` is keyed by date and provider.
+
+**Sketch — archive first, delete second:**
+
+- **Archive** (`ai_sessions.archived_at`): hidden from the default
+  list, kept whole, restorable, and still counted by every safeguard.
+  Multi-select in the session list, plus "archive everything finished
+  before …" and "archive every alert investigation". `GET
+  /api/ai/sessions` gains a filter (active / archived / all) and paging.
+- **Bulk delete** of archived sessions, with one audit row per session
+  as the single delete writes. Skip and name the ones that are live,
+  still hold an unpruned snapshot, or are still inside a safeguard's
+  window, instead of failing the batch.
+- **Optional retention:** `ai.session_retention_days` (default 0, keep
+  forever), with the same skips, like `logging.run_retention_days`.
+  Archiving after N days, rather than deleting, is the gentler default.
+
+Open: whether archiving a `_builtin.ai_task` session also hides it from
+the scheduled run's history.
 
 ---
 
