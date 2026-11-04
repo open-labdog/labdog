@@ -86,6 +86,7 @@ export function SessionList({ sessions, selectedId, onSelect, onDelete, deleting
                     </Tag>
                   )}
                   {MODE_LABEL[s.mode] && <Tag>{MODE_LABEL[s.mode]}</Tag>}
+                  {s.investigates_action_run_id != null && <Tag title={`About action run #${s.investigates_action_run_id}`}>run</Tag>}
                   <span className="trunc min-w-0 text-[11px] text-text-3">{describeScope(hostNames(s.target_host_ids))}</span>
                   {s.cost > 0 && <span className="mono num text-[11px] text-text-3">{money(s.cost, currency, 3)}</span>}
                 </span>

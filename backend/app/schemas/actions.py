@@ -100,6 +100,28 @@ class ActionHostRunOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class RunInvestigateBody(BaseModel):
+    #: Investigate this host's part of the run only. Omitted: the whole run.
+    host_run_id: int | None = None
+
+
+class RunInvestigationOut(BaseModel):
+    session_id: int
+    #: False when an earlier investigation of the same hosts was reopened
+    #: rather than a new one started.
+    created: bool
+
+
+class RunInvestigationRef(BaseModel):
+    """An assistant session started from this run's page."""
+
+    session_id: int
+    status: str
+    #: The hosts it may touch: every host of the run, or the one asked about.
+    target_host_ids: list[int]
+    created_at: datetime
+
+
 class ActionRunOut(BaseModel):
     id: int
     action_key: str
@@ -135,5 +157,7 @@ class ActionRunOut(BaseModel):
     pending_reason: str | None = None
     created_at: datetime
     host_runs: list[ActionHostRunOut] = []
+    #: Filled in by the run detail endpoint, newest first.
+    investigations: list[RunInvestigationRef] = []
 
     model_config = {"from_attributes": True}

@@ -900,6 +900,18 @@ export interface ActionRun {
   pending_reason: string | null
   created_at: string
   host_runs: ActionHostRun[]
+  /** Assistant sessions started from this run's page, newest first. Filled
+   *  in by the run detail endpoint only. */
+  investigations?: RunInvestigation[]
+}
+
+/** An assistant session about a run, as the run detail lists it. */
+export interface RunInvestigation {
+  session_id: number
+  status: AISessionStatus
+  /** Every host of the run, or the one host it was asked about. */
+  target_host_ids: number[]
+  created_at: string
 }
 
 // ---------------------------------------------------------------------------
@@ -1130,6 +1142,9 @@ export interface AISession {
   /** True when this session opted out of pre-change snapshots. */
   skip_snapshots: boolean
   action_run_id: number | null
+  /** The run this session investigates, when it was started from the run
+   *  page. Null once that run is pruned. */
+  investigates_action_run_id?: number | null
   iterations: number
   prompt_tokens: number
   completion_tokens: number

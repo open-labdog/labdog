@@ -173,7 +173,8 @@ _AI_PARAMETERS: tuple[ActionParameter, ...] = (
             "Comma-separated tool names, or blank for all of them. Naming a "
             "subset bounds both cost and reach: a log sweep limited to "
             "query_loki cannot open an SSH session at all. Options: "
-            "run_ssh_command, query_loki, query_mimir, query_mimir_range."
+            "run_ssh_command, query_loki, query_mimir, query_mimir_range, "
+            "list_action_runs, get_action_run_output."
         ),
     ),
 )

@@ -4,7 +4,7 @@ import json
 import logging
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 from sqlalchemy import exists, select, text, update
@@ -26,6 +26,9 @@ from app.schemas.actions import (
     ActionParameterOut,
     ActionRunOut,
     RunCreateBody,
+    RunInvestigateBody,
+    RunInvestigationOut,
+    RunInvestigationRef,
 )
 
 logger = logging.getLogger(__name__)
@@ -329,6 +332,25 @@ async def get_run(
         hr_out.hostname = hostname or hr.hostname
         host_runs_out.append(hr_out)
     out.host_runs = host_runs_out
+
+    from app.ai.models import AISession
+
+    sessions = (
+        await db.execute(
+            select(AISession)
+            .where(AISession.investigates_action_run_id == id)
+            .order_by(AISession.created_at.desc(), AISession.id.desc())
+        )
+    ).scalars()
+    out.investigations = [
+        RunInvestigationRef(
+            session_id=s.id,
+            status=s.status,
+            target_host_ids=list(s.target_host_ids or []),
+            created_at=s.created_at,
+        )
+        for s in sessions
+    ]
     if run.alert_event_id is not None:
         from app.ai.models import AlertEvent
 
@@ -399,6 +421,83 @@ async def get_host_run_output_by_row(
     from fastapi.responses import PlainTextResponse
 
     return PlainTextResponse(content=host_run.output or "")
+
+
+# ---------------------------------------------------------------------------
+# POST /actions/runs/{id}/investigate — Hand the run to the assistant
+# ---------------------------------------------------------------------------
+
+
+@router.post("/runs/{id}/investigate", response_model=RunInvestigationOut)
+async def investigate_run(
+    id: int,
+    response: Response,
+    body: RunInvestigateBody | None = None,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Start a read-only assistant session about this run, or reopen one.
+
+    The session's mission carries the run's details and an excerpt of each
+    host's log; the model reads the rest with ``get_action_run_output``.
+    ``host_run_id`` narrows it to that host. A second press for the same
+    hosts returns the earlier session (200) unless it failed or was
+    stopped; a new one is 201.
+
+    The same gates as the alerts page's investigate button: the kill
+    switch, a provider that can run tools, and the budget. Opening an
+    existing session needs none of them.
+    """
+    from app.ai import service
+    from app.ai.run_investigation import (
+        RunInvestigationRefused,
+        existing_investigation,
+        investigation_scope,
+        start_run_investigation,
+    )
+    from app.ai.service import AIDisabledError, BudgetExceededError
+
+    run = await db.get(ActionRun, id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Action run not found")
+    host_run = None
+    if body is not None and body.host_run_id is not None:
+        host_run = await db.scalar(
+            select(ActionHostRun).where(
+                ActionHostRun.id == body.host_run_id, ActionHostRun.action_run_id == id
+            )
+        )
+        if host_run is None:
+            raise HTTPException(status_code=404, detail="Host run not found")
+
+    try:
+        host_runs, host_ids = await investigation_scope(db, run, host_run)
+    except RunInvestigationRefused as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    earlier = await existing_investigation(db, run.id, host_ids)
+    if earlier is not None:
+        return RunInvestigationOut(session_id=earlier.id, created=False)
+
+    try:
+        provider = await service.resolve_provider(db, None)
+        service.assert_can_investigate(provider)
+        await service.assert_within_budget(db, provider)
+    except AIDisabledError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except BudgetExceededError as exc:
+        raise HTTPException(status_code=402, detail=str(exc)) from exc
+
+    session = await start_run_investigation(
+        db, run, provider, host_runs=host_runs, host_ids=host_ids, host_run=host_run, user=user
+    )
+    await db.commit()
+
+    from app.tasks import celery_app
+
+    celery_app.send_task("app.tasks.ai_task.run_chat_session", kwargs={"session_id": session.id})
+    response.status_code = 201
+    return RunInvestigationOut(session_id=session.id, created=True)
 
 
 # ---------------------------------------------------------------------------

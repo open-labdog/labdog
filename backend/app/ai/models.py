@@ -176,6 +176,12 @@ class AISession(Base):
     action_run_id: Mapped[int | None] = mapped_column(
         ForeignKey("action_runs.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # The run this session was started to investigate, from the run page.
+    # Not ``action_run_id``: that is the run that owns the session, and the
+    # busy guard lets a session past its owner's hold on the host.
+    investigates_action_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("action_runs.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     # Opt out of the pre-change Proxmox snapshot for this session only.
     #
     # Composes with ``ai.snapshot_before_mutating`` by agreement, not

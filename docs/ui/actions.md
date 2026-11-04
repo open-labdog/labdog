@@ -129,6 +129,23 @@ Also in the log's header:
 Copying from the log gives the plain text Ansible printed; the colours are
 not part of it.
 
+**Investigate with AI.** Once a run has finished, its head has an
+**Investigate with AI** button, shown when an [AI provider](assistant.md#ai-providers)
+is set up. It starts a read-only [assistant](assistant.md) session about
+the run and opens it. With a host picked in a multi-host run's table, the
+button reads **Investigate *host* with AI** and the session covers that
+host alone. A confirmation first names the provider the log goes to, and
+says when that is off your network.
+
+The session is told what ran, with which parameters, and how each host
+ended. From each host's log (the failed hosts of a group run, up to three)
+it gets LabDog's own steps (`[preflight]`, `[verify]`, `[rollback]`…), the
+play recaps and every failed task with the lines before it. It reads the
+rest of the log itself, and can look at the hosts, but cannot change
+them. Pressing the button again opens the same session, unless that one
+failed or was stopped. The run's head links to every session started
+from it.
+
 A multi-host run survives LabDog restarting in the middle of it — which
 upgrading Docker on LabDog's own host will do. Within about ten minutes
 LabDog notices that nothing is handing out the run's hosts any more and

@@ -5,7 +5,21 @@ import type { Page } from "@playwright/test"
  *  web1; more make it a group run of host-01, host-02, … */
 export async function mockRun(
   page: Page,
-  { id = 9301, log, status = "succeeded", hosts = 1, alert }: { id?: number; log: string; status?: string; hosts?: number; alert?: { id: number; name: string } },
+  {
+    id = 9301,
+    log,
+    status = "succeeded",
+    hosts = 1,
+    alert,
+    investigations = [],
+  }: {
+    id?: number
+    log: string
+    status?: string
+    hosts?: number
+    alert?: { id: number; name: string }
+    investigations?: { session_id: number; status: string; target_host_ids: number[]; created_at: string }[]
+  },
 ) {
   const hostRuns = Array.from({ length: hosts }, (_, i) => ({
     id: id * 100 + i,
@@ -44,6 +58,7 @@ export async function mockRun(
     pending_reason: null,
     created_at: "2026-10-08T02:00:56Z",
     host_runs: hostRuns,
+    investigations,
   }
   await page.route(new RegExp(`/api/actions/runs/${id}/?$`), (r) => r.fulfill({ json: run }))
   await page.route(new RegExp(`/api/actions/runs/${id}/host-runs/\\d+/output`), (r) => r.fulfill({ body: log, contentType: "text/plain" }))

@@ -97,48 +97,6 @@ filling in the action dialog again by hand.
 
 ---
 
-## Action runs — hand a run's log to the assistant
-
-**Context:** Finding out why a run failed means reading its log on the
-run page (`components/action-run-detail.tsx`), or opening `/assistant`
-and pasting it in. Alerts already have the one-click version: their
-"investigate" button (`POST /api/alerts/{id}/investigate`, through
-`start_investigation` in `app/tasks/ai_alerts.py`) builds a session from
-the alert, dispatches it, and opens `/assistant?session=<id>`.
-
-**Sketch:** an "Investigate with AI" button on the run page, for the
-whole run or for the host selected in the log window, backed by
-something like `POST /api/actions/runs/{id}/investigate`.
-
-- **Same gates as the alert button:** `resolve_provider`,
-  `assert_can_investigate` and `assert_within_budget`; commit, then send
-  `run_chat_session`. Read-only autonomy, scoped to the run's hosts
-  (`target_host_ids`).
-- **The mission cannot be the whole log.** `ActionHostRun.output` holds
-  up to 1 MiB per host (`MAX_OUTPUT_BYTES` in `app/tasks/action_host.py`).
-  Send the action key and version, the parameters, each host's status,
-  every failed task with the lines before it, and the `PLAY RECAP`. The
-  failure finder in `lib/ansible-log.ts` is frontend-only, so the
-  backend needs its own. Give the model a read-only tool that pages
-  through the rest of a run's output: that is half of the "action
-  history" tool the AI section below lists as missing.
-- **Link the session to the run with a new column** (say
-  `ai_sessions.investigates_action_run_id`), not `action_run_id`. That
-  one means "the run that owns this session" (`_builtin.ai_task`), and
-  the busy guard passes it as `exclude_action_run_id`
-  (`app/ai/alert_autonomy.py`), so reusing it would let the session's
-  commands ignore the run. The run page then shows "investigated in
-  session N" and links to it.
-- **Say where the log goes.** It leaves LabDog for the provider. The
-  button should name the provider, since an Ansible log can hold more
-  than an alert's labels do (a task without `no_log`).
-
-Open: start at once, or open the composer prefilled so the operator can
-add what they know; and whether a second press opens the existing
-session or starts another.
-
----
-
 ## Protected hosts — a per-host "never write config here" flag
 
 **Context:** Some hosts are worth inventorying and watching but must
@@ -268,9 +226,9 @@ phase 3:
   Permission should be granted per actionpack rather than per shell
   command: packs are already named, vetted and idempotent, where a
   command-pattern allowlist would re-create the classifier's problem in a
-  weaker form. Two read-only tools are missing alongside it: action
-  history (what LabDog recently did to a host, which is exactly the
-  context a post-upgrade check wants) and Proxmox status/backup checks.
+  weaker form. A read-only tool is missing alongside it: Proxmox
+  status/backup checks. (Action history shipped as `list_action_runs` and
+  `get_action_run_output`.)
 
 **Known gaps in what shipped:** the DB-backed tests under `tests/ai/` need
 testcontainers, so on a machine without Docker they are verified by review
