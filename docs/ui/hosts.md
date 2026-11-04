@@ -102,8 +102,10 @@ dot for its sync state. Every module has the same layout as a group's
   diff preview first) and **add** for a host override.
 - The **effective** table: every item this host receives, whichever group it
   comes from, with a **comes from** column — the group and its priority,
-  *this host*, or *system* for LabDog's own SSH rule. Editing a group's item
-  creates a host override of it; host rows can be edited or deleted.
+  *this host*, or *system* for LabDog's own SSH rule and the hosts file's
+  localhost and own-name lines (see [Hosts file](groups.md#hosts-file)).
+  Editing a group's item creates a host override of it; host rows can be
+  edited or deleted.
 - **current state** — what the last collection read from the host, with
   **collect** to read it again and **enable/disable drift check** for that
   module (on Firewall this is the host-level flag — see

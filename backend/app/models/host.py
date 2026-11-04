@@ -85,6 +85,10 @@ class Host(Base):
     os_facts_collected_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    #: The name the host calls itself, read by facts collection — unlike
+    #: ``hostname``, which is only what LabDog calls it. The hosts-file
+    #: merge maps it to 127.0.1.1 (BUG-115).
+    reported_hostname: Mapped[str | None] = mapped_column(String(255), nullable=True)
     ssh_host_key_entry: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

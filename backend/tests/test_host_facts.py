@@ -175,3 +175,28 @@ class TestCollectHostFactsHostnameAutoHeal:
 
         refreshed = (await db.execute(select(Host).where(Host.id == host.id))).scalar_one()
         assert refreshed.hostname == placeholder_hostname("10.10.3.190")
+
+
+class TestCollectHostFactsReportedHostname:
+    """BUG-115: the name the host calls itself, for its /etc/hosts line."""
+
+    async def test_takes_the_full_name(self, db):
+        ssh_key = await create_ssh_key(db)
+        host = await create_host(db, hostname="valheim-vm", ssh_key_id=ssh_key.id)
+        conn = _make_conn({"hostname -f": "valheim.lan\n", "hostname": "valheim\n"})
+
+        await _run_collect_host_facts(host.id, db, conn)
+
+        refreshed = (await db.execute(select(Host).where(Host.id == host.id))).scalar_one()
+        assert refreshed.reported_hostname == "valheim.lan"
+        assert refreshed.hostname == "valheim-vm"
+
+    async def test_short_name_when_the_host_cannot_resolve_itself(self, db):
+        ssh_key = await create_ssh_key(db)
+        host = await create_host(db, hostname="valheim-vm", ssh_key_id=ssh_key.id)
+        conn = _make_conn({"hostname -f": "", "hostname": "valheim\n"})
+
+        await _run_collect_host_facts(host.id, db, conn)
+
+        refreshed = (await db.execute(select(Host).where(Host.id == host.id))).scalar_one()
+        assert refreshed.reported_hostname == "valheim"

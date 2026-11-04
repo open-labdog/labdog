@@ -7,6 +7,25 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **A synced `/etc/hosts` keeps the host's own name.** A hosts sync wrote
+  the file with only the two localhost lines and LabDog's entries, so the
+  `127.0.1.1 <name>` line the Debian installer and cloud-init put there
+  was lost. On a host whose DNS has no answer for its own name, every
+  `sudo` then complained that it could not resolve the host and mailed
+  root about it. The file now carries `127.0.1.1 <full name> <short
+  name>`, with the name the host reports, unless an entry already places
+  one of those names or uses 127.0.1.1, as a Proxmox node that must
+  resolve to its real address would. (BUG-115)
+
+- **LabDog leaves `/etc/hosts` alone on a host no entry applies to.** It
+  used to replace the file with the two localhost lines whenever the
+  module was synced, including in a "sync all". Such a host now reports
+  the module as in sync with nothing to change, and drift finds nothing
+  extra in its file. A host whose file was already cut down keeps it as it
+  is: give it an entry, or put the line back by hand. (BUG-115)
+
 ## [1.0.0] — 2026-10-27
 
 The first stable release. From here LabDog follows Semantic Versioning:
