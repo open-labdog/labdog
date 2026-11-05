@@ -72,6 +72,13 @@ an investigation recorded on the alert rather than left to be guessed.
 named, vetted actionpack rather than a raw shell command. Two design
 problems block it, both recorded in [TODO.md](TODO.md).
 
+**Later.** A second evidence producer for verify — today there is only
+`evidence_from_state` — and with it, storing each verify step's evidence
+pack structurally on its session so "which verifications ran without a
+disk reading" is a query rather than a transcript grep. Not before: with
+one producer there is nothing to compare across. The note for whoever
+writes it sits at the seam, in `backend/app/workflows/steps/ai_verify.py`.
+
 **The honest limit.** A verify step judges evidence LabDog collected in a
 ten-minute window that includes the action's own work, so it can mistake
 a change's own log noise for a fault. Prompt wording mitigates it;
