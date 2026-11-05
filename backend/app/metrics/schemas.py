@@ -55,3 +55,52 @@ class DriftCoverage(BaseModel):
     #: Distinct hosts covered by either flag. Not the sum of the two above —
     #: a host with both kinds on is one covered host.
     any_enabled_hosts: int
+
+
+# ---------------------------------------------------------------------------
+# Point-in-time reads for the Overview tabs (``app.metrics.overview``).
+# ---------------------------------------------------------------------------
+
+
+class StuckOperation(BaseModel):
+    """An operation that has held its host(s) for longer than the sweeper's
+    stale threshold, and what is waiting for it to finish."""
+
+    kind: Literal["sync", "action"]
+    #: The SyncJob id for a sync, the ActionRun id for an action.
+    id: int
+    #: The action key, or the modules a sync covers.
+    label: str
+    #: Every host the operation still holds; one for a sync.
+    host_ids: list[int]
+    hostnames: list[str]
+    #: When its earliest still-running host started.
+    started_at: datetime
+    #: Distinct operations deferred (``pending``) on those hosts. They
+    #: cannot start until this one lets go.
+    queued_behind: int
+
+
+class StuckOperations(BaseModel):
+    threshold_minutes: int
+    items: list[StuckOperation]
+
+
+class ModuleStatusCount(BaseModel):
+    """Hosts in one sync status for one module, from ``host_module_status``."""
+
+    module_type: str
+    sync_status: str
+    count: int
+
+
+class CACertExpiry(BaseModel):
+    """One CA certificate LabDog deploys, with when it stops being valid."""
+
+    name: str
+    fingerprint_sha256: str
+    not_after: datetime
+    #: Distinct hosts it is deployed to, through any group or host rule.
+    host_count: int
+    #: Where it is declared: ``group <name>`` / ``host <name>``.
+    scopes: list[str]

@@ -81,7 +81,7 @@ a live fleet — hostnames, addresses and counts are illustrative.
 | Screenshot | Shows |
 |------------|-------|
 | [`login.png`](screenshots/login.png) | Sign-in |
-| [`overview.png`](screenshots/overview.png) | Overview — status bar, Pending, activity, drift trend |
+| [`overview.png`](screenshots/overview.png) | Overview — status bar, scheduled-run tiles, Pending, activity, schedule health, next 24 hours |
 | [`hosts.png`](screenshots/hosts.png) | Hosts list |
 | [`host-detail.png`](screenshots/host-detail.png) | A host's Config tab — effective firewall with where each rule comes from |
 | [`discovery.png`](screenshots/discovery.png) | Discovery — scan schedules |

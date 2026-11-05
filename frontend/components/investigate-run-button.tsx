@@ -23,10 +23,22 @@ function sameIds(a: number[], b: number[]): boolean {
  * about the whole run, or about `hostRun` when one host is picked in the
  * log. Once there is one for the same hosts, the button opens it instead.
  *
+ * A run from the run list has no host rows or investigations, so a list
+ * passes the host it is about (`first_failure`). The API then reopens an
+ * earlier session for that host itself.
+ *
  * Not shown at all where no AI provider is set up, so an install without
  * AI gets no button it cannot use.
  */
-export function InvestigateRunButton({ run, hostRun }: { run: ActionRun; hostRun: ActionHostRun | null }) {
+export function InvestigateRunButton({
+  run,
+  hostRun,
+  ghost,
+}: {
+  run: ActionRun
+  hostRun: Pick<ActionHostRun, "id" | "host_id" | "hostname"> | null
+  ghost?: boolean
+}) {
   const router = useRouter()
   const queryClient = useQueryClient()
   const [confirming, setConfirming] = useState(false)
@@ -63,7 +75,7 @@ export function InvestigateRunButton({ run, hostRun }: { run: ActionRun; hostRun
 
   if (earlier) {
     return (
-      <button type="button" className="btn btn-sm" onClick={() => router.push(`/assistant?session=${earlier.session_id}`)}>
+      <button type="button" className={`btn btn-sm ${ghost ? "btn-ghost" : ""}`} onClick={() => router.push(`/assistant?session=${earlier.session_id}`)}>
         View investigation →
       </button>
     )
@@ -79,7 +91,7 @@ export function InvestigateRunButton({ run, hostRun }: { run: ActionRun; hostRun
     return (
       <button
         type="button"
-        className="btn btn-sm"
+        className={`btn btn-sm ${ghost ? "btn-ghost" : ""}`}
         disabled
         title={provider ? `The default AI provider, ${provider.name}, cannot run tools, so it cannot investigate.` : "No AI provider is marked as the default."}
       >
@@ -92,7 +104,7 @@ export function InvestigateRunButton({ run, hostRun }: { run: ActionRun; hostRun
   const where = provider.sends_data_offsite ? `${provider.name}, off your network` : provider.name
   return (
     <>
-      <button type="button" className="btn btn-sm" data-testid="investigate-run" onClick={() => setConfirming(true)}>
+      <button type="button" className={`btn btn-sm ${ghost ? "btn-ghost" : ""}`} data-testid="investigate-run" onClick={() => setConfirming(true)}>
         {label}
       </button>
       <Confirm

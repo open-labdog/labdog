@@ -903,6 +903,23 @@ export interface ActionRun {
   /** Assistant sessions started from this run's page, newest first. Filled
    *  in by the run detail endpoint only. */
   investigations?: RunInvestigation[]
+  /** Hosts per status, e.g. `{succeeded: 17, failed: 1}`. Filled in by the
+   *  list endpoint, which leaves `host_runs` empty. */
+  host_counts?: Record<string, number>
+  /** The first host the run failed on. List endpoint only. */
+  first_failure?: RunHostFailure | null
+}
+
+/** GET /api/actions/runs — the first failing host of a run in the list. */
+export interface RunHostFailure {
+  host_run_id: number
+  host_id: number | null
+  hostname: string
+  exit_code: number | null
+  error_message: string | null
+  /** The failed task's own message, read from the log. `error_message`
+   *  usually only says ansible-runner exited non-zero. */
+  reason: string | null
 }
 
 /** An assistant session about a run, as the run detail lists it. */
@@ -949,6 +966,14 @@ export interface ScheduledAction {
   pack_name: string | null
   destructive: boolean | null
   last_run: ScheduledActionRunSummary | null
+  /** The next fire time, in the scheduling timezone's reading of the cron.
+   *  Null while paused, without a cron, or when the cron is invalid. */
+  next_run_at?: string | null
+  /** Every fire time in the next 7 days (at most 200), soonest first. */
+  upcoming_runs?: string[]
+  /** The schedule's newest runs, newest first (8 unless the list was asked
+   *  for another number with `?recent_runs=`). */
+  recent_runs?: ScheduledActionRunSummary[]
 }
 
 // GET /api/scheduled-actions/runs — flat, newest-first feed of individual
@@ -1470,4 +1495,61 @@ export interface NotificationDelivery {
   last_error: string | null
   created_at: string
   sent_at: string | null
+}
+
+// ---------------------------------------------------------------------------
+// Overview reads (GET /api/dashboard/*, GET /api/grafana/fleet/metrics)
+// ---------------------------------------------------------------------------
+
+/** An operation running past the stale threshold, with what waits behind it. */
+export interface StuckOperation {
+  kind: "sync" | "action"
+  /** SyncJob id or ActionRun id. */
+  id: number
+  /** The modules of a sync, the action key of a run. */
+  label: string
+  host_ids: number[]
+  hostnames: string[]
+  started_at: string
+  /** Operations queued on these hosts, waiting for this one. */
+  queued_behind: number
+}
+
+export interface StuckOperations {
+  threshold_minutes: number
+  items: StuckOperation[]
+}
+
+/** Hosts per module and status, from every host's module status rows. */
+export interface ModuleStatusCount {
+  module_type: string
+  sync_status: string
+  count: number
+}
+
+/** A deployed CA certificate and when it runs out, soonest first. */
+export interface CACertExpiry {
+  name: string
+  fingerprint_sha256: string
+  not_after: string
+  host_count: number
+  /** "group default-allow", "host media" — where it is declared. */
+  scopes: string[]
+}
+
+export interface FleetHostMetrics {
+  host_id: number
+  hostname: string
+  /** Percent, or null when Mimir has no series for the host. */
+  cpu: number | null
+  memory: number | null
+  disk: number | null
+}
+
+export interface FleetMetrics {
+  configured: boolean
+  unconfigured_reason: string | null
+  sampled_at: string | null
+  hosts: FleetHostMetrics[]
+  error: string | null
 }

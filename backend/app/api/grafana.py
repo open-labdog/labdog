@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,9 +11,10 @@ from app.auth.users import current_active_user
 from app.crypto import decrypt_ssh_key, encrypt_ssh_key, get_master_key
 from app.db import get_db
 from app.grafana.client import PrometheusClient, PrometheusError
-from app.grafana.metrics import fetch_host_metrics
+from app.grafana.metrics import fetch_fleet_metrics, fetch_host_metrics
 from app.grafana.models import GrafanaInstance
 from app.grafana.schemas import (
+    FleetMetrics,
     GrafanaInstanceCreate,
     GrafanaInstanceResponse,
     GrafanaInstanceUpdate,
@@ -304,6 +307,49 @@ async def test_draft_instance(
 # ---------------------------------------------------------------------------
 
 
+async def _mimir_client(db: AsyncSession) -> PrometheusClient | str:
+    """A client for the default Mimir instance, or why there is none:
+    ``no_default`` when instances exist but none is marked default,
+    ``no_instance`` when there are none."""
+    inst = await get_default_instance(db, "mimir")
+    if inst is None:
+        registered = await db.scalar(
+            select(func.count()).select_from(GrafanaInstance).where(GrafanaInstance.kind == "mimir")
+        )
+        return "no_default" if registered else "no_instance"
+    return PrometheusClient(
+        query_url=derive_query_url(inst.url, inst.kind),
+        org_id=inst.org_id,
+        token=await _decrypt_token(inst),
+        verify_ssl=inst.verify_ssl,
+        ca_cert_pem=inst.ca_cert_pem,
+        auth_type=inst.auth_type,
+        username=inst.username,
+    )
+
+
+@router.get("/fleet/metrics", response_model=FleetMetrics)
+async def get_fleet_metrics(
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Instant CPU, memory and root-disk use for every host, in three
+    queries — the Overview's resource hot spots."""
+    client = await _mimir_client(db)
+    if isinstance(client, str):
+        return FleetMetrics(configured=False, unconfigured_reason=client)
+    hostnames = dict((await db.execute(select(Host.id, Host.hostname))).tuples().all())
+    try:
+        rows, sampled = await fetch_fleet_metrics(client, hostnames)
+    except PrometheusError as exc:
+        return FleetMetrics(configured=True, error=str(exc))
+    return FleetMetrics(
+        configured=True,
+        sampled_at=datetime.fromtimestamp(sampled, tz=UTC) if sampled is not None else None,
+        hosts=rows,
+    )
+
+
 @router.get("/hosts/{host_id}/metrics", response_model=HostMetrics)
 async def get_host_metrics(
     host_id: int,
@@ -314,25 +360,9 @@ async def get_host_metrics(
     if not host:
         raise HTTPException(status_code=404, detail="Host not found")
 
-    inst = await get_default_instance(db, "mimir")
-    if inst is None:
-        registered = await db.scalar(
-            select(func.count()).select_from(GrafanaInstance).where(GrafanaInstance.kind == "mimir")
-        )
-        return HostMetrics(
-            configured=False,
-            unconfigured_reason="no_default" if registered else "no_instance",
-        )
-
-    client = PrometheusClient(
-        query_url=derive_query_url(inst.url, inst.kind),
-        org_id=inst.org_id,
-        token=await _decrypt_token(inst),
-        verify_ssl=inst.verify_ssl,
-        ca_cert_pem=inst.ca_cert_pem,
-        auth_type=inst.auth_type,
-        username=inst.username,
-    )
+    client = await _mimir_client(db)
+    if isinstance(client, str):
+        return HostMetrics(configured=False, unconfigured_reason=client)
     try:
         return await fetch_host_metrics(client, host_id)
     except PrometheusError as exc:

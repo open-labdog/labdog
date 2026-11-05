@@ -7,12 +7,13 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
-from sqlalchemy import exists, select, text, update
+from sqlalchemy import exists, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.actions.registry import ACTION_REGISTRY, reload_registry_async
 from app.actions.run_target import describe_target
 from app.actions.validation import DRY_RUN_PARAM, build_param_model
+from app.ai.run_log import FAILURE_WINDOW_SQL, failure_reason
 from app.auth.users import current_active_user
 from app.db import get_db
 from app.models.action_run import ActionHostRun, ActionRun
@@ -26,6 +27,7 @@ from app.schemas.actions import (
     ActionParameterOut,
     ActionRunOut,
     RunCreateBody,
+    RunHostFailure,
     RunInvestigateBody,
     RunInvestigationOut,
     RunInvestigationRef,
@@ -280,22 +282,92 @@ async def create_run(
 async def list_runs(
     host_id: int | None = Query(default=None),
     group_id: int | None = Query(default=None),
-    limit: int = Query(default=20, ge=1, le=100),
+    status: str | None = Query(
+        default=None, description="comma-separated run statuses, e.g. failed,partial"
+    ),
+    since: datetime | None = Query(default=None, description="only runs created at or after"),
+    scheduled: bool | None = Query(
+        default=None, description="true: only runs a schedule started; false: only the rest"
+    ),
+    limit: int = Query(default=20, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """List action runs, optionally filtered by host or group scope."""
+    """List action runs, newest first, optionally filtered by scope, status,
+    age and origin.
+
+    Each row carries ``host_counts`` and ``first_failure`` rather than its
+    host rows, so a list of group runs can say "17 ok, 1 failed on media"
+    in two extra queries however many runs it holds.
+    """
     q = select(ActionRun).order_by(ActionRun.created_at.desc()).limit(limit).offset(offset)
     if host_id is not None:
         q = q.where(ActionRun.host_id == host_id)
     if group_id is not None:
         q = q.where(ActionRun.group_id == group_id)
+    if status:
+        wanted = [s.strip() for s in status.split(",") if s.strip()]
+        if wanted:
+            q = q.where(ActionRun.status.in_(wanted))
+    if since is not None:
+        if since.tzinfo is None:
+            since = since.replace(tzinfo=UTC)
+        q = q.where(ActionRun.created_at >= since)
+    if scheduled is True:
+        q = q.where(ActionRun.scheduled_action_id.isnot(None))
+    elif scheduled is False:
+        q = q.where(ActionRun.scheduled_action_id.is_(None))
 
     result = await db.execute(q)
     runs = result.scalars().all()
-    # Return without nested host_runs for list view
-    return [ActionRunOut.model_validate(r) for r in runs]
+    out = [ActionRunOut.model_validate(r) for r in runs]
+    if not out:
+        return out
+
+    ids = [r.id for r in out]
+    counts = await db.execute(
+        select(ActionHostRun.action_run_id, ActionHostRun.status, func.count())
+        .where(ActionHostRun.action_run_id.in_(ids))
+        .group_by(ActionHostRun.action_run_id, ActionHostRun.status)
+    )
+    by_run: dict[int, dict[str, int]] = {}
+    for run_id, host_status, n in counts.all():
+        by_run.setdefault(run_id, {})[host_status] = n
+
+    # Columns, not the entity: ``output`` is up to a mebibyte per host, and
+    # only a short window of it from the first failed task is wanted.
+    failures = await db.execute(
+        select(
+            ActionHostRun.id,
+            ActionHostRun.action_run_id,
+            ActionHostRun.host_id,
+            ActionHostRun.hostname,
+            Host.hostname,
+            ActionHostRun.exit_code,
+            ActionHostRun.error_message,
+            func.substring(ActionHostRun.output, FAILURE_WINDOW_SQL),
+        )
+        .outerjoin(Host, Host.id == ActionHostRun.host_id)
+        .where(ActionHostRun.action_run_id.in_(ids), ActionHostRun.status == "failed")
+        .order_by(ActionHostRun.action_run_id, ActionHostRun.id)
+        .distinct(ActionHostRun.action_run_id)
+    )
+    first_failure: dict[int, RunHostFailure] = {}
+    for hr_id, run_id, h_id, run_hostname, hostname, rc, err, window in failures.all():
+        first_failure[run_id] = RunHostFailure(
+            host_run_id=hr_id,
+            host_id=h_id,
+            hostname=hostname or run_hostname,
+            exit_code=rc,
+            error_message=err,
+            reason=failure_reason(window),
+        )
+
+    for item in out:
+        item.host_counts = by_run.get(item.id, {})
+        item.first_failure = first_failure.get(item.id)
+    return out
 
 
 # ---------------------------------------------------------------------------

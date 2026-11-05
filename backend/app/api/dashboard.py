@@ -6,8 +6,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.users import current_active_user
 from app.db import get_db
-from app.metrics import service
-from app.metrics.schemas import DriftCoverage, DriftTrendSeries, SyncRateSeries
+from app.metrics import overview, service
+from app.metrics.schemas import (
+    CACertExpiry,
+    DriftCoverage,
+    DriftTrendSeries,
+    ModuleStatusCount,
+    StuckOperations,
+    SyncRateSeries,
+)
 from app.models.user import User
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -55,3 +62,31 @@ async def get_drift_coverage(
     candidates.
     """
     return await service.get_drift_coverage(db)
+
+
+@router.get("/stuck-operations", response_model=StuckOperations)
+async def get_stuck_operations(
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> StuckOperations:
+    """Syncs and action runs still running past the stale threshold, each
+    with the hosts it holds and how many operations are queued behind it."""
+    return await overview.get_stuck_operations(db)
+
+
+@router.get("/module-status", response_model=list[ModuleStatusCount])
+async def get_module_status(
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[ModuleStatusCount]:
+    """Hosts per module and sync status, across the fleet."""
+    return await overview.get_module_status_counts(db)
+
+
+@router.get("/ca-cert-expiries", response_model=list[CACertExpiry])
+async def get_ca_cert_expiries(
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[CACertExpiry]:
+    """Deployed CA certificates with a known expiry, soonest first."""
+    return await overview.get_ca_cert_expiries(db)
