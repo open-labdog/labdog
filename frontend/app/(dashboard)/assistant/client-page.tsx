@@ -346,7 +346,10 @@ export default function AssistantPage() {
   const toolless = enabled.filter((p) => !p.supports_tools)
   const canInvestigate = usable.length > 0
 
-  const composerLocked = loadingSession || isRunning || isParked || !canInvestigate
+  // The server's own sentence, so the page and the API's refusal cannot
+  // disagree about what is spent.
+  const followUpRefused = session?.follow_up_refused ?? null
+  const composerLocked = loadingSession || isRunning || isParked || !canInvestigate || followUpRefused !== null
   const busy = startSession.isPending || sendFollowUp.isPending
 
   function submit() {
@@ -520,6 +523,15 @@ export default function AssistantPage() {
                   isRunning={isRunning}
                 />
                 {session.error_message && <Banner tone="danger">{session.error_message}</Banner>}
+                {/* Under the reply, because that is what it qualifies: a run
+                    stopped at a limit ends in a summary of what it had, which
+                    reads like an answer to whatever was last asked. */}
+                {session.stopped_reason && !isRunning && (
+                  <Banner tone="warn">
+                    The assistant stopped early: {session.stopped_reason}. Its last message is what it had by then, and may not
+                    answer what you asked.
+                  </Banner>
+                )}
               </>
             ) : sessionError ? (
               <Banner tone="danger">
@@ -537,6 +549,11 @@ export default function AssistantPage() {
               submit()
             }}
           >
+            {followUpRefused && (
+              <Banner tone="warn" action={<Link href="/settings?section=ai" className="btn btn-sm hover:no-underline">Settings → AI</Link>}>
+                {followUpRefused}
+              </Banner>
+            )}
             <textarea
               className="inp"
               rows={3}
@@ -546,13 +563,15 @@ export default function AssistantPage() {
               placeholder={
                 isParked
                   ? "Decide on the pending command above to continue this session."
-                  : session
-                    ? "Ask a follow-up…"
-                    : selectedId !== null
-                      ? sessionError
-                        ? "This session could not be loaded — pick another, or start a new one."
-                        : "Loading the session…"
-                      : "e.g. Check whether any service failed to start after the last reboot on node-1."
+                  : followUpRefused
+                    ? "This session cannot take another message."
+                    : session
+                      ? "Ask a follow-up…"
+                      : selectedId !== null
+                        ? sessionError
+                          ? "This session could not be loaded — pick another, or start a new one."
+                          : "Loading the session…"
+                        : "e.g. Check whether any service failed to start after the last reboot on node-1."
               }
               disabled={composerLocked}
               onKeyDown={(e) => {
