@@ -18,6 +18,14 @@ The format follows [Keep a Changelog]; LabDog follows
   subscription, a follow-up did not count what the session had spent before
   it, so a session could use about twice its limit. (BUG-123)
 
+- **A session that has used up a limit says so.** It used to take a
+  follow-up, stop at the model's first response and reply with a summary,
+  with only a tag in the page header to show for it. The message box now
+  locks and names the limit, the API refuses the message with the same
+  sentence, and a notice under a run that stopped early says its last
+  message may not answer what you asked. A follow-up also clears the
+  previous run's "stopped early" tag. (BUG-124)
+
 - **An action's follow-up sync runs only the modules it names.** A
   `post_run_sync` or `post_run_register` sync that had to wait for its
   host was later run as a sync of every module: on valheim, alloy-install's

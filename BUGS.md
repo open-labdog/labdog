@@ -140,29 +140,3 @@ turned up while fixing those, by reading the code.
 
       Severity Low: a deploy that should start at once can wait; it is no
       longer lost.
-
----
-
-## Open — 2026-11-05 assistant session 39
-
-Filed 2026-11-05 from assistant session 39 on lin-manager, where two
-questions about missing Mimir metrics on `media` each got a summary of the
-first turn. Its Claude Code transcript shows what the model was really sent.
-BUG-122 and BUG-123, since fixed, came from the same session.
-
-### Correctness — Medium
-
-- [ ] **BUG-124** `backend/app/api/ai.py:578-623`,
-      `frontend/app/(dashboard)/assistant/client-page.tsx:399` — a session
-      out of budget takes a follow-up, and answers with a summary
-
-      Symptom: tokens and commands are counted over the whole session, so
-      once one is spent every follow-up is accepted, stopped at the model's
-      first response, and made to summarise. Session 39 did this at 10:38.
-      The summary sits in the transcript as the reply, and the only sign is
-      a tag in the page header, which reads the same on a run that stopped
-      long ago. `stopped_reason` is also never cleared, so a follow-up that
-      finishes properly keeps the old tag.
-
-      Severity Medium: the operator cannot tell that the question was not
-      worked on, or why.

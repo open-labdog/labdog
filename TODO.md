@@ -375,6 +375,23 @@ the scheduled run's history.
 
 ---
 
+## Assistant — follow-ups close to a session's limits
+
+**Context:** a session that has used up a limit refuses another message and
+says why (BUG-124). One that is merely close still takes it. Session 39 had
+89,925 of 100,000 tokens booked, and picking its conversation back up cost
+about 23,000 before the model did anything, so a follow-up there gets one
+response and a summary, and the notice only comes afterwards.
+
+- **Warn before sending.** Show used against limit in the session aside, and
+  warn at the message box when the last exchange's cost would not fit in
+  what is left.
+- **More room for one session.** Today the way to continue is raising
+  `ai.max_tokens_total` for every session. An operator should be able to
+  grant one session more without touching the instance setting.
+
+---
+
 ## AI command policy — rules operators can edit
 
 **Context:** SEC-38 moved what the assistant may run without approval

@@ -362,6 +362,11 @@ class AISessionDetail(AISessionResponse):
     approvals: list[AIApprovalResponse] = Field(default_factory=list)
     rollbacks: list[AIRollbackResponse] = Field(default_factory=list)
     rollback_targets: list[AIRollbackTarget] = Field(default_factory=list)
+    #: Why this finished session cannot take another message, in words for
+    #: the operator; NULL when it can. Computed at read time, because
+    #: raising a limit under Settings → AI lifts it. The API refuses such a
+    #: message with the same sentence.
+    follow_up_refused: str | None = None
 
 
 def session_to_response(session: AISession) -> AISessionResponse:
