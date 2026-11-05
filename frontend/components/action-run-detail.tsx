@@ -251,13 +251,11 @@ export function ActionRunDetail({ runId }: { runId: number }) {
             )}
           </>
         )}
-        actions={run && (isTerminal ? (
-          <InvestigateRunButton run={run} hostRun={selectedHost} />
-        ) : (
+        actions={run && !isTerminal && (
           <button type="button" className="btn btn-sm btn-danger" disabled={cancelling} onClick={handleCancel}>
             {cancelling ? "Cancelling…" : "Cancel run"}
           </button>
-        ))}
+        )}
       />
 
       {/* No page scroll. The host table takes its own height and the log
@@ -349,6 +347,9 @@ export function ActionRunDetail({ runId }: { runId: number }) {
                   </span>
                 )}
               </div>
+              {/* Next to the search: both are about reading this log, and the
+                  investigation follows the host picked for it. */}
+              {run && isTerminal && <InvestigateRunButton run={run} hostRun={selectedHost} />}
               {firstFailure >= 0 && (
                 <button type="button" className="btn btn-sm" style={{ color: "var(--danger)" }} onClick={jumpToFailure}>
                   {failureCount > 1 ? `first of ${failureCount} failures ↓` : "first failure ↓"}

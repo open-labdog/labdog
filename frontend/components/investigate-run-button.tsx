@@ -73,7 +73,8 @@ export function InvestigateRunButton({ run, hostRun }: { run: ActionRun; hostRun
   if (enabled.length === 0) return null
   // The API uses the default provider, so that is the one to name.
   const provider = enabled.find((p) => p.is_default)
-  const label = hostRun ? `Investigate ${hostRun.hostname ?? "host"} with AI` : "Investigate with AI"
+  // The scope (one host or the whole run) is in the confirm dialog, not the label.
+  const label = "Investigate with AI"
   if (!provider || !provider.supports_tools) {
     return (
       <button

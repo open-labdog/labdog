@@ -48,7 +48,7 @@ test.describe("Investigate a run with AI", () => {
     await page.goto(await mockRun(page, { log: LOG, status: "failed", hosts: 2 }))
 
     await page.getByText("host-02", { exact: true }).click()
-    await page.getByRole("button", { name: "Investigate host-02 with AI" }).click()
+    await page.getByTestId("investigate-run").click()
     await expect(page.getByRole("dialog")).toContainText("read-only assistant session on host-02")
     await page.getByRole("button", { name: "Start investigation" }).click()
 
