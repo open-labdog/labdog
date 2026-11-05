@@ -122,6 +122,19 @@ class RunInvestigationRef(BaseModel):
     created_at: datetime
 
 
+class RunHostFailure(BaseModel):
+    """The first host a run failed on, for a one-line reason in a list."""
+
+    host_run_id: int
+    host_id: int | None = None
+    hostname: str
+    exit_code: int | None = None
+    error_message: str | None = None
+    #: The first failed task's message, read from the host's log —
+    #: ``error_message`` only says ansible-runner exited non-zero.
+    reason: str | None = None
+
+
 class ActionRunOut(BaseModel):
     id: int
     action_key: str
@@ -157,6 +170,14 @@ class ActionRunOut(BaseModel):
     pending_reason: str | None = None
     created_at: datetime
     host_runs: list[ActionHostRunOut] = []
+    #: How many of the run's hosts are in each status, e.g.
+    #: ``{"succeeded": 17, "failed": 1}``. Filled in by the list endpoint,
+    #: which leaves ``host_runs`` empty, so a group run can read
+    #: "17 ok, 1 failed" without fetching every host row.
+    host_counts: dict[str, int] = {}
+    #: The first host that failed (lowest host-run id), filled in by the
+    #: list endpoint alongside ``host_counts``.
+    first_failure: RunHostFailure | None = None
     #: Filled in by the run detail endpoint, newest first.
     investigations: list[RunInvestigationRef] = []
 

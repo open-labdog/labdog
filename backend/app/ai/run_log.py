@@ -15,6 +15,7 @@ failure is what the run page paints red. Keep the two in step.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 
@@ -198,3 +199,47 @@ def failures(lines: list[LogLine]) -> list[Failure]:
         current_task = task_index
         found.append(current)
     return found
+
+
+#: Where a failed task's own result starts, for :func:`failure_reason`. A
+#: PostgreSQL regular expression, so the list endpoint reads about 2 kB of
+#: each first-failing host's log rather than the whole mebibyte. Nested
+#: because PostgreSQL refuses a repetition count over 255.
+FAILURE_WINDOW_SQL = r"(?:^|\n)((?:fatal|failed): \[(?:.{0,250}){0,8})"
+
+_MSG = re.compile(r'"msg":\s*"((?:[^"\\]|\\.)*)"')
+_RESULT = re.compile(r"^(?:fatal|failed): \[[^\]]*\]: [A-Z!]+(?: => )?(.*)$")
+_REASON_MAX = 240
+
+
+def failure_reason(window: str | None) -> str | None:
+    """One line saying why a host failed, from the start of its first
+    failed task (``FAILURE_WINDOW_SQL``), for a row in a list of runs.
+
+    The ``msg`` of the first failure Ansible did not carry on past, else
+    the result line itself. ``ActionHostRun.error_message`` is no use
+    here: for a playbook failure it says only that ansible-runner exited
+    non-zero. Redacted like everything else read out of a run log.
+    """
+    if not window:
+        return None
+    lines = parse(readable(window))
+    found = failures(lines)
+    if not found:
+        return None
+    pick = next((f for f in found if not f.ignored), found[0])
+    text = "\n".join(line.text for line in pick.lines if line.kind in FAILURE_KINDS or line.cont)
+    msg = _MSG.search(text)
+    if msg:
+        try:
+            reason = json.loads(f'"{msg.group(1)}"')
+        except ValueError:
+            reason = msg.group(1)
+    else:
+        head = next((line.text for line in pick.lines if line.kind in FAILURE_KINDS), "")
+        m = _RESULT.match(head)
+        reason = (m.group(1) if m else head).strip(" {")
+    reason = " ".join(str(reason).split())
+    if not reason:
+        return None
+    return reason if len(reason) <= _REASON_MAX else reason[: _REASON_MAX - 1] + "…"

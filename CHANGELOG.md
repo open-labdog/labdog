@@ -9,6 +9,18 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Added
 
+- **Overview leads with scheduled runs.** The Overview's five views now
+  show how scheduled runs are doing before anything else. Summary has
+  tiles for failed runs, the 7-day success rate, stuck operations and the
+  next run, plus each schedule's last eight runs, failing first. Pending
+  gains **failed runs** (with the failing host's reason, taken from the
+  log) and **stuck** lanes. Fleet state shows snapshot, drift-check,
+  verification and host-key coverage, the OS and kernel mix, and resource
+  hot spots from Grafana. Activity covers 24 hours or 7 days, filters by
+  kind and hour, and includes alerts and assistant sessions. Upcoming has
+  a 7-day timeline that marks schedules touching the same host at the
+  same time. Drift is one line, not a panel.
+
 - **Expandable rail.** The navigation rail can expand to show each zone's
   name next to its icon. The `»` button at the foot of the rail, or `]`,
   expands it, and `«` or `]` again collapses it back to icons. The choice

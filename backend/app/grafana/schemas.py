@@ -173,3 +173,25 @@ class HostMetrics(BaseModel):
     disk: MetricValue | None = None
     #: Populated when a query failed (vs. simply having no data yet).
     error: str | None = None
+
+
+class FleetHostMetrics(BaseModel):
+    """One host's instant usage, as percentages, in the fleet-wide read."""
+
+    host_id: int
+    hostname: str
+    cpu: float | None = None
+    memory: float | None = None
+    disk: float | None = None
+
+
+class FleetMetrics(BaseModel):
+    """Every host's CPU, memory and root-disk use from three PromQL queries,
+    for the Overview's resource hot spots. Same ``configured`` / ``error``
+    contract as :class:`HostMetrics`."""
+
+    configured: bool
+    unconfigured_reason: Literal["no_instance", "no_default"] | None = None
+    sampled_at: datetime | None = None
+    hosts: list[FleetHostMetrics] = []
+    error: str | None = None

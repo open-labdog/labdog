@@ -269,7 +269,7 @@ consequences:
 - **The drift counters are all-time, not "last 90 days".** Retention shrinks
   the table, not the numbers.
 - **The drift trend *is* windowed**, and reads `drift_samples` directly —
-  the Overview's chart shows 14 days, and `/api/dashboard/drift-trend`
+  the Overview's Fleet state view shows 14 days, and `/api/dashboard/drift-trend`
   serves up to 90. Set the retention window at or above the longest range
   you read (90 days) or the older buckets go empty.
 

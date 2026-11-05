@@ -61,7 +61,7 @@ export const ZONE_DEFS: ZoneDef[] = [
       { label: "Summary", href: "/overview" },
       { label: "Pending", href: "/overview?view=pending", badge: (c) => nz(c.pendingBlocking) },
       { label: "Fleet state", href: "/overview?view=state" },
-      { label: "Activity · 24h", href: "/overview?view=activity" },
+      { label: "Activity", href: "/overview?view=activity" },
       { label: "Upcoming", href: "/overview?view=upcoming", n: (c) => nz(c.schedules) },
     ],
   },
