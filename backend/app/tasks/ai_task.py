@@ -33,6 +33,7 @@ from app.ai.service import (
     BudgetExceededError,
     assert_within_budget,
     finish_session,
+    load_transcript,
     resolve_provider,
 )
 from app.db import task_session
@@ -113,6 +114,27 @@ async def _force_fail(db, session_id: int, error: str) -> None:
         logger.exception("ai_task: could not mark session %s failed", session_id)
 
 
+async def _follow_up_prompt(db, session: AISession) -> str | None:
+    """The operator's newest turn, when this run answers one.
+
+    ``None`` on a session's first run, which asks the mission. After that
+    the SDK runner must be told what to ask: the CLI resumes its own
+    conversation and never sees the stored transcript, so without this it
+    is handed the mission again and the operator's question goes nowhere
+    (BUG-122). ``AgentLoop`` takes no prompt and replays the transcript.
+
+    A session with nothing to resume, because its first run died before
+    the CLI announced an id, has a model that has never heard the mission,
+    so that is repeated in front of the question.
+    """
+    turns = [m.content for m in await load_transcript(db, session.id) if m.role == "user"]
+    if len(turns) < 2:
+        return None
+    if (session.resume_state or {}).get("sdk_session_id"):
+        return turns[-1]
+    return f"Your mission was:\n\n{session.mission}\n\n{turns[-1]}"
+
+
 def _redis_client():
     import redis
 
@@ -148,7 +170,8 @@ async def _run_session_async(session_id: int) -> dict:
             return {"session_id": session_id, "status": "failed", "error": str(exc)}
 
         caps = await LoopCaps.for_session(db, session)
-        loop = build_runner(db, session, provider_row, caps, publish)
+        prompt = await _follow_up_prompt(db, session)
+        loop = build_runner(db, session, provider_row, caps, publish, prompt=prompt)
 
         try:
             outcome = await loop.run()

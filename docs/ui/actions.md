@@ -752,10 +752,13 @@ post_run_sync:
   - services
 ```
 
-After success, labdog dispatches a normal per-host sync for each
-named module against the same target host. The sync routes through
-the standard `host_sync_orchestrator` pipeline: per-host advisory
-lock, coalesced playbook, audit row, the works.
+After success, labdog queues a normal per-host sync for each named
+module against the same target host — only that module. The syncs
+start as soon as the action releases the host (or after anything
+already waiting on it) and route through the standard
+`host_sync_orchestrator` pipeline: per-host queue, coalesced
+playbook, audit row, the works. A module that already has a sync
+waiting on the host is not queued twice.
 
 Semantics are **push, not collect**. Use this when the action
 needs labdog's existing config to be (re-)enforced after the
@@ -787,9 +790,9 @@ post_run_register:
 After success, labdog inserts each declared resource as a **host-
 scope override row** (`host_id=<target>`, `group_id=NULL`) so the
 resource becomes labdog-managed from that point on. After the
-inserts, a `post_run_sync` is automatically dispatched for the
+inserts, a `post_run_sync` is automatically queued for the
 affected modules so the Host detail tabs reflect the new state
-immediately (no waiting for the next drift check).
+as soon as the action finishes (no waiting for the next drift check).
 
 Top-level keys are canonical module names: `packages`, `resolver`,
 `services`, `hosts-file`, `cron`, `linux-users`, `firewall`. Each
@@ -818,7 +821,8 @@ Four module categories overwrite the host with labdog's complete
 desired state on every sync (i.e. unknown entries get removed):
 
 - **firewall** — rebuilds the nftables ruleset from scratch
-- **hosts-file** — overwrites `/etc/hosts` with desired entries
+- **hosts-file** — overwrites `/etc/hosts` with desired entries (on a
+  host any entry applies to; others are left alone)
 - **resolver** — overwrites resolver config (resolv.conf / NM /
   systemd-resolved) with desired settings
 - **SSH keys** (within `linux-users`) — exclusive mode; deletes all

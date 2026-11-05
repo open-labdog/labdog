@@ -1382,8 +1382,9 @@ async def _aggregate_and_finalise(action_run_id: int, channel: str, r) -> None:
 
         # Post-run module sync fan-out: for group-dispatched actions
         # (supports_host=false) one invocation produces N per-host
-        # outcomes; we fan out post_run_sync to each host whose row is
-        # ``succeeded``. Skipped on dry-run, on cancel, and on whole-
+        # outcomes; we queue post_run_sync for each host whose row is
+        # ``succeeded``, and the member release in the caller's
+        # ``finally`` starts them. Skipped on dry-run, on cancel, and on whole-
         # run failure. Failures here are logged but never affect the
         # action's terminal status -- the action itself already
         # completed.
@@ -1404,7 +1405,7 @@ async def _aggregate_and_finalise(action_run_id: int, channel: str, r) -> None:
             if post_run_sync_modules or post_run_register_decls:
                 from app.sync.post_run import (
                     dispatch_post_run_register,
-                    dispatch_post_run_sync,
+                    queue_post_run_sync,
                 )
 
                 for hr in host_runs:
@@ -1417,25 +1418,25 @@ async def _aggregate_and_finalise(action_run_id: int, channel: str, r) -> None:
                         continue
                     if post_run_sync_modules:
                         try:
-                            dispatched_ids = await dispatch_post_run_sync(
+                            queued_ids = await queue_post_run_sync(
                                 db,
                                 host_id=hr.host_id,
                                 modules=post_run_sync_modules,
                                 triggered_by_user_id=run.triggered_by_user_id,
                             )
-                            if dispatched_ids:
+                            if queued_ids:
                                 await db.commit()
                                 logger.info(
-                                    "action_group: dispatched post_run_sync for "
+                                    "action_group: queued post_run_sync for "
                                     "action_run %d host %d -- modules=%s job_ids=%s",
                                     action_run_id,
                                     hr.host_id,
                                     list(post_run_sync_modules),
-                                    dispatched_ids,
+                                    queued_ids,
                                 )
                         except Exception:
                             logger.exception(
-                                "action_group: post_run_sync dispatch failed for "
+                                "action_group: post_run_sync queueing failed for "
                                 "action_run %d host %d",
                                 action_run_id,
                                 hr.host_id,

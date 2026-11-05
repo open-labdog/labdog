@@ -225,7 +225,7 @@ class _RunSpec:
     auto_rollback: bool
     #: Manifest-declared post-run module syncs. Fired against the same
     #: host after a successful, non-dry-run completion so labdog's desired
-    #: state is re-enforced. See ``app.sync.post_run.dispatch_post_run_sync``.
+    #: state is re-enforced. See ``app.sync.post_run.queue_post_run_sync``.
     post_run_sync: tuple[str, ...]
     #: Manifest-declared post-run resource registrations. After success the
     #: helper inserts host-scope override rows for each declared resource
@@ -1176,31 +1176,33 @@ async def _phase_g_persist(
         await db.commit()
 
         # Post-run module sync: only on success, never on dry-run, and only
-        # when the manifest opted in. Dispatch failures are logged but do not
-        # affect the action's status -- the action itself already completed.
+        # when the manifest opted in. The rows are only queued; releasing
+        # the host in ``_release_host`` is what starts them. Failures are
+        # logged but do not affect the action's status -- the action
+        # itself already completed.
         if success and not dry_run and spec.post_run_sync:
             try:
-                from app.sync.post_run import dispatch_post_run_sync
+                from app.sync.post_run import queue_post_run_sync
 
-                dispatched_ids = await dispatch_post_run_sync(
+                queued_ids = await queue_post_run_sync(
                     db,
                     host_id=spec.host_id,
                     modules=spec.post_run_sync,
                     triggered_by_user_id=spec.triggered_by_user_id,
                 )
-                if dispatched_ids:
+                if queued_ids:
                     await db.commit()
                     logger.info(
-                        "action_host: dispatched post_run_sync for "
+                        "action_host: queued post_run_sync for "
                         "action_run %d host %d -- modules=%s job_ids=%s",
                         ctx.action_run_id,
                         spec.host_id,
                         list(spec.post_run_sync),
-                        dispatched_ids,
+                        queued_ids,
                     )
             except Exception:
                 logger.exception(
-                    "action_host: post_run_sync dispatch failed for action_run %d host %d",
+                    "action_host: post_run_sync queueing failed for action_run %d host %d",
                     ctx.action_run_id,
                     spec.host_id,
                 )
@@ -1328,7 +1330,7 @@ async def _on_failure(ctx: _RunCtx, exc: Exception) -> None:
 
 
 async def _release_host(ctx: _RunCtx) -> None:
-    """Hand the host to the next pending op and close the parent run.
+    """Close the parent run, then hand the host to the next pending op.
 
     Runs even on the orchestrator-raised path so the per-host queue never
     stalls. Failures here are swallowed — they must not mask the real
@@ -1339,18 +1341,17 @@ async def _release_host(ctx: _RunCtx) -> None:
     if not (ctx.claimed and ctx.claimed_host_id is not None):
         return
 
-    await release_host_queue(
-        ctx.claimed_host_id,
-        after=f"action_run_id={ctx.action_run_id}",
-        exclude_action_run_id=ctx.action_run_id,
-    )
-
     # Close the parent run if this was the last member outstanding.
     #
     # BUG-62: a member deferred behind a busy host is re-dispatched long
     # after the orchestrator's batch wait returned, so nothing else would
     # ever aggregate. No-op unless every sibling is terminal, and idempotent
     # if two finish at once.
+    #
+    # BUG-117: before the release, not after. A host-targeted run holds its
+    # host for as long as it is ``running``, so the op the release hands the
+    # host to found it still busy, deferred again, and waited for whatever
+    # ran on the host next — eight hours, for a post-run sync on valheim.
     try:
         from app.tasks.action_orchestrator import finalise_run_if_complete  # noqa: PLC0415
 
@@ -1361,6 +1362,12 @@ async def _release_host(ctx: _RunCtx) -> None:
             ctx.action_run_id,
             ctx.host_run_id,
         )
+
+    await release_host_queue(
+        ctx.claimed_host_id,
+        after=f"action_run_id={ctx.action_run_id}",
+        exclude_action_run_id=ctx.action_run_id,
+    )
 
 
 def _remove_workspaces(ctx: _RunCtx) -> None:

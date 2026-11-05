@@ -90,6 +90,17 @@ _MODULE_TYPE_MAPPING: dict[str, str] = {
 # the orchestrator wants in its ``module_filter`` list.
 _DB_TO_CANONICAL: dict[str, str] = {v: k for k, v in _MODULE_TYPE_MAPPING.items()}
 
+#: The ``SyncJob.module_type`` values that run as a sync. Not every
+#: ``sync_jobs`` row is one: a CA certificate deploy stores ``ca_cert``
+#: there and is run by its own task. The host queue used to re-dispatch
+#: any other value as a sync of every module (BUG-116).
+SYNC_MODULE_TYPES: frozenset[str] = frozenset({"bulk", *_DB_TO_CANONICAL})
+
+
+class UnknownModuleType(ValueError):
+    """A ``SyncJob.module_type`` that names no sync module."""
+
+
 # D3 timeout constants. Documented inline at the call site too.
 _TIMEOUT_BASE_SECONDS = 60
 _TIMEOUT_PER_MODULE_SECONDS = 120
@@ -205,18 +216,18 @@ def _filter_from_module_type(module_type: str) -> list[str] | None:
     Mapping rules:
     - ``"bulk"`` → ``None``: orchestrator interprets as "every module".
     - Known short DB name → ``[canonical]``: a single-element filter.
-    - Anything else → ``None`` and a warning: better to over-run than
-      to leave a queued job stuck on a typo'd ``module_type``.
+    - Anything else → :class:`UnknownModuleType`. This used to be
+      ``None`` — "better to over-run than leave a job stuck" — and a
+      post-run sync that stored ``packages`` here ran every module,
+      firewall and ``/etc/hosts`` included, on a host that had asked for
+      packages (BUG-116). A job nobody can read is not a request for
+      everything.
     """
     if module_type == "bulk":
         return None
     canonical = _DB_TO_CANONICAL.get(module_type)
     if canonical is None:
-        logger.warning(
-            "Unknown SyncJob.module_type %r; dispatching as bulk to avoid stuck job",
-            module_type,
-        )
-        return None
+        raise UnknownModuleType(f"SyncJob.module_type {module_type!r} names no sync module")
     return [canonical]
 
 
@@ -231,6 +242,9 @@ def module_filter_for(job) -> list[str] | None:
     :func:`_filter_from_module_type` directly — that function maps
     ``"bulk"`` to ``None``, i.e. *every* module, which silently escalates
     a filtered bulk sync that was deferred behind a busy host.
+
+    Raises :class:`UnknownModuleType` for a row with no recorded filter
+    whose ``module_type`` is not in :data:`SYNC_MODULE_TYPES`.
     """
     stored = job.module_filter
     if stored:
@@ -289,7 +303,7 @@ async def _claim_or_defer(
     standstill nothing clears, because the only thing that would
     re-dispatch it is another op finishing on the same host (BUG-80).
     """
-    from app.models.sync_job import SyncJob
+    from app.models.sync_job import JobStatus, SyncJob
     from app.tasks.host_lock import (
         acquire_host_lock,
         check_host_busy,
@@ -297,6 +311,21 @@ async def _claim_or_defer(
     )
 
     await acquire_host_lock(db, host_id)
+
+    # A job runs at most once. The host queue can send the same pending
+    # row twice — two releases in a row, as a finished ``_builtin.sync``
+    # does (its inner sync and then the closed run each hand the host
+    # on) — and the second task would otherwise flip a finished job back
+    # to ``running`` and apply it again, or stamp a running one as busy.
+    status = await db.scalar(select(SyncJob.status).where(SyncJob.id == job_id))
+    if status is not None and enum_str(status) != JobStatus.pending:
+        logger.info(
+            "_claim_or_defer: SyncJob %d is already %s; nothing to do",
+            job_id,
+            enum_str(status),
+        )
+        return False
+
     blocker = await check_host_busy(db, host_id, exclude_action_run_id=exclude_action_run_id)
     if blocker is None:
         return True

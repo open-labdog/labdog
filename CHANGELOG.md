@@ -16,6 +16,63 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **The assistant answers follow-up questions on a Claude subscription.**
+  A follow-up on a `claude_agent` provider was saved to the transcript, and
+  the model was asked the session's original mission again, so it repeated
+  what it had already found. The question now reaches the model. (BUG-122)
+
+- **`ai.max_tokens_total` holds for a whole session.** On a Claude
+  subscription, a follow-up did not count what the session had spent before
+  it, so a session could use about twice its limit. (BUG-123)
+
+- **A session that has used up a limit says so.** It used to take a
+  follow-up, stop at the model's first response and reply with a summary,
+  with only a tag in the page header to show for it. The message box now
+  locks and names the limit, the API refuses the message with the same
+  sentence, and a notice under a run that stopped early says its last
+  message may not answer what you asked. A follow-up also clears the
+  previous run's "stopped early" tag. (BUG-124)
+
+- **An action's follow-up sync runs only the modules it names.** A
+  `post_run_sync` or `post_run_register` sync that had to wait for its
+  host was later run as a sync of every module: on valheim, alloy-install's
+  packages and services follow-ups rewrote the firewall and `/etc/hosts`
+  too. Each now records its module and runs that one. The host queue no
+  longer runs a row it cannot read as a sync at all, which also stops a
+  waiting CA certificate deploy from going out as a full sync. Waiting
+  follow-ups from before the upgrade are repaired. (BUG-116)
+
+- **Work queued behind an action starts when the action finishes.** An
+  action handed its host on before closing its run, so whatever was
+  waiting found the host still busy and waited again — until the next
+  operation on that host. The run is now closed first, for pack actions
+  and the built-in ones (`_builtin.sync`, drift check, collect state)
+  alike. (BUG-117)
+
+- **A CA certificate deploy takes its turn on the host.** It ran without
+  waiting for whatever else was working on the host, and when it finished
+  it did not hand the host on, so everything queued behind it waited for
+  the next operation there: eight hours, for valheim's follow-up syncs. It
+  now waits while the host is busy and starts the next queued operation
+  when it is done. (BUG-119)
+
+- **A synced `/etc/hosts` keeps the host's own name.** A hosts sync wrote
+  the file with only the two localhost lines and LabDog's entries, so the
+  `127.0.1.1 <name>` line the Debian installer and cloud-init put there
+  was lost. On a host whose DNS has no answer for its own name, every
+  `sudo` then complained that it could not resolve the host and mailed
+  root about it. The file now carries `127.0.1.1 <full name> <short
+  name>`, with the name the host reports, unless an entry already places
+  one of those names or uses 127.0.1.1, as a Proxmox node that must
+  resolve to its real address would. (BUG-115)
+
+- **LabDog leaves `/etc/hosts` alone on a host no entry applies to.** It
+  used to replace the file with the two localhost lines whenever the
+  module was synced, including in a "sync all". Such a host now reports
+  the module as in sync with nothing to change, and drift finds nothing
+  extra in its file. A host whose file was already cut down keeps it as it
+  is: give it an entry, or put the line back by hand. (BUG-115)
+
 - **The upgrade and production guides named an image LabDog is not
   published as** (`ghcr.io/open-labdog/labdog:0.6.1`). They now use
   `openlabdog/labdog` on Docker Hub.

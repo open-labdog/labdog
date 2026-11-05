@@ -453,7 +453,7 @@ async def _drift_hosts_file(host_id: int, hms: HostModuleStatus, db: AsyncSessio
     from app.hosts_mgmt.merge import get_effective_hosts_entries
 
     desired = await get_effective_hosts_entries(host_id, db)
-    if not desired or all(e.is_system for e in desired):
+    if not desired:
         hms.sync_status = "in_sync"
         hms.error_message = None
         return
