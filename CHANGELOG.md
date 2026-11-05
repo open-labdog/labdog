@@ -7,6 +7,13 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+### Added
+
+- **Docker images are tagged with their version.** Each release is
+  published as `openlabdog/labdog:X.Y.Z`, `X.Y` and `X`, all the same
+  image as `latest`, so an install can pin a version as the upgrade
+  guide says.
+
 ### Fixed
 
 - **The assistant answers follow-up questions on a Claude subscription.**
@@ -65,6 +72,10 @@ The format follows [Keep a Changelog]; LabDog follows
   the module as in sync with nothing to change, and drift finds nothing
   extra in its file. A host whose file was already cut down keeps it as it
   is: give it an entry, or put the line back by hand. (BUG-115)
+
+- **The upgrade and production guides named an image LabDog is not
+  published as** (`ghcr.io/open-labdog/labdog:0.6.1`). They now use
+  `openlabdog/labdog` on Docker Hub.
 
 ## [1.0.0] — 2026-10-27
 
