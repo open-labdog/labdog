@@ -5,7 +5,8 @@ import { usePathname } from "next/navigation"
 import { useTheme } from "next-themes"
 import { useAuth } from "@/lib/auth"
 import { useViewportWidth } from "@/hooks/use-viewport"
-import { MobileRail, Rail, ThemeToggle } from "@/components/shell/rail"
+import { MobileRail, RAIL_W, RAIL_W_EXPANDED, Rail, ThemeToggle } from "@/components/shell/rail"
+import { useLocalPref } from "@/lib/local-pref"
 import { Pane } from "@/components/shell/pane"
 import { Palette } from "@/components/shell/palette"
 import { AccountMenu } from "@/components/shell/account-menu"
@@ -22,7 +23,8 @@ const MOBILE = 640
 /**
  * Pattern A: icon rail (four zones, fixed cost) + contextual pane +
  * content. At 1024 the pane becomes an overlay; at 390 the rail is a
- * bottom tab bar. Keyboard: ⌘K palette, `[` toggles the pane, `t`
+ * bottom tab bar. Keyboard: ⌘K palette, `[` toggles the pane, `]`
+ * expands or collapses the rail (icons only ↔ icons with names), `t`
  * toggles the theme.
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -53,6 +55,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     [paneKey, narrow],
   )
   const [palette, setPalette] = useState(false)
+  // Expanded or icon-only rail: a viewer convenience, remembered per browser.
+  const [railPref, setRailPref] = useLocalPref("labdog.rail", { expanded: false })
+  const railExpanded = railPref.expanded
+  const toggleRail = useCallback(() => setRailPref({ expanded: !railExpanded }), [setRailPref, railExpanded])
+  const railW = railExpanded ? RAIL_W_EXPANDED : RAIL_W
   // Shell queries only run once someone is signed in and off the auth pages.
   const counts = useShellCounts(!isAuthPage && !!user)
 
@@ -73,11 +80,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       }
       if (typing || e.metaKey || e.ctrlKey || e.altKey) return
       if (e.key === "[") setPaneOpen((p) => !p)
+      if (e.key === "]") toggleRail()
       if (e.key === "t") toggleTheme()
     }
     window.addEventListener("keydown", h)
     return () => window.removeEventListener("keydown", h)
-  }, [isAuthPage, toggleTheme, setPaneOpen])
+  }, [isAuthPage, toggleTheme, setPaneOpen, toggleRail])
 
   if (isAuthPage) {
     return <>{children}</>
@@ -87,11 +95,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className={`relative flex h-full overflow-hidden ${mobile ? "flex-col" : "flex-row"}`}>
-      {!mobile && <Rail zone={zone} counts={counts} onPalette={() => setPalette(true)} />}
+      {!mobile && (
+        <Rail
+          zone={zone}
+          counts={counts}
+          onPalette={() => setPalette(true)}
+          expanded={railExpanded}
+          onToggleExpanded={toggleRail}
+        />
+      )}
 
-      {showPane && <Pane zone={zone} counts={counts} overlay={narrow} onClose={() => setPaneOpen(false)} />}
+      {showPane && <Pane zone={zone} counts={counts} overlay={narrow} left={railW} onClose={() => setPaneOpen(false)} />}
       {showPane && narrow && (
-        <div className="absolute inset-0 z-20" style={{ left: 50, background: "var(--scrim)" }} onClick={() => setPaneOpen(false)} aria-hidden />
+        <div className="absolute inset-0 z-20" style={{ left: railW, background: "var(--scrim)" }} onClick={() => setPaneOpen(false)} aria-hidden />
       )}
       {!mobile && hasPane && !paneOpen && (
         <button

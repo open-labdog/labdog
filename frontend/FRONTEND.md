@@ -57,8 +57,12 @@ Everything lives in `components/shell/`:
 
 `components/app-shell.tsx` composes them. Breakpoints: below 1180px the pane
 becomes an overlay that closes on navigation; below 640px the rail is a
-bottom tab bar and the pane is gone. Keyboard: `⌘K`/`Ctrl+K` palette, `[`
-toggles the pane, `t` toggles the theme (never while typing in a field).
+bottom tab bar and the pane is gone. The desktop rail is icons-only by
+default and expands to icons with names (the `»`/`«` button at its foot, or
+`]`); the choice is a per-browser `useLocalPref` (`labdog.rail`), and an
+overlay pane starts at the rail's current width. Keyboard: `⌘K`/`Ctrl+K`
+palette, `[` toggles the pane, `]` expands or collapses the rail, `t`
+toggles the theme (never while typing in a field).
 
 **Legacy routes** (`/dashboard`, `/hosts/discovery`, `/hosts/pending`,
 `/hosts/discover`, `/hosts/scans`, `/schedules`, `/action-packs`,
@@ -575,6 +579,7 @@ There is no tooltip component.
 
 - `Cmd/Ctrl+K` — open command palette
 - `[` — toggle the contextual pane
+- `]` — expand or collapse the rail (icons only ↔ icons with names)
 - `t` — toggle dark/light theme
 - `Escape` — close any open dialog or the command palette (handled by the base-ui dialog)
 
