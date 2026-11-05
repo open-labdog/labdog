@@ -187,6 +187,15 @@ export function SessionSummary({
         </Section>
       )}
 
+      {session.archived_at && (
+        <Section label="archived">
+          <span className="mono text-[11.5px] text-text-2" title={session.archived_at}>
+            {formatTimestamp(session.archived_at)}
+          </span>
+          <span className={note}>Out of the session list, kept whole. Select it in the archive to bring it back.</span>
+        </Section>
+      )}
+
       <Section label="hosts in scope">
         <span className="mono text-[11.5px] text-text-2" title={scope.join(", ") || undefined}>
           {describeScope(scope)}

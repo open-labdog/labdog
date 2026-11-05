@@ -83,6 +83,39 @@ Good prompts are specific about the question, not the method:
 - *"Compare installed package versions on web-1 and web-2 and tell me what differs."*
 - *"Disk usage on backup-1 jumped yesterday. Find out what grew."*
 
+### Clearing out old sessions
+
+The list has two views: **in use** and **archived**. Archiving is the
+everyday way to clear the list. An archived session leaves the list and
+keeps everything else: its transcript, its rollback, its alert's link,
+and its place in what the [alert remediation](alerts.md) safeguards count
+(the cooldown, the daily cap and the check after a fix). It still opens
+from a link, and its summary says when it was archived.
+
+- **select** puts a checkbox on each row. With some picked, the bar under
+  the list offers **archive** under **in use**, and **unarchive** or
+  **delete** under **archived**.
+- **archive old…** archives every finished session that ended before a
+  date, or only the alert investigations among them.
+- `ai.session_archive_after_days` (default 0, never) does the same every
+  day for sessions older than that many days. See
+  [Settings](settings.md).
+- **load older** at the foot of the list fetches the next 50.
+
+Deleting removes a session for good, and keeps the ones LabDog still
+needs, saying why for each:
+
+- one that is still running, or waiting for an approval: stop it first;
+- a full-auto alert fix the safeguards still count, for a day after it
+  ended or for the cooldown if that is longer: archive it instead;
+- in a bulk delete only, one whose snapshot is still on the hypervisor:
+  deleting it would leave the snapshot there untracked. The **delete**
+  on the session's own row still does that, and the audit log names the
+  snapshot.
+
+Recorded spend is kept either way: the usage totals are counted by day
+and provider, not by session.
+
 ---
 
 ## Running checks on a schedule

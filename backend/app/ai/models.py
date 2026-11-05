@@ -224,6 +224,12 @@ class AISession(Base):
     finished_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None
     )
+    # Set when the session is archived: out of the assistant's list, kept
+    # whole otherwise. See app.ai.session_housekeeping for why this, and
+    # not deleting, is the everyday way to clear the list.
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None, index=True
+    )
 
 
 class AIMessage(Base):

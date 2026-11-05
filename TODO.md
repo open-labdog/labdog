@@ -286,53 +286,6 @@ Follow-ups it leaves open:
 
 ---
 
-## Assistant — clearing out old sessions
-
-**Context:** Sessions go one at a time, from the hover "delete" in the
-session list (`DELETE /api/ai/sessions/{id}`, refused while live), and
-nothing prunes them: `run_retention` covers action runs and sync jobs,
-and `ai_snapshots` only the snapshots. Alert investigations add one
-session per alert. The list also shows only the newest 50
-(`GET /api/ai/sessions` defaults to `limit=50`, caps at 200, has no
-paging), so older sessions cannot be reached from the UI at all.
-
-**Deleting loses more than the transcript:**
-
-- **Full-auto safeguards count sessions.** The cooldown, the daily cap,
-  and the in-flight and unjudged-fix checks are queries over
-  `alert_investigation` sessions (`app/ai/alert_autonomy.py`,
-  `app/ai/remediation.py`). Deleting today's sessions resets a host's
-  cap, and an unjudged fix stops blocking the next one.
-- **The rollback goes.** `POST /api/ai/sessions/{id}/rollback` works
-  from the session's tool calls. After a delete the snapshot is still on
-  the hypervisor, named only in the audit row's `snapshots_left_behind`,
-  and outside the retention sweep.
-- **The alert forgets it was investigated.**
-  `alert_events.investigation_session_id` is `SET NULL`, so `/alerts`
-  offers "investigate" again.
-
-Spend is unaffected: `ai_usage_days` is keyed by date and provider.
-
-**Sketch — archive first, delete second:**
-
-- **Archive** (`ai_sessions.archived_at`): hidden from the default
-  list, kept whole, restorable, and still counted by every safeguard.
-  Multi-select in the session list, plus "archive everything finished
-  before …" and "archive every alert investigation". `GET
-  /api/ai/sessions` gains a filter (active / archived / all) and paging.
-- **Bulk delete** of archived sessions, with one audit row per session
-  as the single delete writes. Skip and name the ones that are live,
-  still hold an unpruned snapshot, or are still inside a safeguard's
-  window, instead of failing the batch.
-- **Optional retention:** `ai.session_retention_days` (default 0, keep
-  forever), with the same skips, like `logging.run_retention_days`.
-  Archiving after N days, rather than deleting, is the gentler default.
-
-Open: whether archiving a `_builtin.ai_task` session also hides it from
-the scheduled run's history.
-
----
-
 ## Assistant — follow-ups close to a session's limits
 
 **Context:** a session that has used up a limit refuses another message and
