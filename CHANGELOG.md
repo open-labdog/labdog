@@ -9,6 +9,15 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **The assistant answers follow-up questions on a Claude subscription.**
+  A follow-up on a `claude_agent` provider was saved to the transcript, and
+  the model was asked the session's original mission again, so it repeated
+  what it had already found. The question now reaches the model. (BUG-122)
+
+- **`ai.max_tokens_total` holds for a whole session.** On a Claude
+  subscription, a follow-up did not count what the session had spent before
+  it, so a session could use about twice its limit. (BUG-123)
+
 - **An action's follow-up sync runs only the modules it names.** A
   `post_run_sync` or `post_run_register` sync that had to wait for its
   host was later run as a sync of every module: on valheim, alloy-install's

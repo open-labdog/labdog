@@ -148,39 +148,9 @@ turned up while fixing those, by reading the code.
 Filed 2026-11-05 from assistant session 39 on lin-manager, where two
 questions about missing Mimir metrics on `media` each got a summary of the
 first turn. Its Claude Code transcript shows what the model was really sent.
-
-### Correctness — High
-
-- [ ] **BUG-122** `backend/app/tasks/ai_task.py:151`,
-      `backend/app/ai/agent_sdk/runner.py:945` — a follow-up on a Claude
-      subscription session never reaches the model
-
-      Symptom: the operator's question lands in the transcript, and the
-      model is asked the session's mission again. It says it has already
-      looked into that, and re-summarises. Session 39 was resumed twice,
-      and the CLI's own transcript has the mission three times and neither
-      question. Root cause: `run_chat_session` builds the runner without a
-      prompt, so `_exchange` falls back to `session.mission`. Only approvals
-      pass a prompt. `AgentLoop` replays the stored transcript, so the HTTP
-      backends are not affected.
-
-      Severity High: every follow-up on a `claude_agent` provider is lost,
-      and the reply reads like an answer.
+BUG-122 and BUG-123, since fixed, came from the same session.
 
 ### Correctness — Medium
-
-- [ ] **BUG-123** `backend/app/ai/agent_sdk/runner.py:1128-1135` — the
-      token cap forgets earlier exchanges of a resumed session
-
-      Symptom (by reading): `_cap_hit` compares the cap with the larger of
-      the session's booked tokens and this run's live estimate, not their
-      sum. A follow-up on a session with 89,925 of 100,000 tokens booked is
-      not stopped until the follow-up alone has spent 100,000. BUG-122 hid
-      this: with the mission sent again, a follow-up had nothing left to do
-      and ended after one response.
-
-      Severity Medium: `ai.max_tokens_total` is documented as the limit for
-      a session, and a session can spend about twice that.
 
 - [ ] **BUG-124** `backend/app/api/ai.py:578-623`,
       `frontend/app/(dashboard)/assistant/client-page.tsx:399` — a session
