@@ -12,6 +12,7 @@ and how to back out cleanly when something goes wrong.
 - [Compatibility](#compatibility)
   - [Versioning](#versioning)
 - [Pre-upgrade](#pre-upgrade)
+  - [Docker: check the environment variables](#docker-check-the-environment-variables)
 - [Upgrading](#upgrading)
   - [Docker](#docker)
   - [Debian / Ubuntu (.deb)](#debian--ubuntu-deb)
@@ -209,6 +210,15 @@ exposed — that key is published in this repository.
 your real origins. Plain HTTP on a trusted LAN still works and now logs
 a warning about `cookie_secure` rather than failing.
 
+On Docker the same rules apply to the environment variables:
+`LABDOG_SECURITY__SECRET_KEY` must be at least 32 characters and not
+`CHANGE_ME`, and `LABDOG_SECURITY__ALLOWED_ORIGINS` must not contain
+`"*"`. A variable overrides the same key in a `labdog.toml`, so on a
+Docker install the variable is the one to check. See
+[Docker: check the environment variables](#docker-check-the-environment-variables)
+for a check that runs the new release's own validation before you
+switch over.
+
 **2. Everyone is logged out once.** Sessions now carry a generation
 number so that logging out or changing a password actually revokes the
 cookie. Existing cookies have no generation and are rejected. From here
@@ -328,9 +338,74 @@ sudo install -m 0600 /etc/labdog/labdog.toml \
   /var/backups/labdog/labdog.toml-pre-upgrade-$(date +%Y%m%d)
 ```
 
+On Docker the keys are not in `labdog.toml`. They live in `LABDOG_*`
+variables, usually in the `.env` file next to `compose.yaml` (see
+[production-deploy.md](production-deploy.md#secrets-via-env)). Back
+that file up too, along with any `labdog.toml` you mount:
+
+```bash
+sudo install -m 0600 /etc/labdog/.env \
+  /var/backups/labdog/labdog.env-pre-upgrade-$(date +%Y%m%d)
+```
+
+If the variables are written straight into `compose.yaml` or come from
+a secrets manager, back up wherever they actually live.
+
 A backup set without the encryption key is unrecoverable ciphertext.
 Both files together, in the same directory, on a host that's not the
 one you're about to upgrade.
+
+### Docker: check the environment variables
+
+The upgrade notes above name `labdog.toml` keys. A Docker install sets
+the same settings as `LABDOG_` variables, with the section and key
+joined by `__`: `[security] secret_key` is
+`LABDOG_SECURITY__SECRET_KEY`. A variable wins over the same key in a
+`labdog.toml`, so check the variables. The ones the upgrade notes
+mention:
+
+| `labdog.toml` key | Variable | What to check |
+|---|---|---|
+| `[security] secret_key` | `LABDOG_SECURITY__SECRET_KEY` | At least 32 characters, and not `CHANGE_ME`, `change-me-in-production` or `change-me-32-bytes-base64-encoded`. Otherwise LabDog does not start (0.10.0). |
+| `[security] encryption_key` | `LABDOG_SECURITY__ENCRYPTION_KEY` | Set, not a placeholder, and the same key as before. A different key cannot decrypt the stored SSH keys. |
+| `[security] allowed_origins` | `LABDOG_SECURITY__ALLOWED_ORIGINS` | A JSON list of your real origins, without `"*"`, which is refused (0.10.0). From 1.0.0 it is only needed for a frontend served from another host. |
+| `[security] cookie_secure` | `LABDOG_SECURITY__COOKIE_SECURE` | `true` once LabDog is behind TLS. With `true`, a `localhost` origin in the list is refused. |
+| `[security] labdog_server_ip` | `LABDOG_SECURITY__LABDOG_SERVER_IP` | The address your hosts see LabDog connect from. The SSH lockout rule allows SSH from it when LabDog has not recorded a host's own view of that address. Unset, it is `127.0.0.1`, which no remote host's firewall will match. |
+| `[logging] audit_retention_days`, `run_retention_days`, `drift_retention_days` | `LABDOG_LOGGING__AUDIT_RETENTION_DAYS` and so on | Never had an effect, and log a warning from 1.0.0. Set retention under **Settings › System** and delete the variables. |
+
+To list which `LABDOG_` variables the running container has, without
+printing their values:
+
+```bash
+docker compose -f /etc/labdog/compose.yaml exec labdog \
+  sh -c 'env | cut -d= -f1 | grep ^LABDOG_ | sort'
+```
+
+To check the secret key's length without printing it:
+
+```bash
+docker compose -f /etc/labdog/compose.yaml exec labdog \
+  sh -c 'printf %s "$LABDOG_SECURITY__SECRET_KEY" | wc -c'
+```
+
+The thorough check is to let the new release validate your
+configuration before you switch over. Set the new image tag in
+`compose.yaml` and pull it as in [Docker](#docker) below, then, before
+`up -d`, start a throwaway container from it that only loads the
+settings:
+
+```bash
+docker compose -f /etc/labdog/compose.yaml run --rm --no-deps labdog \
+  python -c 'import app.config'
+```
+
+It gets the same variables as the real container and touches neither
+the database nor the running container. When the configuration is
+accepted it exits 0, printing at most a warning (such as the one about
+`cookie_secure` on plain HTTP). When it is not, it exits 1 with
+`FATAL: LabDog cannot start:` and one line per problem, the same
+message the real container would log in a restart loop. Fix those, run
+it again, and then go on with `up -d`.
 
 ---
 
@@ -343,18 +418,27 @@ run `alembic upgrade head` manually for a normal release upgrade.
 ### Docker
 
 Pin the tag to a specific version — never run `:latest` in
-production. The `dev` and `latest` floating tags exist for testing,
-not for stable installs.
+production. Each release is tagged on Docker Hub as `X.Y.Z`, `X.Y` and
+`X`: `openlabdog/labdog:1.0.0` never changes, while `1.0` follows the
+patch releases of 1.0 and `1` every 1.x release. `latest` follows every
+release, and the `dev-*` and `test-*` tags are unreleased builds.
 
 ```bash
 # 1. Note the version you're on, in case rollback is needed.
 docker inspect labdog | grep -i 'image\|labdog/labdog'
 
-# 2. Pull the new image and recreate the container.
-docker pull ghcr.io/open-labdog/labdog:0.6.1
+# 2. Set the new tag in compose.yaml (see below) and pull it.
+docker compose -f /etc/labdog/compose.yaml pull labdog
+
+# 3. Check the new release accepts your LABDOG_* variables
+#    (see "Docker: check the environment variables" above).
+docker compose -f /etc/labdog/compose.yaml run --rm --no-deps labdog \
+  python -c 'import app.config'
+
+# 4. Recreate the container.
 docker compose -f /etc/labdog/compose.yaml up -d labdog
 
-# 3. Watch the logs as alembic runs.
+# 5. Watch the logs as alembic runs.
 docker compose -f /etc/labdog/compose.yaml logs -f labdog
 ```
 
@@ -365,13 +449,13 @@ points at:
 ```yaml
 services:
   labdog:
-    image: ghcr.io/open-labdog/labdog:0.6.1
+    image: openlabdog/labdog:1.0.0
 ```
 
 ### Debian / Ubuntu (.deb)
 
 ```bash
-VERSION=0.3.0
+VERSION=1.0.0
 curl -LO https://github.com/open-labdog/labdog/releases/download/v${VERSION}/labdog_${VERSION}-1_amd64.deb
 sudo apt install ./labdog_${VERSION}-1_amd64.deb
 
@@ -383,7 +467,7 @@ sudo journalctl -u labdog -f
 ### RHEL / Fedora / Rocky (.rpm)
 
 ```bash
-VERSION=0.3.0
+VERSION=1.0.0
 curl -LO https://github.com/open-labdog/labdog/releases/download/v${VERSION}/labdog-${VERSION}-1.x86_64.rpm
 sudo dnf install ./labdog-${VERSION}-1.x86_64.rpm
 

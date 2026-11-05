@@ -1208,6 +1208,8 @@ export interface AISessionDetail extends AISession {
   rollbacks: AIRollback[]
   /** Each host the session changed, and whether it can be rolled back now. */
   rollback_targets: AIRollbackTarget[]
+  /** Why this session cannot take another message, ready to show; null when it can. */
+  follow_up_refused: string | null
 }
 
 export type AIRollbackStatus = "running" | "succeeded" | "failed" | "refused"
