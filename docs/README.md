@@ -569,6 +569,7 @@ See [examples/gitops/README.md](./examples/gitops/README.md) for setup walkthrou
 | `POST` | `/api/ai/sessions/{id}/messages` | Ask a follow-up in an existing session |
 | `POST` | `/api/ai/sessions/{id}/cancel` | Stop a running or parked session |
 | `GET` | `/api/ai/sessions/{id}/stream` | SSE stream of a session as it runs |
+| `POST` | `/api/actions/runs/{id}/investigate` | Start a read-only session about a finished run, or one host of it (`host_run_id`); a second call for the same hosts returns the same session |
 | `GET` | `/api/ai/approvals` · `POST /api/ai/approvals/{id}` | List pending approvals / approve or reject one |
 | `GET` | `/api/ai/usage` | Spend and token totals against the configured budgets |
 

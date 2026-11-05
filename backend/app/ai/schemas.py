@@ -259,6 +259,9 @@ class AISessionResponse(BaseModel):
     target_host_ids: list | None
     skip_snapshots: bool
     action_run_id: int | None
+    #: The run this session investigates, when it was started from the
+    #: run page. NULL once that run is pruned.
+    investigates_action_run_id: int | None = None
     iterations: int
     prompt_tokens: int
     completion_tokens: int

@@ -9,6 +9,20 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Added
 
+- **Investigate a run with AI.** A finished run's page has an
+  **Investigate with AI** button. It starts a read-only assistant session
+  about the run, or about the host picked in the log, and opens it. The
+  session is told what ran and how each host ended, and gets LabDog's
+  steps, the play recaps and every failed task from the log; it reads the
+  rest itself. A second press opens the same session. The run page links
+  to its investigations, and the session to its run.
+
+- **The assistant can read LabDog's action history.** Two read-only
+  tools: `list_action_runs` lists what LabDog recently ran on a host, and
+  `get_action_run_output` reads a run's captured output, a page at a time
+  or only the lines matching some text. Both are scoped to the session's
+  hosts.
+
 - **Docker images are tagged with their version.** Each release is
   published as `openlabdog/labdog:X.Y.Z`, `X.Y` and `X`, all the same
   image as `latest`, so an install can pin a version as the upgrade

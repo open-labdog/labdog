@@ -70,6 +70,13 @@ same scheduled check — or of the same alert — are titled identically, so
 the timestamp is what distinguishes them. Hover it for the exact ISO
 value if you are lining a run up against a Grafana panel or a journal.
 
+**From a run.** A finished action run's page has **Investigate with AI**
+(see [Running actions](actions.md#running-actions)). It starts a
+read-only session about the run, or one host of it, with the run's
+details and the failing parts of its log as the prompt, and opens it
+here. The session's **about** line links back to the run, and the list
+marks it **run**. You can carry on the conversation like any other.
+
 Good prompts are specific about the question, not the method:
 
 - *"Check whether any service failed to start after the last reboot on node-1."*
@@ -294,6 +301,10 @@ makes strays identifiable in the Proxmox UI.
   that host.
 - **Metrics** — instant PromQL against the default Mimir instance
   registered under [Grafana](../ui/README.md), if one is configured.
+- **Action history** — the action runs LabDog recently ran against a host
+  in scope (`list_action_runs`), and the output each one captured
+  (`get_action_run_output`), read a page at a time or only the lines
+  matching some text.
 
 Command output is scanned for credentials before it enters the transcript,
 so passwords, tokens, and private keys in a config file are replaced with a

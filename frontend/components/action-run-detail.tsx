@@ -9,6 +9,7 @@ import { Banner, PageHead, Pager, RunStatus, Table, Window, lastPage, pageSlice 
 import { useLocalPref } from "@/lib/local-pref"
 import type { ActionHostRun, ActionRun } from "@/lib/types"
 import { AnsibleLog, findMatches } from "@/components/ansible-log"
+import { InvestigateRunButton } from "@/components/investigate-run-button"
 import { FAILURE_KINDS, parseAnsibleLog } from "@/lib/ansible-log"
 
 const TERMINAL = new Set(["succeeded", "failed", "partial", "cancelled"])
@@ -237,13 +238,26 @@ export function ActionRunDetail({ runId }: { runId: number }) {
               </>
             )}
             {targetDeleted && <> · {run.target_label} (deleted)</>}
+            {(run.investigations?.length ?? 0) > 0 && (
+              <>
+                {" "}· investigated in{" "}
+                {run.investigations!.map((inv, i) => (
+                  <span key={inv.session_id}>
+                    {i > 0 && ", "}
+                    <Link href={`/assistant?session=${inv.session_id}`} className="mono underline hover:text-text-2" data-testid="run-investigation">session #{inv.session_id}</Link>
+                  </span>
+                ))}
+              </>
+            )}
           </>
         )}
-        actions={run && !isTerminal && (
+        actions={run && (isTerminal ? (
+          <InvestigateRunButton run={run} hostRun={selectedHost} />
+        ) : (
           <button type="button" className="btn btn-sm btn-danger" disabled={cancelling} onClick={handleCancel}>
             {cancelling ? "Cancelling…" : "Cancel run"}
           </button>
-        )}
+        ))}
       />
 
       {/* No page scroll. The host table takes its own height and the log
