@@ -129,12 +129,11 @@ Also in the log's header:
 Copying from the log gives the plain text Ansible printed; the colours are
 not part of it.
 
-**Investigate with AI.** Once a run has finished, its head has an
-**Investigate with AI** button, shown when an [AI provider](assistant.md#ai-providers)
-is set up. It starts a read-only [assistant](assistant.md) session about
-the run and opens it. With a host picked in a multi-host run's table, the
-button reads **Investigate *host* with AI** and the session covers that
-host alone. A confirmation first names the provider the log goes to, and
+**Investigate with AI.** Once a run has finished, the log's toolbar has an
+**Investigate with AI** button next to the search box, shown when an
+[AI provider](assistant.md#ai-providers) is set up. It starts a read-only
+[assistant](assistant.md) session about the run and opens it. With a host
+picked in a multi-host run's table, the session covers that host alone. A confirmation first names the provider the log goes to, and
 says when that is off your network.
 
 The session is told what ran, with which parameters, and how each host
