@@ -252,6 +252,7 @@ celery_app.conf.include = [
     "app.tasks.ai_task",
     "app.tasks.ai_approvals",
     "app.tasks.ai_snapshots",
+    "app.tasks.ai_sessions",
     "app.tasks.ai_alerts",
     "app.tasks.alert_handling",
     "app.tasks.ai_remediation",

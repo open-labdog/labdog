@@ -23,6 +23,23 @@ The format follows [Keep a Changelog]; LabDog follows
   or only the lines matching some text. Both are scoped to the session's
   hosts.
 
+- **Archive assistant sessions.** The session list has an archive, and a
+  select mode to archive, unarchive or delete several sessions at once.
+  **archive old…** archives everything that finished before a date, and
+  `ai.session_archive_after_days` (off by default) does it daily. An
+  archived session keeps its transcript, rollback and alert link, and the
+  full-auto safeguards still count it. The list now pages with **load
+  older**; it used to stop at the newest 50.
+
+### Changed
+
+- **Deleting a session keeps a full-auto alert fix the safeguards still
+  count.** For a day after it ended (or the cooldown, if longer), such a
+  session is refused with a pointer to archiving: deleting it reset the
+  host's daily cap and cooldown, and dropped the check after the fix. A
+  bulk delete also skips sessions whose snapshot is still on the
+  hypervisor.
+
 ### Fixed
 
 - **An action's follow-up sync runs only the modules it names.** A

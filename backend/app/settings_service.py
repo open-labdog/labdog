@@ -315,6 +315,18 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
             "you can undo the change afterwards — this is how long 'afterwards' lasts."
         ),
     },
+    "ai.session_archive_after_days": {
+        "type": "int",
+        "default": 0,
+        "min": 0,
+        "max": 3650,
+        "description": "Archive finished assistant sessions after this many days (0 = never).",
+        "help": (
+            "Archived sessions leave the assistant's list and keep everything else: the "
+            "transcript, the rollback, and the record the alert remediation safeguards count. "
+            "Open the archive from the list to bring one back or delete it."
+        ),
+    },
     "ai.snapshot_before_mutating": {
         "type": "int",
         "default": 1,

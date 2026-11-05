@@ -210,6 +210,7 @@ safeguards a named alert must pass.
 | Snapshot Before Change | `ai.snapshot_before_mutating` | `1` (on) | 0 – 1 | Take a Proxmox snapshot before the assistant runs a command that changes a host. Hosts with no VM mapping are unaffected. While on, a snapshot that **fails blocks the command**. |
 | Snapshot Retention | `ai.snapshot_retention_days` | `7` | 0 – 365 days | How long to keep those snapshots (0 = forever). They are deliberately *not* deleted when a session succeeds — the point of them is that you can undo the change after reading what it did, and this is how long "afterwards" lasts. |
 | Approval Expiry | `ai.approval_expiry_hours` | `24` | 1 – 720 hours | How long an approval request waits before lapsing. The session is then told the change was not approved and finishes with a report, rather than sitting parked forever. |
+| Archive Sessions After | `ai.session_archive_after_days` | `0` (never) | 0 – 3650 days | Archive finished assistant sessions once they ended this long ago, checked daily. Archived sessions leave the assistant's list and keep everything else; see [Clearing out old sessions](assistant.md#clearing-out-old-sessions). |
 
 ### The investigation prompt
 

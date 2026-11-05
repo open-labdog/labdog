@@ -564,7 +564,9 @@ See [examples/gitops/README.md](./examples/gitops/README.md) for setup walkthrou
 | `GET/POST` | `/api/ai/providers` | List/register LLM providers (API key encrypted at rest) |
 | `PATCH/DELETE` | `/api/ai/providers/{id}` | Manage a provider |
 | `POST` | `/api/ai/providers/{id}/test` | Connection test |
-| `GET/POST` | `/api/ai/sessions` | List sessions / start one |
+| `GET/POST` | `/api/ai/sessions` | List sessions (`view=active\|archived\|all`, `before_id` cursor) / start one |
+| `POST` | `/api/ai/sessions/archive` · `/api/ai/sessions/unarchive` | Archive by id, or everything finished before a date (`finished_before`, `mode`) / put back by id |
+| `POST` | `/api/ai/sessions/delete` | Delete several by id; says per session why any were kept |
 | `GET/DELETE` | `/api/ai/sessions/{id}` | Session detail (transcript, tool calls, approvals) / delete |
 | `POST` | `/api/ai/sessions/{id}/messages` | Ask a follow-up in an existing session |
 | `POST` | `/api/ai/sessions/{id}/cancel` | Stop a running or parked session |

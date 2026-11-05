@@ -1165,6 +1165,8 @@ export interface AISession {
   created_at: string
   started_at: string | null
   finished_at: string | null
+  /** Set while the session is archived: out of the list, kept whole. */
+  archived_at?: string | null
 }
 
 export type AIApprovalStatus = "pending" | "approved" | "rejected" | "expired"

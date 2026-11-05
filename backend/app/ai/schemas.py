@@ -280,6 +280,36 @@ class AISessionResponse(BaseModel):
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+    #: Set while the session is archived: left out of the default list.
+    archived_at: datetime | None = None
+
+
+SessionView = Literal["active", "archived", "all"]
+
+
+class AISessionArchiveRequest(BaseModel):
+    """Which sessions to archive: these ids, or every finished one older
+    than ``finished_before`` (of ``mode``, when given)."""
+
+    session_ids: list[int] | None = Field(default=None, max_length=500)
+    finished_before: datetime | None = None
+    mode: SessionMode | None = None
+
+
+class AISessionIdsRequest(BaseModel):
+    session_ids: list[int] = Field(min_length=1, max_length=500)
+
+
+class AISessionSkipped(BaseModel):
+    session_id: int
+    reason: str
+
+
+class AISessionBulkResult(BaseModel):
+    """What a bulk archive, unarchive or delete did, session by session."""
+
+    done: list[int]
+    skipped: list[AISessionSkipped] = []
 
 
 class AIApprovalResponse(BaseModel):

@@ -1,12 +1,15 @@
 "use client"
 
-import { Tag } from "@/components/ld"
+import type { ReactNode } from "react"
+import { Seg, Tag } from "@/components/ld"
 import { money } from "@/components/ai/usage-panel"
 import { MODE_LABEL, TERMINAL_STATES, describeScope } from "@/components/ai/session-meta"
 import { shortAgo } from "@/lib/fleet"
 import { AI_SESSION_STATUS, def } from "@/lib/status"
 import { formatTimestamp } from "@/lib/utils"
 import type { AISession } from "@/lib/types"
+
+export type SessionView = "active" | "archived"
 
 interface Props {
   sessions: AISession[] | undefined
@@ -16,27 +19,91 @@ interface Props {
   deleting: boolean
   hostNames: (ids: number[] | null | undefined) => string[]
   currency: string
+  /** The sessions in the list, or the archived ones. */
+  view: SessionView
+  onView: (view: SessionView) => void
+  /** Checkboxes instead of the per-row delete, for acting on several. */
+  selecting: boolean
+  onSelecting: (on: boolean) => void
+  picked: ReadonlySet<number>
+  onPick: (id: number) => void
+  /** Another page is there to load, and whether it is loading. */
+  hasMore: boolean
+  loadingMore: boolean
+  onMore: () => void
+  /** Opens "archive everything finished before…". */
+  onArchiveOld: () => void
+  /** What to do with the picked sessions, under the list. */
+  bulkBar?: ReactNode
 }
 
 /**
  * The assistant's left column: every session, newest first. Beside the
  * transcript on a wide screen; a short scrolling list above it on a
  * narrow one.
+ *
+ * Two views: the sessions in use, and the archive. Archiving is how the
+ * list is kept short — an archived session keeps its transcript, its
+ * rollback and its alert's link, where a delete loses all three — so the
+ * bulk delete lives in the archive, and the single delete stays on each
+ * row for a deliberate one-off.
  */
-export function SessionList({ sessions, selectedId, onSelect, onDelete, deleting, hostNames, currency }: Props) {
+export function SessionList({
+  sessions,
+  selectedId,
+  onSelect,
+  onDelete,
+  deleting,
+  hostNames,
+  currency,
+  view,
+  onView,
+  selecting,
+  onSelecting,
+  picked,
+  onPick,
+  hasMore,
+  loadingMore,
+  onMore,
+  onArchiveOld,
+  bulkBar,
+}: Props) {
   const rows = sessions ?? []
   return (
     <section
       aria-label="sessions"
       className="flex shrink-0 flex-col border-b border-line bg-surface lg:min-h-0 lg:w-[260px] lg:border-b-0 lg:border-r"
     >
-      <div className="flex shrink-0 items-center gap-2 border-b border-line bg-surface-2 px-3 py-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-surface-2 px-3 py-2">
         <span className="tt text-text-2">sessions</span>
-        <span className="mono num text-[10.5px] text-text-faint">{rows.length}</span>
+        <span className="mono num text-[10.5px] text-text-faint">{rows.length}{hasMore ? "+" : ""}</span>
+        <span className="ml-auto">
+          <Seg
+            sm
+            options={[
+              { k: "active", label: "in use", title: "Sessions not archived" },
+              { k: "archived", label: "archived", title: "Archived sessions: out of the list, kept whole" },
+            ]}
+            value={view}
+            onChange={(k) => onView(k as SessionView)}
+          />
+        </span>
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5 border-b border-line-faint px-2 py-1">
+        <button type="button" className="btn btn-sm btn-ghost" aria-pressed={selecting} onClick={() => onSelecting(!selecting)}>
+          {selecting ? "done" : "select"}
+        </button>
+        {view === "active" && (
+          <button type="button" className="btn btn-sm btn-ghost ml-auto" onClick={onArchiveOld} title="Archive every session that finished before a date">
+            archive old…
+          </button>
+        )}
       </div>
       <div className="scroll max-h-[220px] lg:max-h-none lg:flex-1">
         {sessions === undefined && <p className="m-0 px-3 py-4 text-center text-xs text-text-3">Loading sessions…</p>}
-        {sessions !== undefined && rows.length === 0 && <p className="m-0 px-3 py-4 text-center text-xs text-text-3">No sessions yet.</p>}
+        {sessions !== undefined && rows.length === 0 && (
+          <p className="m-0 px-3 py-4 text-center text-xs text-text-3">{view === "archived" ? "Nothing archived." : "No sessions yet."}</p>
+        )}
         {rows.map((s) => {
           const on = s.id === selectedId
           const running = !TERMINAL_STATES.has(s.status)
@@ -48,6 +115,15 @@ export function SessionList({ sessions, selectedId, onSelect, onDelete, deleting
               className="group flex items-start border-b border-line-faint"
               style={on ? { background: "var(--accent-soft)", boxShadow: "inset 2px 0 0 var(--accent)" } : undefined}
             >
+              {selecting && (
+                <input
+                  type="checkbox"
+                  className="ml-3 mt-2.5 shrink-0"
+                  aria-label={`Select session: ${name}`}
+                  checked={picked.has(s.id)}
+                  onChange={() => onPick(s.id)}
+                />
+              )}
               <button
                 type="button"
                 onClick={() => onSelect(s.id)}
@@ -94,7 +170,7 @@ export function SessionList({ sessions, selectedId, onSelect, onDelete, deleting
               {/* Out of the way until hover where there is a hover — the
                   list is for picking a session, not for managing one — and
                   always there on a touch screen, where there is not. */}
-              <button
+              {!selecting && <button
                 type="button"
                 aria-label={`Delete session: ${name}`}
                 title={running ? "Cancel this session before deleting it" : "Delete this session and its transcript"}
@@ -103,11 +179,19 @@ export function SessionList({ sessions, selectedId, onSelect, onDelete, deleting
                 className="btn btn-sm btn-ghost mr-1 mt-1.5 text-text-faint hover:text-danger focus-visible:opacity-100 group-hover:opacity-100 group-hover:disabled:opacity-45 [@media(hover:hover)]:opacity-0"
               >
                 delete
-              </button>
+              </button>}
             </div>
           )
         })}
+        {hasMore && (
+          <div className="px-3 py-2 text-center">
+            <button type="button" className="btn btn-sm btn-ghost" disabled={loadingMore} onClick={onMore}>
+              {loadingMore ? "Loading…" : "load older"}
+            </button>
+          </div>
+        )}
       </div>
+      {bulkBar}
     </section>
   )
 }

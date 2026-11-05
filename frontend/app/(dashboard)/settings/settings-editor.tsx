@@ -102,6 +102,7 @@ const CATEGORIES: Record<string, Category> = {
       "ai.snapshot_before_mutating",
       "ai.snapshot_retention_days",
       "ai.approval_expiry_hours",
+      "ai.session_archive_after_days",
       // Alert investigation. Intake itself is alerts.*, under Fleet defaults.
       "ai.auto_investigate_enabled",
       "ai.alert_mission_template",
