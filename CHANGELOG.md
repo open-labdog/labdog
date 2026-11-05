@@ -9,6 +9,11 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Added
 
+- **Expandable rail.** The navigation rail can expand to show each zone's
+  name next to its icon. The `»` button at the foot of the rail, or `]`,
+  expands it, and `«` or `]` again collapses it back to icons. The choice
+  is remembered in your browser.
+
 - **Investigate a run with AI.** A finished run's page has an
   **Investigate with AI** button. It starts a read-only assistant session
   about the run, or about the host picked in the log, and opens it. The

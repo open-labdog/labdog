@@ -97,6 +97,23 @@ test.describe("Overview page", () => {
     await expect(rail.getByRole("button", { name: "Config", exact: true })).toHaveCount(0)
   })
 
+  test("rail expands to show zone names and remembers it", async ({ page }) => {
+    await page.goto("/overview")
+    const rail = page.getByRole("navigation", { name: "Zones" })
+    // Collapsed: icons only, the names live in the buttons' labels.
+    await expect(rail.getByText("Fleet", { exact: true })).toHaveCount(0)
+    await rail.getByRole("button", { name: "Expand rail" }).click()
+    for (const zone of ["Overview", "Fleet", "Operations", "Assistant", "Settings"]) {
+      await expect(rail.getByText(zone, { exact: true })).toBeVisible()
+    }
+    await page.reload()
+    await expect(rail.getByText("Fleet", { exact: true })).toBeVisible()
+    // `]` collapses it again.
+    await page.keyboard.press("]")
+    await expect(rail.getByText("Fleet", { exact: true })).toHaveCount(0)
+    await expect(rail.getByRole("button", { name: "Expand rail" })).toBeVisible()
+  })
+
   test("Fleet zone opens the hosts list with Hosts, Groups and Discovery in the pane", async ({ page }) => {
     await page.goto("/overview")
     await page.getByRole("navigation", { name: "Zones" }).getByRole("button", { name: "Fleet", exact: true }).click()

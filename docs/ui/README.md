@@ -22,7 +22,10 @@ host's page.
 **Settings** sits at the foot of the rail, with the theme toggle (dark is
 the default; `t` switches), the palette button and your account — the avatar
 opens a menu with your email, **Change password…**, **About LabDog** and
-**Log out**. `[` collapses and reopens the pane.
+**Log out**. `[` collapses and reopens the pane. The `»` button at the
+very foot of the rail (or `]`) expands it to show each zone's name next to
+its icon; `«` (or `]` again) collapses it back to icons. Your browser
+remembers the choice.
 
 On a tablet the pane is an overlay that closes when you navigate; on a phone
 the rail becomes a bottom tab bar. Old links keep working: `/dashboard`,
