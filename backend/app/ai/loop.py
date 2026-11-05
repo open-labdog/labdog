@@ -231,6 +231,34 @@ class LoopCaps:
             )
         return caps
 
+    def follow_up_refusal(self, session: AISession, *, turns_carry_over: bool) -> str | None:
+        """Why another message to ``session`` could not be answered, if so.
+
+        Commands and tokens count over the whole session, so once one is
+        spent every later run stops at the model's first response and is
+        made to summarise: a reply that reads like an answer to a question
+        nobody worked on. Better to say so before anything is sent.
+
+        The clock restarts with each run, so it is never a reason. Turns
+        depend on who owns the loop: ``AgentLoop`` keeps counting them
+        across runs, which is ``turns_carry_over``, while the SDK's
+        ``max_turns`` applies to one exchange at a time.
+        """
+        tokens = session.prompt_tokens + session.completion_tokens
+        if turns_carry_over and session.iterations >= self.max_iterations:
+            spent = f"turn limit ({session.iterations:,} of {self.max_iterations:,})"
+        elif session.command_count >= self.max_commands:
+            spent = f"command limit ({session.command_count:,} of {self.max_commands:,})"
+        elif tokens >= self.max_tokens_total:
+            spent = f"token budget ({tokens:,} of {self.max_tokens_total:,})"
+        else:
+            return None
+        return (
+            f"This session has used up its {spent}, so the assistant cannot answer "
+            "another message here. Raise the limit under Settings → AI to continue "
+            "it, or start a new session."
+        )
+
 
 @dataclass
 class LoopOutcome:

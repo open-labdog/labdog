@@ -80,7 +80,7 @@ services:
     restart: unless-stopped
 
   labdog:
-    image: ghcr.io/open-labdog/labdog:0.6.1    # pin a real version
+    image: openlabdog/labdog:1.0.0    # pin a real version
     environment:
       LABDOG_DATABASE__URL: postgresql+asyncpg://labdog:${POSTGRES_PASSWORD}@postgres:5432/labdog
       LABDOG_REDIS__URL: redis://redis:6379/0

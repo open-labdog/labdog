@@ -171,7 +171,7 @@ what it established, so the work is not wasted.
 |---------|-----|---------|-------|-------------|
 | Max Iterations | `ai.max_iterations` | `15` | 1 – 100 | Model turns in one session. A full-auto alert session gets at least `ai.alert_max_commands` plus five. |
 | Max Commands | `ai.max_commands` | `20` | 1 – 200 | Shell commands across all hosts in one session. |
-| Max Tokens | `ai.max_tokens_total` | `200000` | 1000 – 5000000 | Prompt + completion tokens in one session. |
+| Max Tokens | `ai.max_tokens_total` | `200000` | 1000 – 5000000 | Prompt + completion tokens in one session, follow-ups included. |
 | Wall Clock | `ai.wall_clock_seconds` | `900` | 30 – 21600 s | Run time for one session. Time spent waiting for an approval does not count. |
 
 **Alert investigation.** Recording alerts is [Alert intake](#alert-intake),

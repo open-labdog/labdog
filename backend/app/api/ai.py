@@ -18,6 +18,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import service
+from app.ai.loop import LoopCaps
 from app.ai.models import (
     TERMINAL_SESSION_STATUSES,
     AIApprovalRequest,
@@ -542,6 +543,15 @@ async def create_session(
     return session_to_response(session)
 
 
+async def _follow_up_refusal(db: AsyncSession, session: AISession) -> str | None:
+    """Why ``session`` cannot take another message, in the operator's terms."""
+    provider = await db.get(AIProvider, session.provider_id) if session.provider_id else None
+    caps = await LoopCaps.for_session(db, session)
+    return caps.follow_up_refusal(
+        session, turns_carry_over=provider is not None and not runs_on_agent_sdk(provider)
+    )
+
+
 @router.get("/sessions/{session_id}", response_model=AISessionDetail)
 async def get_session(
     session_id: int,
@@ -586,6 +596,8 @@ async def get_session(
     )
 
     detail = AISessionDetail.model_validate(session)
+    if session.status in TERMINAL_STATES:
+        detail.follow_up_refused = await _follow_up_refusal(db, session)
     # The system prompt is scaffolding, not conversation — showing it in the
     # transcript would bury the actual exchange.
     detail.messages = [m for m in messages if m.role != "system"]
@@ -769,10 +781,18 @@ async def send_message(
     except BudgetExceededError as exc:
         raise HTTPException(status_code=402, detail=str(exc)) from exc
 
+    # Accepted, this would be cut off at the model's first response and
+    # answered with a summary of the turns before it.
+    if refusal := await _follow_up_refusal(db, session):
+        raise HTTPException(status_code=409, detail=refusal)
+
     await service.append_message(db, session.id, role="user", content=payload.message)
     session.status = "queued"
     session.finished_at = None
     session.error_message = None
+    # How the last run ended says nothing about this one, and only a run
+    # that stops early writes this column.
+    session.stopped_reason = None
     await db.commit()
     await db.refresh(session)
 

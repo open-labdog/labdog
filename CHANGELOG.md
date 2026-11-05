@@ -31,6 +31,11 @@ The format follows [Keep a Changelog]; LabDog follows
   full-auto safeguards still count it. The list now pages with **load
   older**; it used to stop at the newest 50.
 
+- **Docker images are tagged with their version.** Each release is
+  published as `openlabdog/labdog:X.Y.Z`, `X.Y` and `X`, all the same
+  image as `latest`, so an install can pin a version as the upgrade
+  guide says.
+
 ### Changed
 
 - **Deleting a session keeps a full-auto alert fix the safeguards still
@@ -41,6 +46,23 @@ The format follows [Keep a Changelog]; LabDog follows
   hypervisor.
 
 ### Fixed
+
+- **The assistant answers follow-up questions on a Claude subscription.**
+  A follow-up on a `claude_agent` provider was saved to the transcript, and
+  the model was asked the session's original mission again, so it repeated
+  what it had already found. The question now reaches the model. (BUG-122)
+
+- **`ai.max_tokens_total` holds for a whole session.** On a Claude
+  subscription, a follow-up did not count what the session had spent before
+  it, so a session could use about twice its limit. (BUG-123)
+
+- **A session that has used up a limit says so.** It used to take a
+  follow-up, stop at the model's first response and reply with a summary,
+  with only a tag in the page header to show for it. The message box now
+  locks and names the limit, the API refuses the message with the same
+  sentence, and a notice under a run that stopped early says its last
+  message may not answer what you asked. A follow-up also clears the
+  previous run's "stopped early" tag. (BUG-124)
 
 - **An action's follow-up sync runs only the modules it names.** A
   `post_run_sync` or `post_run_register` sync that had to wait for its
@@ -81,6 +103,10 @@ The format follows [Keep a Changelog]; LabDog follows
   the module as in sync with nothing to change, and drift finds nothing
   extra in its file. A host whose file was already cut down keeps it as it
   is: give it an entry, or put the line back by hand. (BUG-115)
+
+- **The upgrade and production guides named an image LabDog is not
+  published as** (`ghcr.io/open-labdog/labdog:0.6.1`). They now use
+  `openlabdog/labdog` on Docker Hub.
 
 ## [1.0.0] — 2026-10-27
 

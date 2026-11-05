@@ -47,7 +47,10 @@ block — its verdict, the command, the host and a one-line result — so you
 can follow the reasoning without re-reading the raw log output it read.
 
 When the session finishes you can ask follow-up questions in the same
-conversation; it keeps the full context of what it already found.
+conversation; it keeps the full context of what it already found. A
+follow-up shares the session's [limits](#limits): it adds to the tokens and
+commands already used, and picking a long conversation back up costs
+tokens before the assistant has done anything.
 
 **Stopping one early.** A running session has a **Stop** button in the
 header. It interrupts the model mid-turn, keeps the transcript and
@@ -404,7 +407,17 @@ succeeded   Stopped early: token budget (10000)
 and as a **cut short** marker in the session list, which is what lets you
 decide which of several runs is worth reopening. If the answer looks
 truncated, that badge tells you whether it ran out of room or genuinely
-finished.
+finished. A notice under the last message says the same, because after a
+limit that message is a summary of what the assistant had by then, and may
+not answer what you asked.
+
+**A session that has used up a limit takes no more messages.** Tokens and
+commands count over the whole session, so a follow-up could only be cut off
+at its first response. The message box locks instead, and says which limit
+was reached. Raise it under Settings → AI and the same session carries on,
+or start a new session. The HTTP backends count turns the same way; on a
+Claude subscription turns restart with each run, so `ai.max_iterations` does
+not lock a session there.
 
 **Token limits overshoot slightly.** Usage is only known once a turn
 completes, so the turn that crosses the limit has already been paid for —
