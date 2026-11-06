@@ -18,6 +18,33 @@ The format follows [Keep a Changelog]; LabDog follows
   `POST`/`GET /api/ai/investigations`; `ai_sessions` gains `subject_kind`
   and `subject_key` (alembic 0056).
 
+### Changed
+
+- **A tidier group Overview.** The fifteen panels in five rows, which left
+  gaps beside the shorter ones, are now four full-width parts: one strip
+  of headline numbers (the 14-day drift chart is a small bar under
+  *drifted*), one members panel, one runs list and a settings bar. The
+  member grid lists only the members with a problem until **show all**,
+  tones down in-sync cells, gains a **host** column that marks a host
+  drifted or failed as a whole when no module says so (a snapshot
+  rollback does that), and drops modules nobody reports. *What they
+  actually get* now carries the module item counts, so the separate
+  modules table is gone. *Coming up* and *recent activity* share one
+  list, next above earlier. Settings, GitOps, metrics destinations and
+  the danger zone open from **edit** on the settings bar.
+
+- **The VM mapping sits under the host card.** On a host's Overview the
+  Proxmox VM mapping is now open, the width of the host card, directly
+  under it, instead of folded at the foot of the tab.
+
+### Fixed
+
+- **Services, packages and users read "never collected".** The group
+  member grid and the host page's module states looked these three up
+  under spellings the backend doesn't write (`services`, `packages`,
+  `linux-users` instead of `service`, `package`, `linux_user`), so their
+  states never showed.
+
 ## [1.1.0] — 2026-11-06
 
 ### Added
