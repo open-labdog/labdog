@@ -22,6 +22,7 @@ from app.tasks.action_timeouts import (
     ENVELOPE_GRACE_SECONDS,
     FALLBACK_VERIFY_TIMEOUT_SECONDS,
     per_host_deadline_seconds,
+    snapshot_lock_wait_budget,
 )
 
 AI_KEYS = ["_builtin.ai_task", "_builtin.ai_task_group"]
@@ -64,7 +65,9 @@ def test_deadline_is_not_wildly_generous(wall_clock, action_key):
     and no more.
     """
     wall_clock(900)
-    expected_margin = FALLBACK_VERIFY_TIMEOUT_SECONDS + ENVELOPE_GRACE_SECONDS
+    expected_margin = (
+        FALLBACK_VERIFY_TIMEOUT_SECONDS + ENVELOPE_GRACE_SECONDS + snapshot_lock_wait_budget()
+    )
     assert per_host_deadline_seconds(action_key) <= 900 + expected_margin
 
 

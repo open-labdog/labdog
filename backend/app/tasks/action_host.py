@@ -777,11 +777,21 @@ async def _phase_a_snapshot(ctx: _RunCtx, spec: _RunSpec, env: _Envelope) -> boo
             )
         return True
 
-    from app.workflows.steps.snapshot import create_snapshot  # noqa: PLC0415
+    from app.workflows.steps.snapshot import (  # noqa: PLC0415
+        create_snapshot,
+        snapshot_lock_wait_seconds,
+    )
 
     try:
         env.snapshot_name = await create_snapshot(
-            env.client, env.pve_node, env.vmid, ctx.action_run_id, env.vm_type, spec.action_key
+            env.client,
+            env.pve_node,
+            env.vmid,
+            ctx.action_run_id,
+            env.vm_type,
+            spec.action_key,
+            lock_wait_seconds=snapshot_lock_wait_seconds(),
+            on_lock_wait=lambda msg: _log_step(ctx, f"[snapshot] {msg}"),
         )
         _log_step(ctx, f"[snapshot] created {env.snapshot_name} on {env.pve_node}/{env.vmid}")
         async with task_session() as db:

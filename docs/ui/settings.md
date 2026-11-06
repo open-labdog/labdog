@@ -94,6 +94,7 @@ Two of them cover what comes *in* to LabDog:
 | Setting | Key | Default | Range | Description |
 |---------|-----|---------|-------|-------------|
 | Snapshot Max Age | `workflow.snapshot_max_age_hours` | `24` | 1 – 168 hours | Proxmox VM snapshots taken before a destructive scheduled action are automatically cleaned up after this many hours when the action completes successfully. |
+| Locked VM Wait | `workflow.snapshot_lock_wait_minutes` | `30` | 0 – 240 minutes | How long the pre-run snapshot of a destructive action keeps retrying (every 30 seconds) while Proxmox reports the VM as locked, usually by a running backup. Each wait is logged in the run output; if the lock is still held after this long, that host fails before anything runs on it. `0` fails on the first lock. The wait is added to the action's time budget. |
 
 ### Alert intake
 
