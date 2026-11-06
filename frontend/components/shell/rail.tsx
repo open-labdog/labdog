@@ -44,9 +44,14 @@ export function ThemeToggle({ compact }: { compact?: boolean }) {
   )
 }
 
-/** Rail widths: icons only, and icons with their names. */
+/**
+ * Rail widths: icons only, and icons with their names. The expanded width
+ * fits the widest row (Overview with a "99+" badge, a few px wider than
+ * Operations) with a little slack for font differences between platforms.
+ * Widen it if a longer zone name is added.
+ */
 export const RAIL_W = 50
-export const RAIL_W_EXPANDED = 168
+export const RAIL_W_EXPANDED = 150
 
 /**
  * Pattern A shell: a rail of four zones at a fixed cost, plus Settings and
