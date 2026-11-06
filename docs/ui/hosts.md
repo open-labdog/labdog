@@ -97,8 +97,8 @@ failed run is far more likely than drift.
   run that failed and was rolled back to its snapshot. A failing row opens
   to show the reason and the run. **all schedules →** opens the Activity
   tab.
-- **host** — address and SSH port, firewall backend, Proxmox VM, when it
-  was last verified, and Grafana's resource gauges when a metrics backend
+- **host** — address and SSH port, firewall backend, when it was last
+  verified, and Grafana's resource gauges when a metrics backend
   is configured. **config** is drift as one line: *N modules in sync* on
   most days, the drifted modules in amber with **plan sync →** when a check
   found drift, or the count of modules that could not be checked. **all
@@ -108,6 +108,8 @@ failed run is far more likely than drift.
   which governs *firewall* drift only — the other six modules each have
   their own toggle on their Config tab. See
   [Drift detection](drift-detection.md).
+- **vm mapping** — under the host card, open: the Proxmox VM behind this
+  host; see [Proxmox VM mapping](#proxmox-vm-mapping).
 - **recent activity** — runs, syncs, alerts and assistant sessions on this
   host, newest first, with the reason on a failure. Drift checks and
   collections that worked are left out, since they run every few hours.
@@ -118,9 +120,8 @@ failed run is far more likely than drift.
   modules it sets. A dashed module is one a higher layer also sets, which
   wins any conflict. **+ add to group** opens a filterable picker in place;
   **remove** takes the host out of one group.
-- **vm mapping** — folded at the foot of the tab; see
-  [Proxmox VM mapping](#proxmox-vm-mapping). **automatic fixes** below it
-  lists the alert rules that may change this host without asking.
+- **automatic fixes** — at the foot of the tab: the alert rules that may
+  change this host without asking.
 
 ### Config
 
@@ -223,8 +224,7 @@ LabDog handles this in two ways:
 
 When one or more Proxmox nodes are configured under
 [Hypervisors](settings.md#proxmox-settings), the Overview tab shows a **vm
-mapping** panel, folded at the foot of the tab (**expand** opens it); the
-host card's **proxmox** line names the VM. The mapping links this host to its backing Proxmox VM or LXC
+mapping** panel under the host card. The mapping links this host to its backing Proxmox VM or LXC
 container (VM name, VMID and node) — this is what enables automatic
 snapshot + rollback for destructive [actions](actions.md).
 
