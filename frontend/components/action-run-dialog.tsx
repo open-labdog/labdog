@@ -8,6 +8,7 @@ import { Banner, Field, Modal } from "@/components/ld"
 import { ActionParameterForm } from "@/components/action-parameter-form"
 import { apiFetch } from "@/lib/api"
 import { nextCodename } from "@/lib/os-upgrade-paths"
+import { useActionTray } from "@/lib/action-tray"
 import { toast } from "sonner"
 import type {
   ActionDefinition,
@@ -39,6 +40,7 @@ const NO_PARAMS: Record<string, unknown> = {}
 
 export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOsCodename, actions, onPickAction, targetLabel }: ActionRunDialogProps) {
   const router = useRouter()
+  const { trackRun } = useActionTray()
   // Parameters are kept per action key so switching the picked action
   // never carries one playbook's values into another's form.
   const [paramsByAction, setParamsByAction] = useState<Record<string, Record<string, unknown>>>({})
@@ -172,6 +174,7 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
         method: "POST",
         json: body,
       })
+      trackRun(run)
       toast.success("Action started")
       onClose()
       // Navigate to run page
