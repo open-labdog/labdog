@@ -83,6 +83,7 @@ a live fleet — hostnames, addresses and counts are illustrative.
 | [`login.png`](screenshots/login.png) | Sign-in |
 | [`overview.png`](screenshots/overview.png) | Overview — status bar, scheduled-run tiles, Pending, activity, schedule health, next 24 hours |
 | [`hosts.png`](screenshots/hosts.png) | Hosts list |
+| [`host-overview.png`](screenshots/host-overview.png) | A host's Overview tab — a schedule failing on this host, its last ten results, activity |
 | [`host-detail.png`](screenshots/host-detail.png) | A host's Config tab — effective firewall with where each rule comes from |
 | [`discovery.png`](screenshots/discovery.png) | Discovery — scan schedules |
 | [`hosts-discover.png`](screenshots/hosts-discover.png) | Discovery — scan now, with results |

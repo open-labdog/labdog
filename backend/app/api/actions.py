@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
-from sqlalchemy import exists, func, select, text, update
+from sqlalchemy import case, exists, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.actions.registry import ACTION_REGISTRY, reload_registry_async
@@ -26,6 +26,7 @@ from app.schemas.actions import (
     ActionHostRunOut,
     ActionParameterOut,
     ActionRunOut,
+    HostRunEntry,
     RunCreateBody,
     RunHostFailure,
     RunInvestigateBody,
@@ -368,6 +369,112 @@ async def list_runs(
         item.host_counts = by_run.get(item.id, {})
         item.first_failure = first_failure.get(item.id)
     return out
+
+
+# ---------------------------------------------------------------------------
+# GET /actions/host-runs — One host's part in every run that reached it
+# ---------------------------------------------------------------------------
+
+#: What ``_rollback`` logs when the snapshot restore worked.
+_ROLLED_BACK = "[rollback] success=True"
+
+
+@router.get("/host-runs", response_model=list[HostRunEntry])
+async def list_host_runs(
+    host_id: int = Query(...),
+    since: datetime | None = Query(default=None, description="only runs created at or after"),
+    scheduled: bool | None = Query(
+        default=None, description="true: only runs a schedule started; false: only the rest"
+    ),
+    limit: int = Query(default=100, ge=1, le=500),
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Every run that reached this host, newest first, with this host's
+    own result.
+
+    ``/runs?host_id=`` only finds runs aimed at the host itself. A host
+    usually gets its scheduled work through a group, so its history is
+    read from its per-host rows instead, joined to the run each belongs
+    to.
+    """
+    failed = ActionHostRun.status == "failed"
+    q = (
+        select(
+            ActionHostRun.id,
+            ActionHostRun.action_run_id,
+            ActionRun.action_key,
+            ActionRun.status,
+            ActionHostRun.status,
+            ActionRun.target_kind,
+            ActionRun.target_label,
+            ActionRun.scheduled_action_id,
+            ActionRun.alert_event_id,
+            ActionRun.triggered_by_user_id,
+            ActionRun.created_at,
+            ActionHostRun.started_at,
+            ActionHostRun.finished_at,
+            ActionHostRun.exit_code,
+            ActionHostRun.error_message,
+            # Only a failed row needs its log read, and then only a window.
+            case((failed, func.substring(ActionHostRun.output, FAILURE_WINDOW_SQL)), else_=None),
+            case((failed, func.strpos(ActionHostRun.output, _ROLLED_BACK) > 0), else_=False),
+        )
+        .join(ActionRun, ActionRun.id == ActionHostRun.action_run_id)
+        .where(ActionHostRun.host_id == host_id)
+        .order_by(ActionRun.created_at.desc(), ActionHostRun.id.desc())
+        .limit(limit)
+    )
+    if since is not None:
+        if since.tzinfo is None:
+            since = since.replace(tzinfo=UTC)
+        q = q.where(ActionRun.created_at >= since)
+    if scheduled is True:
+        q = q.where(ActionRun.scheduled_action_id.isnot(None))
+    elif scheduled is False:
+        q = q.where(ActionRun.scheduled_action_id.is_(None))
+
+    rows = (await db.execute(q)).all()
+    return [
+        HostRunEntry(
+            host_run_id=hr_id,
+            action_run_id=run_id,
+            action_key=key,
+            run_status=run_status,
+            status=host_status,
+            target_kind=kind,
+            target_label=label,
+            scheduled_action_id=sched_id,
+            alert_event_id=alert_id,
+            triggered_by_user_id=user_id,
+            created_at=created,
+            started_at=started,
+            finished_at=finished,
+            exit_code=rc,
+            error_message=err,
+            reason=failure_reason(window),
+            rolled_back=bool(rolled),
+        )
+        for (
+            hr_id,
+            run_id,
+            key,
+            run_status,
+            host_status,
+            kind,
+            label,
+            sched_id,
+            alert_id,
+            user_id,
+            created,
+            started,
+            finished,
+            rc,
+            err,
+            window,
+            rolled,
+        ) in rows
+    ]
 
 
 # ---------------------------------------------------------------------------

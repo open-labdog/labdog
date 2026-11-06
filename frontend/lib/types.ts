@@ -910,6 +910,40 @@ export interface ActionRun {
   first_failure?: RunHostFailure | null
 }
 
+/** GET /api/actions/host-runs — one host's part in a run that reached it,
+ *  directly or through a group or the fleet. `status` is this host's own
+ *  result; `run_status` is the run's. */
+export interface HostRunEntry {
+  host_run_id: number
+  action_run_id: number
+  action_key: string
+  run_status: string
+  status: string
+  target_kind: "host" | "group" | "fleet"
+  target_label: string
+  scheduled_action_id: number | null
+  alert_event_id: number | null
+  triggered_by_user_id: number | null
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+  exit_code: number | null
+  error_message: string | null
+  /** The first failed task's message from this host's log. */
+  reason: string | null
+  /** Failed here, and LabDog restored the pre-run snapshot. */
+  rolled_back: boolean
+}
+
+/** GET /api/groups/{id}/module-status — one cell of a group's health matrix. */
+export interface MemberModuleStatus {
+  host_id: number
+  module_type: string
+  sync_status: string
+  checked_at: string | null
+  error_message: string | null
+}
+
 /** GET /api/actions/runs — the first failing host of a run in the list. */
 export interface RunHostFailure {
   host_run_id: number

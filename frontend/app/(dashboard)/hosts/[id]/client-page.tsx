@@ -303,7 +303,25 @@ export default function HostDetailPage() {
 
       {errorDetail != null && <Banner tone="danger" flush>Sync check encountered errors. {errorDetail}</Banner>}
 
-      {primaryTab === "overview" && <OverviewTab hostId={id} host={host} groups={groups} />}
+      {primaryTab === "overview" && (
+        <OverviewTab
+          hostId={id}
+          host={host}
+          groups={groups}
+          goTab={(t) => {
+            if (t === "config") {
+              setPrimaryTab("config")
+              setActiveTab(lastModuleTab)
+            } else if (t === "metrics") {
+              setPrimaryTab("metrics")
+              setActiveTab("metrics")
+            } else {
+              setPrimaryTab("activity")
+              setActiveTab(t)
+            }
+          }}
+        />
+      )}
 
       {primaryTab === "config" && host && (
         <>

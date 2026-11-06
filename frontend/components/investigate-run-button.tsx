@@ -35,7 +35,9 @@ export function InvestigateRunButton({
   hostRun,
   ghost,
 }: {
-  run: ActionRun
+  /** A host's own history has the run's id but not the run, so the host
+   *  rows and earlier investigations are optional. */
+  run: Pick<ActionRun, "id"> & Partial<Pick<ActionRun, "host_runs" | "investigations">>
   hostRun: Pick<ActionHostRun, "id" | "host_id" | "hostname"> | null
   ghost?: boolean
 }) {
@@ -68,7 +70,7 @@ export function InvestigateRunButton({
 
   const scopeIds = hostRun
     ? hostRun.host_id !== null ? [hostRun.host_id] : []
-    : run.host_runs.flatMap((hr) => (hr.host_id !== null ? [hr.host_id] : []))
+    : (run.host_runs ?? []).flatMap((hr) => (hr.host_id !== null ? [hr.host_id] : []))
   const earlier = (run.investigations ?? []).find((i) => !ABANDONED.has(i.status) && sameIds(i.target_host_ids, scopeIds))
   // A deleted host leaves nothing to connect to; the API refuses it too.
   if (scopeIds.length === 0) return null

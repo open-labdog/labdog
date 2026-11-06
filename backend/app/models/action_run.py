@@ -168,7 +168,7 @@ class ActionHostRun(Base):
     # per-host claim protocol, both of which want "no host" to mean
     # "matches nothing".
     host_id: Mapped[int | None] = mapped_column(
-        ForeignKey("hosts.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("hosts.id", ondelete="SET NULL"), nullable=True, index=True
     )
     # The host's name as it stood at dispatch. Denormalised on purpose:
     # after the delete there is nothing left to join to, and that is the
