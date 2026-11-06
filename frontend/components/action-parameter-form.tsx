@@ -14,8 +14,10 @@ export interface ActionParameterFormProps {
    *  applies. */
   placeholderFor?: (param: ActionParameter) => string | undefined
   /** Param keys that should render as a registered-Grafana-instance picker
-   *  (value = the chosen instance's URL) instead of a text input, keyed to
-   *  the instance kind to list. Driven by the action's metrics_backend. */
+   *  instead of a text input, keyed to the instance kind to list. Driven by
+   *  the action's metrics_backend. The value is the chosen instance's id as
+   *  a string, or "" for "each host's assigned destination"; the caller
+   *  turns it into the URL param and `metrics_destinations` on submit. */
   instancePickers?: Record<string, GrafanaKind>
   /** Registered Grafana instances, used to populate the pickers above. */
   grafanaInstances?: GrafanaInstance[]
@@ -78,8 +80,9 @@ export function ActionParameterForm({
                 </span>
               ) : (
                 <select id={id} className="inp mono" value={String(values[p.key] ?? "")} onChange={(e) => set(p.key, e.target.value)}>
+                  <option value="">Each host&apos;s assigned destination</option>
                   {pickerOptions.map((i) => (
-                    <option key={i.id} value={i.url}>
+                    <option key={i.id} value={String(i.id)}>
                       {i.name} — {i.url}
                     </option>
                   ))}

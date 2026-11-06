@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -74,6 +74,11 @@ class RunCreateBody(BaseModel):
     parameters: dict[str, Any] = {}
     parallelism: int = 1
     dry_run: bool = False
+    #: Grafana instances the operator picked in the run dialog for an
+    #: action that declares ``metrics_backend``, by kind (``mimir`` /
+    #: ``loki``). Overrides every target host's assigned destination for
+    #: this run. A kind left out uses each host's own destination.
+    metrics_destinations: dict[Literal["mimir", "loki"], int] | None = None
 
 
 class ActionHostRunOut(BaseModel):

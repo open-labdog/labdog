@@ -9,6 +9,7 @@ import { countStatuses, plural, shortAgo, untilLabel, type Tone } from "@/lib/fl
 import { MODULES, moduleByAnyName, type ModuleDef, type ModuleId } from "@/lib/modules"
 import { isOrphaned, scheduleName, useSchedules } from "@/lib/overview"
 import { Panel, RunStatus, Spark, Table, Tag } from "@/components/ld"
+import { MetricsDestinationsPanel } from "@/components/metrics-destinations-panel"
 import { toneVar } from "@/components/ld/tone"
 import type { ActionDefinition, ActionRun, DriftTrendSeries, GroupSummary, HostGroup, HostSummary, MemberModuleStatus, ScheduledAction, SyncRateSeries } from "@/lib/types"
 
@@ -206,6 +207,7 @@ export function GroupOverview({
 
       <div className="grid items-start gap-3 lg:grid-cols-3" data-testid="group-settings-row">
         {bottom}
+        <MetricsDestinationsPanel scope="group" id={id} />
       </div>
     </div>
   )

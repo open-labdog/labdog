@@ -30,24 +30,33 @@ automatically.
      as-is, and for querying it strips the path down to the host and appends
      the right API path automatically (Mimir →
      `…/prometheus/api/v1/query`). You never enter the query URL.
-   - Optional tenant (`X-Scope-OrgID`) — defaults to `"anonymous"` if left
-     blank, which is the conventional single-tenant value and matches the
-     Alloy agent's own default. Set it explicitly only if your Mimir/Loki
-     uses a different tenant.
+   - Optional tenant (`X-Scope-OrgID`). On a Mimir instance it defaults to
+     `"anonymous"` if left blank, which is the conventional single-tenant
+     value and matches the Alloy agent's own default. On a Loki instance a
+     blank tenant sends no header. Either is also what the Alloy action
+     ships with, so a multi-tenant Mimir or Loki works through it. Two
+     tenants on the same URL are two instances.
    - Optional authentication (none, bearer token, or basic
      username/password), TLS verification and a CA certificate (PEM) for a
-     private CA.
+     private CA. LabDog uses these when it **queries**. Of them, only
+     *TLS verification* reaches the Alloy action today (as
+     `insecure_skip_verify`); a backend that needs a token, basic auth or a
+     private CA for **ingest** can't yet be set up through the action.
 
    Use **Test connection** to confirm the (derived) query API is reachable
    before saving; each row also has **test**. The first instance of each kind
-   becomes that kind's **default** — the Mimir LabDog queries for the host
-   page, and the Mimir/Loki it feeds the Alloy action. Tick **default** on
-   another instance's edit dialog to move it.
+   becomes that kind's **default**: the destination of every host that
+   doesn't have one of its own (see
+   [Per-host and per-group destinations](#per-host-and-per-group-destinations)).
+   Tick **default** on another instance's edit dialog to move it.
 
 2. **Run the *Install Alloy agent* action** against a host or group
    (**Run action…** on its page). LabDog automatically:
-   - fills the Alloy remote-write/Loki URLs from your default Grafana
-     instance (no need to re-type them), and
+   - fills each host's Alloy remote-write/Loki URLs, tenants and TLS
+     setting from the instances that host ships to (no need to re-type
+     them). The run dialog's destination pickers start on **Each host's
+     assigned destination**; picking an instance there sends every host in
+     that run to it instead, and
    - injects two identity labels — `labdog_host_id` (the stable host id) and
      `labdog_hostname` — which Alloy stamps on every series it ships.
 
@@ -62,6 +71,34 @@ automatically.
 
 Because metrics are matched on `labdog_host_id`, renaming a host or changing
 its IP never detaches its metrics.
+
+## Per-host and per-group destinations
+
+Hosts don't all have to ship to the same backend. A host or a group can
+name its own Mimir and Loki instance, in the **metrics destinations**
+panel: on a host's **Metrics** tab, and at the bottom of a group's
+**Overview**. A host's destination, per kind, is decided the same way as
+every other merged setting:
+
+1. the host's own choice, if it has one;
+2. otherwise the highest-priority group the host belongs to that names one
+   (a group that leaves it blank has no opinion and is skipped);
+3. otherwise the default instance of that kind.
+
+A host with no choice and no group choice therefore behaves exactly as
+before. The host panel says where the host's data currently goes and why
+("from group *edge*", "the default").
+
+Everything that reads a host's data follows the same rule: the host page,
+the Overview's fleet resource hot spots (each host is read from its own
+destination only), the assistant's metrics and log tools, and the
+Alertmanager poll, which reads every Mimir some host ships to.
+
+Saving a destination changes what LabDog **queries** at once, but the host
+keeps shipping where its Alloy config says until the **Install Alloy
+agent** action runs on it again. Run the action after changing a
+destination. An instance that a host or group still names can't be deleted;
+reassign them first.
 
 ## States you may see
 
@@ -90,7 +127,9 @@ Disk reports the root filesystem (`/`).
 ## Notes & limits
 
 - Metrics come from node_exporter via Alloy's `prometheus.exporter.unix`.
-- LabDog queries the **default Mimir** instance. Per-host routing to
-  different backends is not yet supported.
+- LabDog queries the Mimir each host ships to (see
+  [Per-host and per-group destinations](#per-host-and-per-group-destinations)).
+- Ingest authentication (token, basic auth) and a private CA are not passed
+  to the Alloy action yet; only TLS verification is.
 - Log surfacing from Loki, network/per-mount metrics, and configurable
   thresholds are not part of this release.

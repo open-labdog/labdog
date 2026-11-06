@@ -704,7 +704,7 @@ async def _build_inventory(
     from app.actions.validation import DRY_RUN_PARAM
     from app.ansible_runtime.inventory import generate_inventory
     from app.ansible_runtime.known_hosts import write_known_hosts
-    from app.grafana.service import build_metrics_extra_vars
+    from app.grafana.service import METRICS_DESTINATIONS_PARAM, build_metrics_extra_vars
 
     # SEC-26: pin the run to the host key LabDog recorded over asyncssh.
     # Read fresh rather than from the cached scalars in the spec, because
@@ -721,6 +721,7 @@ async def _build_inventory(
     )
 
     dry_run = spec.parameters.pop(DRY_RUN_PARAM, False)
+    picked_destinations = spec.parameters.pop(METRICS_DESTINATIONS_PARAM, None)
     # Fail closed before these become extra-vars. Ansible evaluates
     # extra-vars on the controller — the LabDog host — not on the target, so
     # a template expression here is code execution here. The API rejects them
@@ -733,13 +734,18 @@ async def _build_inventory(
         extra_vars["ansible_check_mode"] = True
 
     # Inject metrics integration vars: identity labels (always, so the agent
-    # stamps queryable labels) + the default Grafana instance's push URLs
-    # when the manifest opts in via ``metrics_backend``. Operator-supplied
-    # values win over injected URLs; identity is LabDog-owned and always wins.
-    _url_vars, _identity_vars = await build_metrics_extra_vars(
-        spec.host_id, spec.host_hostname, spec.metrics_backend
+    # stamps queryable labels) + this host's Grafana destinations (URL,
+    # tenant, TLS flag) when the manifest opts in via ``metrics_backend``.
+    # Operator-supplied values win over injected ones; identity is
+    # LabDog-owned and always wins.
+    _dest_vars, _identity_vars = await build_metrics_extra_vars(
+        spec.host_id,
+        spec.host_hostname,
+        spec.metrics_backend,
+        operator_params=spec.parameters,
+        picked=picked_destinations,
     )
-    extra_vars = {**_url_vars, **(extra_vars or {}), **_identity_vars}
+    extra_vars = {**_dest_vars, **(extra_vars or {}), **_identity_vars}
     return inventory_json, extra_vars, dry_run
 
 
@@ -1041,7 +1047,9 @@ async def _verify_with_builtin_checks(
             ctx,
             f"[verify] passed={passed} "
             f"services_ok={verify_result.get('services_ok')} "
-            f"packages_ok={verify_result.get('packages_ok')}",
+            f"({verify_result.get('services_checked', 0)} checked) "
+            f"packages_ok={verify_result.get('packages_ok')} "
+            f"({verify_result.get('packages_checked', 0)} checked)",
         )
         if ai_result:
             # The verdict is logged separately from `passed` because they

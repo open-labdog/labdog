@@ -202,6 +202,28 @@ export interface ProxmoxNode {
 export type GrafanaKind = "mimir" | "loki"
 export type GrafanaAuthType = "none" | "bearer" | "basic"
 
+/** The Mimir and Loki instances a host or group names (null = inherit). */
+export interface DestinationAssignment {
+  mimir_instance_id: number | null
+  loki_instance_id: number | null
+}
+
+/** Where a host's data goes for one kind once groups and the default are
+ *  taken into account. */
+export interface EffectiveDestination {
+  instance_id: number | null
+  instance_name: string | null
+  url: string | null
+  source: "host" | "group" | "default"
+  group_id: number | null
+  group_name: string | null
+}
+
+export interface HostDestinations {
+  assigned: DestinationAssignment
+  effective: Record<GrafanaKind, EffectiveDestination>
+}
+
 export interface GrafanaInstance {
   id: number
   name: string
