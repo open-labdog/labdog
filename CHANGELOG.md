@@ -9,6 +9,16 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Added
 
+- **Pre-run snapshots wait out a locked VM.** When Proxmox refuses a
+  destructive action's snapshot because the VM is locked, usually by a
+  running backup, LabDog now retries every 30 seconds instead of failing
+  the host at once, and logs each wait in the run output. The new
+  `workflow.snapshot_lock_wait_minutes` setting (Settings › Workflows,
+  default 30, `0` for the old behaviour) bounds the wait; a host still
+  locked after it fails before anything runs on it. Destructive actions'
+  time budgets grow by the same amount so the wait can't eat into the
+  playbook's.
+
 - **Host and group Overview tabs.** A host's Overview leads with its
   scheduled runs: a banner when a schedule failed on this host, then every
   schedule that reaches it, directly or through a group, with this host's

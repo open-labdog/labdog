@@ -889,6 +889,19 @@ async def _snapshot_all(
     async def _snap(ctx: _HostCtx, mapping: Any, proxmox_node: Any) -> None:
         from app.workflows.steps.snapshot import create_snapshot  # noqa: PLC0415
 
+        def _on_lock_wait(msg: str) -> None:
+            line = f"[snapshot] {msg}"
+            ctx.step_log.append(line)
+            try:
+                r.publish(
+                    channel,
+                    json.dumps(
+                        {"event": "output", "host_run_id": ctx.host_run_id, "text": line + "\n"}
+                    ),
+                )
+            except Exception:
+                logger.debug("action_group: SSE publish failed for snapshot wait", exc_info=True)
+
         token_secret = decrypt_ssh_key(proxmox_node.encrypted_token_secret, master_key)
         client = ProxmoxClient(
             api_url=proxmox_node.api_url,
@@ -904,7 +917,14 @@ async def _snapshot_all(
 
         try:
             snap_name = await create_snapshot(
-                client, ctx.pve_node, ctx.vmid, action_run_id, ctx.vm_type, action_key
+                client,
+                ctx.pve_node,
+                ctx.vmid,
+                action_run_id,
+                ctx.vm_type,
+                action_key,
+                lock_wait_seconds=lock_wait_seconds,
+                on_lock_wait=_on_lock_wait,
             )
         except Exception as exc:
             logger.exception(
@@ -920,6 +940,10 @@ async def _snapshot_all(
 
         ctx.snapshot_name = snap_name
         ctx.step_log.append(f"[snapshot] created {snap_name} on {ctx.pve_node}/{ctx.vmid}")
+
+    from app.workflows.steps.snapshot import snapshot_lock_wait_seconds  # noqa: PLC0415
+
+    lock_wait_seconds = snapshot_lock_wait_seconds()
 
     tasks: list[Any] = []
     for ctx in host_ctxs:

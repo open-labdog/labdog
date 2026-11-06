@@ -48,7 +48,9 @@ def test_effective_timeout_setting_error_falls_back():
 
 
 def test_per_host_deadline_uses_action_verify_and_floor():
-    action = SimpleNamespace(playbook_timeout_seconds=1800, verify_timeout_seconds=180)
+    action = SimpleNamespace(
+        playbook_timeout_seconds=1800, verify_timeout_seconds=180, destructive=False
+    )
     with (
         patch("app.settings_service.get_setting_cached_typed", return_value=300),
         patch.object(at, "_registry_lookup", return_value=action),
@@ -57,14 +59,37 @@ def test_per_host_deadline_uses_action_verify_and_floor():
         assert at.per_host_deadline_seconds("linux-upgrade") == 1800 + 180 + 900
 
 
+def test_per_host_deadline_adds_the_snapshot_lock_wait_for_destructive_actions():
+    action = SimpleNamespace(
+        playbook_timeout_seconds=1800, verify_timeout_seconds=180, destructive=True
+    )
+    with (
+        patch("app.settings_service.get_setting_cached_typed", return_value=300),
+        patch.object(at, "_registry_lookup", return_value=action),
+        patch.object(at, "snapshot_lock_wait_budget", return_value=1200),
+    ):
+        # A host can sit behind a locked VM for the whole wait before its
+        # playbook starts, so the wait comes on top of the rest.
+        assert at.per_host_deadline_seconds("linux-upgrade") == 1800 + 180 + 900 + 1200
+
+
 def test_per_host_deadline_registry_miss_uses_fallbacks():
     with (
         patch("app.settings_service.get_setting_cached_typed", return_value=300),
         patch.object(at, "_registry_lookup", return_value=None),
+        patch.object(at, "snapshot_lock_wait_budget", return_value=1200),
     ):
-        # setting(300) + FALLBACK_VERIFY(300) + grace(900)
-        expected = 300 + at.FALLBACK_VERIFY_TIMEOUT_SECONDS + at.ENVELOPE_GRACE_SECONDS
+        # setting(300) + FALLBACK_VERIFY(300) + grace(900) + lock wait, since
+        # a missing action might have been destructive.
+        expected = 300 + at.FALLBACK_VERIFY_TIMEOUT_SECONDS + at.ENVELOPE_GRACE_SECONDS + 1200
         assert at.per_host_deadline_seconds("gone") == expected
+
+
+def test_snapshot_lock_wait_budget_reads_the_setting_in_minutes():
+    with patch("app.settings_service.get_setting_cached_typed", return_value=45):
+        assert at.snapshot_lock_wait_budget() == 45 * 60
+    with patch("app.settings_service.get_setting_cached_typed", return_value=0):
+        assert at.snapshot_lock_wait_budget() == 0
 
 
 # ---------------------------------------------------------------------------

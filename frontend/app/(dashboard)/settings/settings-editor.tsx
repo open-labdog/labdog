@@ -141,7 +141,7 @@ const CATEGORIES: Record<string, Category> = {
   },
   workflow: {
     label: "Workflows",
-    keys: ["workflow.snapshot_max_age_hours"],
+    keys: ["workflow.snapshot_max_age_hours", "workflow.snapshot_lock_wait_minutes"],
   },
   alerts: {
     label: "Alert intake",

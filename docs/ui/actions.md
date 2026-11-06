@@ -578,6 +578,14 @@ mapping**, LabDog automatically:
 5. On failure, rolls the VM back to the snapshot, starts it, waits for
    SSH, and marks the host as `out_of_sync`.
 
+If Proxmox reports the VM as locked when the snapshot is taken (most
+often because a scheduled backup is running), LabDog waits and retries
+every 30 seconds instead of failing straight away. Each wait shows up in
+the run log as a `[snapshot] VM 101 is locked (backup) — waiting for the
+lock to clear …` line. If the lock hasn't cleared after
+**Settings › Workflows › Minutes to wait for a locked VM** (default 30,
+`0` turns the wait off), that host fails before anything runs on it.
+
 Destructive actions on hosts **without** a VM mapping still execute —
 you'll see a `[snapshot] skipped — host has no Proxmox VM mapping (no
 rollback available on failure)` line in the run log, and the playbook
