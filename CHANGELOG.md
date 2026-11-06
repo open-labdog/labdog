@@ -7,7 +7,24 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-11-06
+
 ### Added
+
+- **Per-host and per-group metrics destinations.** A host or a group can
+  be assigned its own Mimir and Loki instance (host page › Metrics, group
+  Overview). A host ships to its own assignment, then its
+  highest-priority group's, then the default. Actions with a
+  `metrics_backend` mapping (alloy-install) get each host's URL, Mimir
+  tenant, Loki tenant (the Loki instance's org ID) and TLS skip-verify;
+  a destination picked in the run dialog overrides every host in that
+  run. The host page, AI alert polling and the assistant's metrics and
+  logs tools query the instance the host actually ships to. Deleting an
+  instance that is still assigned is refused (409). New endpoints:
+  `GET`/`PUT /api/grafana/destinations/hosts/{id}` and
+  `/api/grafana/destinations/groups/{id}`; `metrics_backend` gains
+  `loki_tenant_var`, `prometheus_tls_skip_verify_var` and
+  `loki_tls_skip_verify_var`.
 
 - **Pre-run snapshots wait out a locked VM.** When Proxmox refuses a
   destructive action's snapshot because the VM is locked, usually by a
@@ -91,6 +108,14 @@ The format follows [Keep a Changelog]; LabDog follows
   hypervisor.
 
 ### Fixed
+
+- **A dry run no longer changes the host.** LabDog passed
+  `-e ansible_check_mode=True`, which ansible-core overrides with the
+  real value, so a dry run ran for real. It now runs the playbook with
+  `--check`, and skips the pre-action VM snapshot.
+
+- **The post-run verify log says how many services and packages it
+  checked**, instead of reporting "ok" when it checked none.
 
 - **The assistant answers follow-up questions on a Claude subscription.**
   A follow-up on a `claude_agent` provider was saved to the transcript, and
@@ -3318,7 +3343,8 @@ SSH-pushed Ansible reconciliation, and a per-host detail tab:
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
-[Unreleased]: https://github.com/open-labdog/labdog/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/open-labdog/labdog/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/open-labdog/labdog/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/open-labdog/labdog/compare/v0.10.0...v1.0.0
 [0.10.0]: https://github.com/open-labdog/labdog/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/open-labdog/labdog/compare/v0.8.0...v0.9.0
