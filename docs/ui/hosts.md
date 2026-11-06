@@ -79,17 +79,48 @@ Buttons in the head:
 
 ### Overview
 
-- **host** — address, SSH port, the management IP LabDog connects from,
-  firewall backend, sync status, last sync, last drift check, OS, kernel and
-  default NIC. **drift monitoring** is a toggle: click it to turn this host's
-  drift check on or off. This is the host-level flag, which governs
-  *firewall* drift only — the other six modules each have their own toggle
-  on their Config tab. See [Drift detection](drift-detection.md).
-- **group memberships** — the groups this host is in, with category,
-  priority and description. **+ add to group** opens a filterable picker
-  in place; **remove** takes the host out of one group.
-- **vm mapping** — shown when a Proxmox node is configured; see
-  [Proxmox VM mapping](#proxmox-vm-mapping).
+![Host page — Overview tab](screenshots/host-overview.png)
+
+The tab leads with how this host's scheduled work is going, because a
+failed run is far more likely than drift.
+
+- **Failed-run banner** — shown only when this host's own result in a
+  schedule's newest run was a failure. It names the schedule, how many of
+  its runs in a row failed here, and the first error line from this host's
+  log, with **Open run** and **Investigate with AI**.
+- **scheduled runs** — every schedule that reaches the host: aimed at it,
+  at one of its groups, or at the whole fleet. Each row shows how it
+  reaches the host (**this host** or **group** *name*), when it runs, ten
+  squares for this host's own result in the schedule's last ten runs
+  (oldest left), the last run here and the next one. A group run that was
+  *partial* reads green here when this host was fine. A purple square is a
+  run that failed and was rolled back to its snapshot. A failing row opens
+  to show the reason and the run. **all schedules →** opens the Activity
+  tab.
+- **host** — address and SSH port, firewall backend, Proxmox VM, when it
+  was last verified, and Grafana's resource gauges when a metrics backend
+  is configured. **config** is drift as one line: *N modules in sync* on
+  most days, the drifted modules in amber with **plan sync →** when a check
+  found drift, or the count of modules that could not be checked. **all
+  facts ▾** shows the rest: hostname, the management IP LabDog connects
+  from, sync status, last sync, last drift check, kernel, default NIC and
+  the **drift monitoring** toggle. That toggle is the host-level flag,
+  which governs *firewall* drift only — the other six modules each have
+  their own toggle on their Config tab. See
+  [Drift detection](drift-detection.md).
+- **recent activity** — runs, syncs, alerts and assistant sessions on this
+  host, newest first, with the reason on a failure. Drift checks and
+  collections that worked are left out, since they run every few hours.
+- **alerts** — firing alerts tied to this host and the last one that
+  resolved. Hidden when the host has never had one.
+- **where its config comes from** — the layers this host merges, highest
+  first: its own overrides, then each group by priority, each with the
+  modules it sets. A dashed module is one a higher layer also sets, which
+  wins any conflict. **+ add to group** opens a filterable picker in place;
+  **remove** takes the host out of one group.
+- **vm mapping** — folded at the foot of the tab; see
+  [Proxmox VM mapping](#proxmox-vm-mapping). **automatic fixes** below it
+  lists the alert rules that may change this host without asking.
 
 ### Config
 
@@ -102,8 +133,10 @@ dot for its sync state. Every module has the same layout as a group's
   diff preview first) and **add** for a host override.
 - The **effective** table: every item this host receives, whichever group it
   comes from, with a **comes from** column — the group and its priority,
-  *this host*, or *system* for LabDog's own SSH rule. Editing a group's item
-  creates a host override of it; host rows can be edited or deleted.
+  *this host*, or *system* for LabDog's own SSH rule and the hosts file's
+  localhost and own-name lines (see [Hosts file](groups.md#hosts-file)).
+  Editing a group's item creates a host override of it; host rows can be
+  edited or deleted.
 - **current state** — what the last collection read from the host, with
   **collect** to read it again and **enable/disable drift check** for that
   module (on Firewall this is the host-level flag — see
@@ -190,7 +223,8 @@ LabDog handles this in two ways:
 
 When one or more Proxmox nodes are configured under
 [Hypervisors](settings.md#proxmox-settings), the Overview tab shows a **vm
-mapping** panel. The mapping links this host to its backing Proxmox VM or LXC
+mapping** panel, folded at the foot of the tab (**expand** opens it); the
+host card's **proxmox** line names the VM. The mapping links this host to its backing Proxmox VM or LXC
 container (VM name, VMID and node) — this is what enables automatic
 snapshot + rollback for destructive [actions](actions.md).
 

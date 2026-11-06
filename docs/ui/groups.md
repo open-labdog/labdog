@@ -53,12 +53,18 @@ The head offers **Run action…** (pick an action the group supports, preview or
 
 | Panel | What it does |
 |-------|--------------|
-| Settings | Name, category, description and priority, saved inline. Moving the priority shows a tie warning and **every winner/loser flip** the move causes — which other group this one starts beating or losing to, on how many shared hosts, for which modules — before you save. Nothing reaches a host until a plan runs. |
-| Modules | The modules this group declares, with item counts. A row opens that module in the Config tab. |
-| Members | The first hosts in the group and their sync summary (in sync · drifted · failed); **View all members →** opens the Members tab. |
-| Danger zone | **Delete group** — two clicks (the second confirms with the number of hosts that drop the group). Hosts keep their other groups; nothing on a host changes until a plan runs. |
-| GitOps | **Enable…** links a registered Git repository and file path; the group's desired state is then imported from that file and the module editors become read-only. Status, repository, file and last import are shown; **Disable GitOps** keeps the current items and stops importing. See [GitOps UI](gitops-ui.md). |
+| Headline numbers | **members** (and how many are also in a higher-priority group), **in sync**, **drifted** (and which modules), **failed** (and the first failing host), **sync success · 7d** for this group's members with a sparkline, and the **next run** of a schedule that reaches the group. **members** opens the Members tab; **in sync**, **drifted** and **failed** open the hosts list filtered to this group and that status; **next run** opens Activity › Schedules. |
+| Member health | A grid of member × module, worst host first. Each cell is that module's state on that host: in sync, drifted, error or unknown, dashed when it has never been collected. Columns this group declares are outlined. A cell opens that host's tab for the module. Up to 40 members show; **N more members →** opens the Members tab. |
+| What members actually get | For each module the group declares, how many members get it from this group alone and how many also get it from a higher-priority group or a host override, which wins any conflict — with the hosts and groups named. |
+| Drift · 14 days | Checks that found drift on these hosts, per day. |
 | Recent activity | The group's latest action runs; **all activity →** opens the Activity tab. |
+| Coming up | Schedules that reach the group (its own and fleet-wide ones), next to fire first; **schedules →** opens Activity › Schedules. |
+| Modules | The modules this group declares, with item counts. A row opens that module in the Config tab. |
+| Settings | Name, category, description and priority, saved inline. Moving the priority shows a tie warning and **every winner/loser flip** the move causes — which other group this one starts beating or losing to, on how many shared hosts, for which modules — before you save. Nothing reaches a host until a plan runs. |
+| GitOps | **Enable…** links a registered Git repository and file path; the group's desired state is then imported from that file and the module editors become read-only. Status, repository, file and last import are shown; **Disable GitOps** keeps the current items and stops importing. See [GitOps UI](gitops-ui.md). |
+| Danger zone | Folded; **expand** opens it. **Delete group** takes two clicks (the second confirms with the number of hosts that drop the group). Hosts keep their other groups; nothing on a host changes until a plan runs. |
+
+Settings, GitOps and the danger zone sit in a row at the foot of the tab.
 
 ### Config
 
@@ -224,8 +230,15 @@ The dialog also takes a GPG key URL.
 | priority | Decides between groups declaring the same hostname |
 | comment | Optional note |
 
-LabDog always keeps `127.0.0.1 localhost` and the host's own entry; they
-cannot be removed from the UI.
+LabDog writes `/etc/hosts` only on a host at least one entry applies to;
+any other host's file is left as it is. When it does write the file it
+adds `127.0.0.1 localhost`, `::1 localhost` and the host's own name on
+`127.0.1.1` — the full name and the short one, as the host reports them,
+the line the Debian installer and cloud-init write. These show as
+*system* on the host's Config tab and cannot be edited there. To put the
+host's name somewhere else, such as a Proxmox node's real address, add an
+entry that maps it; the `127.0.1.1` line is then left out. It is also left
+out when an entry uses `127.0.1.1`.
 
 ---
 

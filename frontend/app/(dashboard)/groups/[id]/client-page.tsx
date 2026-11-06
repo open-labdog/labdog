@@ -6,15 +6,16 @@ import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
 import { runStatus } from "@/lib/activity"
-import { countStatuses, plural, shortAgo } from "@/lib/fleet"
+import { plural, shortAgo } from "@/lib/fleet"
 import { GITOPS_STATUS, def } from "@/lib/status"
-import { MODULES, moduleByAnyName, moduleById, type ModuleDef, type ModuleId } from "@/lib/modules"
+import { MODULES, moduleByAnyName, moduleById, type ModuleId } from "@/lib/modules"
 import { showError, showSuccess } from "@/lib/toast"
 import type { ActionDefinition, ActionRun, GitRepository, GroupSummary, HostGroup, HostSummary } from "@/lib/types"
 import { Banner, Facts, Field, Modal, PageHead, Panel, RunStatus, Seg, Status, Table, Tabs, Tag } from "@/components/ld"
 import { categoryOptions, useGroupMerge } from "@/components/group-editor"
 import { RunActionButton } from "@/components/run-action-button"
 import { ScheduledActionsSection } from "@/components/scheduled-actions/scheduled-actions-section"
+import { GroupOverview } from "./_tabs/overview"
 
 import { FirewallEditor } from "@/components/config/firewall-editor"
 import { ServicesEditor } from "@/components/config/services-editor"
@@ -130,15 +131,6 @@ export default function GroupDetailPage() {
     )
   }
 
-  const counts = countStatuses(members)
-  const membersMeta = [
-    plural(members.length, "host"),
-    counts.in_sync ? `${counts.in_sync} in sync` : null,
-    counts.out_of_sync ? `${counts.out_of_sync} drifted` : null,
-    counts.error ? `${counts.error} failed` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ")
   const planHref = `/plans?scope=group:${id}${tab === "config" && mod.syncModule ? `&modules=${mod.syncModule}` : ""}`
   const Editor = EDITORS[mod.id]
 
@@ -200,76 +192,24 @@ export default function GroupDetailPage() {
       </PageHead>
 
       {tab === "overview" && group && summary && (
-        <div className="scroll flex flex-1 flex-col gap-3 p-3.5">
-          <div className="grid items-start gap-3 md:grid-cols-[minmax(320px,400px)_1fr]">
-            <GroupSettings key={group.id} group={group} summary={summary} groups={summaries ?? []} hosts={hosts ?? []} memberCount={members.length} onSaved={invalidate} />
-            <Panel
-              title="modules"
-              meta="declared state, by module"
-              footer={
-                <button type="button" className="btn btn-sm btn-ghost" onClick={() => navigate({ tab: "config" })}>
-                  all modules →
-                </button>
-              }
-            >
-              <Table
-                dense
-                cols={[
-                  { k: "m", label: "module", w: "minmax(120px,1fr)", sortable: false, cell: (m: ModuleDef) => <span className="text-text">{m.label}</span> },
-                  { k: "n", label: "items", w: "120px", right: true, sortable: false, cell: (m) => <span className="mono num">{summary.module_counts[m.countKey]} {m.unit}</span> },
-                  { k: "go", label: "", w: "74px", right: true, sortable: false, cell: () => <span className="tt text-ld-accent">edit →</span> },
-                ]}
-                rows={declared}
-                keyOf={(m) => m.id}
-                onRowClick={(m) => navigate({ tab: "config", module: m.id })}
-                empty="This group declares nothing yet — open Config and add the first item."
-              />
-            </Panel>
-          </div>
-
-          <div className="grid items-start gap-3 md:grid-cols-[minmax(320px,400px)_1fr]">
-            <Panel title="members" meta={membersMeta}>
-              <div className="flex flex-col gap-[9px] p-[11px]">
-                <div className="flex flex-wrap gap-[5px]">
-                  {members.slice(0, 10).map((h) => (
-                    <Tag key={h.id} mono onClick={() => router.push(`/hosts/${h.id}`)} title={h.ip_address}>
-                      {h.hostname}
-                    </Tag>
-                  ))}
-                  {members.length > 10 && <Tag onClick={() => navigate({ tab: "members" })}>+{members.length - 10} more</Tag>}
-                  {members.length === 0 && <span className="text-[11.5px] text-text-3">No hosts in this group yet.</span>}
-                </div>
-                <button type="button" className="btn btn-sm self-start" onClick={() => navigate({ tab: "members" })}>
-                  {members.length === 0 ? "Add members →" : "View all members →"}
-                </button>
-              </div>
-            </Panel>
-            <DangerZone group={group} memberCount={members.length} onDeleted={invalidate} />
-          </div>
-
-          <div className="grid items-start gap-3 md:grid-cols-[minmax(320px,400px)_1fr]">
-            <GitOpsPanel group={group} onChanged={invalidate} />
-            <Panel
-              title="recent activity"
-              meta="this group"
-              footer={
-                <button type="button" className="btn btn-sm btn-ghost" onClick={() => navigate({ tab: "activity" })}>
-                  all activity →
-                </button>
-              }
-            >
-              {(runs ?? []).slice(0, 5).map((r) => (
-                <Link key={r.id} href={`/groups/${id}/actions/runs/${r.id}`} className="row-hover flex items-center gap-2.5 border-b border-line-faint px-[11px] py-[7px] text-text hover:no-underline">
-                  <span className="mono num w-[52px] shrink-0 text-[10.5px] text-text-faint">{shortAgo(r.created_at)} ago</span>
-                  <RunStatus s={r.status} reason={r.pending_reason} />
-                  <span className="trunc flex-1 text-xs">{catalog?.find((a) => a.key === r.action_key)?.name ?? r.action_key}</span>
-                  <span className="tt text-[9px]">{r.scheduled_action_id ? "schedule" : r.alert_event_id ? "alert" : r.triggered_by_user_id ? "user" : "system"}</span>
-                </Link>
-              ))}
-              {runs && runs.length === 0 && <div className="p-[11px] text-[11.5px] text-text-3">No runs against this group yet. Run action… starts one; plans show up under Operations › Runs.</div>}
-            </Panel>
-          </div>
-        </div>
+        <GroupOverview
+          group={group}
+          summary={summary}
+          summaries={summaries ?? []}
+          members={members}
+          declared={declared}
+          runs={runs}
+          catalog={catalog}
+          onTab={(t) => (t === "schedules" ? navigate({ tab: "activity", view: "schedules" }) : t === "activity" ? navigate({ tab: "activity", view: "runs" }) : navigate({ tab: t }))}
+          onModule={(m) => navigate({ tab: "config", module: m })}
+          bottom={
+            <>
+              <GroupSettings key={group.id} group={group} summary={summary} groups={summaries ?? []} hosts={hosts ?? []} memberCount={members.length} onSaved={invalidate} />
+              <GitOpsPanel group={group} onChanged={invalidate} />
+              <DangerZone group={group} memberCount={members.length} onDeleted={invalidate} />
+            </>
+          }
+        />
       )}
 
       {tab === "config" && (
@@ -452,8 +392,11 @@ function GroupSettings({
 
 /* ── overview: delete ────────────────────────────────────────────────── */
 
+/** Starts collapsed: delete is rare, and the button should not sit at
+ *  eye level beside the settings people edit every week. */
 function DangerZone({ group, memberCount, onDeleted }: { group: HostGroup; memberCount: number; onDeleted: () => Promise<unknown> }) {
   const router = useRouter()
+  const [open, setOpen] = useState(false)
   const [confirm, setConfirm] = useState(false)
   const [busy, setBusy] = useState(false)
   const del = async () => {
@@ -474,20 +417,38 @@ function DangerZone({ group, memberCount, onDeleted }: { group: HostGroup; membe
     }
   }
   return (
-    <Panel title="danger zone">
-      <div className="flex flex-wrap items-center gap-[9px] p-[11px]">
-        <span className="flex-1 text-[11.5px] text-text-2">Deleting removes this group from every host that carries it. Nothing on a host changes until a plan runs.</span>
-        <span className="flex items-center gap-1.5">
-          {confirm && (
-            <button type="button" className="btn btn-sm btn-ghost" onClick={() => setConfirm(false)} disabled={busy}>
-              keep it
+    <Panel
+      title="danger zone"
+      meta={open ? undefined : "delete this group"}
+      actions={
+        <button
+          type="button"
+          className="btn btn-sm btn-ghost"
+          aria-expanded={open}
+          onClick={() => {
+            setOpen(!open)
+            setConfirm(false)
+          }}
+        >
+          {open ? "collapse" : "expand"}
+        </button>
+      }
+    >
+      {open && (
+        <div className="flex flex-wrap items-center gap-[9px] p-[11px]">
+          <span className="flex-1 text-[11.5px] text-text-2">Deleting removes this group from every host that carries it. Nothing on a host changes until a plan runs.</span>
+          <span className="flex items-center gap-1.5">
+            {confirm && (
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setConfirm(false)} disabled={busy}>
+                keep it
+              </button>
+            )}
+            <button type="button" className={`btn btn-sm ${confirm ? "btn-danger" : "btn-ghost text-danger"}`} onClick={() => void del()} disabled={busy}>
+              {busy ? "Deleting…" : confirm ? `Confirm — ${plural(memberCount, "host")} drop this group` : "Delete group"}
             </button>
-          )}
-          <button type="button" className={`btn btn-sm ${confirm ? "btn-danger" : "btn-ghost text-danger"}`} onClick={() => void del()} disabled={busy}>
-            {busy ? "Deleting…" : confirm ? `Confirm — ${plural(memberCount, "host")} drop this group` : "Delete group"}
-          </button>
-        </span>
-      </div>
+          </span>
+        </div>
+      )}
     </Panel>
   )
 }

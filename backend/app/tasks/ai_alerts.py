@@ -211,32 +211,47 @@ def investigate_alert(alert_event_id: int) -> dict:
 
 
 async def _poll() -> dict:
-    """Read currently-firing alerts from the default Mimir's Alertmanager.
+    """Read currently-firing alerts from every Mimir hosts ship to.
 
-    Reuses the registered Grafana instance's auth and TLS settings rather
-    than asking the operator for a second endpoint — the Alertmanager API
-    lives under the same Mimir deployment LabDog already queries.
+    Reuses the registered Grafana instances' auth and TLS settings rather
+    than asking the operator for a second endpoint: the Alertmanager API
+    lives under the same Mimir deployment LabDog already queries. That is
+    the default instance plus any instance a host resolves to through its
+    own or its groups' assignment, so alerts for hosts on a non-default
+    destination are not missed.
     """
     from app.ai.alerts import from_alertmanager_v2, record
     from app.db import task_session
-    from app.grafana.service import get_default_client
+    from app.grafana.models import GrafanaInstance
+    from app.grafana.service import client_for_instance, get_default_instance, resolve_all_hosts
     from app.settings_service import get_setting_typed
 
     async with task_session() as db:
         if not int(await get_setting_typed("alerts.intake_enabled", db)):
             return {"polled": 0, "reason": "alert intake disabled"}
 
-        client = await get_default_client(db, kind="mimir")
-        if client is None:
+        default = await get_default_instance(db, "mimir")
+        instance_ids = {i for i in (await resolve_all_hosts(db, "mimir")).values() if i is not None}
+        if default is not None:
+            instance_ids.add(default.id)
+        if not instance_ids:
             return {"polled": 0, "reason": "no default Mimir instance registered"}
 
         from app.grafana.client import PrometheusError
 
-        try:
-            raw = await client.get_alertmanager_alerts()
-        except PrometheusError as exc:
-            logger.warning("ai_alerts: Alertmanager poll failed: %s", exc)
-            return {"polled": 0, "error": str(exc)}
+        raw: list = []
+        errors: list[str] = []
+        for instance_id in sorted(instance_ids):
+            inst = await db.get(GrafanaInstance, instance_id)
+            if inst is None:
+                continue
+            try:
+                raw.extend(await client_for_instance(inst).get_alertmanager_alerts())
+            except PrometheusError as exc:
+                logger.warning("ai_alerts: Alertmanager poll of %s failed: %s", inst.name, exc)
+                errors.append(f"{inst.name}: {exc}")
+        if errors and not raw:
+            return {"polled": 0, "error": "; ".join(errors)}
 
         from app.notifications.service import notify_alert_fired
 

@@ -7,6 +7,7 @@ import type { ActionDefinition, Host } from "@/lib/types"
 import { Banner, Empty, Panel } from "@/components/ld"
 import { RunActionButton } from "@/components/run-action-button"
 import { MetricMeters, hasMetrics, isStale, relativeTime, useHostMetrics } from "@/components/host-metrics-section"
+import { MetricsDestinationsPanel } from "@/components/metrics-destinations-panel"
 
 /** An action that installs an agent shipping metrics to Mimir — the
  *  default pack's alloy-install, or anything else whose manifest maps a
@@ -103,6 +104,7 @@ export function MetricsTab({ hostId, host }: { hostId: number; host?: Host }) {
       <Panel title="resource usage" meta={sampled} pad={11}>
         <div className="flex flex-col gap-3">{body}</div>
       </Panel>
+      <MetricsDestinationsPanel scope="host" id={hostId} />
     </div>
   )
 }

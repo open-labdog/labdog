@@ -13,11 +13,14 @@ export function Pane({
   zone,
   counts,
   overlay,
+  left,
   onClose,
 }: {
   zone: ZoneKey
   counts: ShellCounts
   overlay: boolean
+  /** Where an overlay pane starts: the rail's current width. */
+  left: number
   onClose: () => void
 }) {
   const z = zoneDef(zone)
@@ -30,7 +33,7 @@ export function Pane({
     <aside
       aria-label={`${z.label} navigation`}
       className={`pane-enter flex w-[208px] shrink-0 flex-col border-r border-line bg-surface ${overlay ? "absolute bottom-0 top-0 z-30 shadow-ld" : "relative"}`}
-      style={overlay ? { left: 50 } : undefined}
+      style={overlay ? { left } : undefined}
     >
       <header className="flex items-center gap-2 px-3 pb-[9px] pt-[11px]">
         <span className="text-[12.5px] font-semibold">{z.label}</span>

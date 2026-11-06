@@ -22,7 +22,10 @@ host's page.
 **Settings** sits at the foot of the rail, with the theme toggle (dark is
 the default; `t` switches), the palette button and your account — the avatar
 opens a menu with your email, **Change password…**, **About LabDog** and
-**Log out**. `[` collapses and reopens the pane.
+**Log out**. `[` collapses and reopens the pane. The `»` button at the
+very foot of the rail (or `]`) expands it to show each zone's name next to
+its icon; `«` (or `]` again) collapses it back to icons. Your browser
+remembers the choice.
 
 On a tablet the pane is an overlay that closes when you navigate; on a phone
 the rail becomes a bottom tab bar. Old links keep working: `/dashboard`,
@@ -78,8 +81,9 @@ a live fleet — hostnames, addresses and counts are illustrative.
 | Screenshot | Shows |
 |------------|-------|
 | [`login.png`](screenshots/login.png) | Sign-in |
-| [`overview.png`](screenshots/overview.png) | Overview — status bar, Pending, activity, drift trend |
+| [`overview.png`](screenshots/overview.png) | Overview — status bar, scheduled-run tiles, Pending, activity, schedule health, next 24 hours |
 | [`hosts.png`](screenshots/hosts.png) | Hosts list |
+| [`host-overview.png`](screenshots/host-overview.png) | A host's Overview tab — a schedule failing on this host, its last ten results, activity |
 | [`host-detail.png`](screenshots/host-detail.png) | A host's Config tab — effective firewall with where each rule comes from |
 | [`discovery.png`](screenshots/discovery.png) | Discovery — scan schedules |
 | [`hosts-discover.png`](screenshots/hosts-discover.png) | Discovery — scan now, with results |

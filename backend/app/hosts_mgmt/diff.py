@@ -28,8 +28,14 @@ def compute_hosts_diff(
     """
     Compare current /etc/hosts content against desired effective config.
     Key = ip_address.
+
+    An empty *desired* is what ``get_effective_hosts_entries`` returns
+    when no entry applies, and LabDog then leaves the file alone — so
+    nothing in it is "extra", and the diff is empty (BUG-115).
     """
     diff = HostsFileDiff()
+    if not desired:
+        return diff
 
     current_map = {e.ip_address: e for e in current}
     desired_map = {e.ip_address: e for e in desired}

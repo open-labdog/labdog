@@ -295,6 +295,7 @@ async def _run_action_group_async(action_run_id: int) -> None:
     from app.config import settings
     from app.crypto import decrypt_ssh_key, get_master_key
     from app.db import task_session
+    from app.grafana.service import METRICS_DESTINATIONS_PARAM
     from app.models.action_run import ActionHostRun, ActionRun
     from app.models.host import Host, HostGroupMembership
     from app.models.ssh_key import SSHKey
@@ -509,7 +510,18 @@ async def _run_action_group_async(action_run_id: int) -> None:
         # is marked ``failed`` and it is dropped from the inventory before
         # the playbook runs — matching the per-host path's bail-on-snapshot
         # behaviour).
-        if action_destructive and run_snapshot_enabled:
+        # A dry run is ``ansible-playbook --check`` and changes nothing, so
+        # there is nothing to snapshot (and, with no snapshot, verify and
+        # rollback below don't run either).
+        run_is_dry = bool(parameters.get(DRY_RUN_PARAM, False))
+        if run_is_dry:
+            _publish_global(
+                r,
+                channel,
+                "[group] dry run: ansible-playbook --check, no changes are made; "
+                "snapshot skipped\n",
+            )
+        elif action_destructive and run_snapshot_enabled:
             await _snapshot_all(
                 host_ctxs,
                 action_run_id,
@@ -558,6 +570,10 @@ async def _run_action_group_async(action_run_id: int) -> None:
         )
 
         dry_run = parameters.pop(DRY_RUN_PARAM, False)
+        # Group dispatch doesn't inject metrics destinations (no manifest
+        # that declares ``metrics_backend`` is group-only today), but the
+        # reserved key must not reach the playbook as an extra-var.
+        parameters.pop(METRICS_DESTINATIONS_PARAM, None)
         # Fail closed before these become extra-vars. Ansible evaluates
         # extra-vars on the controller — the LabDog host — not on the
         # target, so a template expression here is code execution here.
@@ -565,9 +581,8 @@ async def _run_action_group_async(action_run_id: int) -> None:
         # through that path. See app/actions/extra_vars.py.
         sanitize_extra_vars(parameters)
         extra_vars: dict | None = dict(parameters) if parameters else None
-        if dry_run:
-            extra_vars = extra_vars or {}
-            extra_vars["ansible_check_mode"] = True
+        # Dry run is ``--check`` via run_ansible, not an extra-var: see
+        # run_ansible's ``check_mode``.
 
         # Per-action floor — see the matching comment in action_host.py.
         timeout = effective_playbook_timeout(action_playbook_timeout)
@@ -579,6 +594,7 @@ async def _run_action_group_async(action_run_id: int) -> None:
             extra_vars=extra_vars,
             timeout=timeout,
             roles_paths=list(action_roles_paths) if action_roles_paths else None,
+            check_mode=bool(dry_run),
         )
 
         playbook_output: str = (
@@ -889,6 +905,19 @@ async def _snapshot_all(
     async def _snap(ctx: _HostCtx, mapping: Any, proxmox_node: Any) -> None:
         from app.workflows.steps.snapshot import create_snapshot  # noqa: PLC0415
 
+        def _on_lock_wait(msg: str) -> None:
+            line = f"[snapshot] {msg}"
+            ctx.step_log.append(line)
+            try:
+                r.publish(
+                    channel,
+                    json.dumps(
+                        {"event": "output", "host_run_id": ctx.host_run_id, "text": line + "\n"}
+                    ),
+                )
+            except Exception:
+                logger.debug("action_group: SSE publish failed for snapshot wait", exc_info=True)
+
         token_secret = decrypt_ssh_key(proxmox_node.encrypted_token_secret, master_key)
         client = ProxmoxClient(
             api_url=proxmox_node.api_url,
@@ -904,7 +933,14 @@ async def _snapshot_all(
 
         try:
             snap_name = await create_snapshot(
-                client, ctx.pve_node, ctx.vmid, action_run_id, ctx.vm_type, action_key
+                client,
+                ctx.pve_node,
+                ctx.vmid,
+                action_run_id,
+                ctx.vm_type,
+                action_key,
+                lock_wait_seconds=lock_wait_seconds,
+                on_lock_wait=_on_lock_wait,
             )
         except Exception as exc:
             logger.exception(
@@ -920,6 +956,10 @@ async def _snapshot_all(
 
         ctx.snapshot_name = snap_name
         ctx.step_log.append(f"[snapshot] created {snap_name} on {ctx.pve_node}/{ctx.vmid}")
+
+    from app.workflows.steps.snapshot import snapshot_lock_wait_seconds  # noqa: PLC0415
+
+    lock_wait_seconds = snapshot_lock_wait_seconds()
 
     tasks: list[Any] = []
     for ctx in host_ctxs:
@@ -1135,7 +1175,9 @@ async def _verify_all(
                 ctx.step_log.append(
                     f"[verify] passed={ctx.verify_passed} "
                     f"services_ok={verify_result.get('services_ok')} "
-                    f"packages_ok={verify_result.get('packages_ok')}"
+                    f"({verify_result.get('services_checked', 0)} checked) "
+                    f"packages_ok={verify_result.get('packages_ok')} "
+                    f"({verify_result.get('packages_checked', 0)} checked)"
                 )
                 if ai_result := verify_result.get("ai_result"):
                     # Logged apart from `passed` because the two can
@@ -1382,8 +1424,9 @@ async def _aggregate_and_finalise(action_run_id: int, channel: str, r) -> None:
 
         # Post-run module sync fan-out: for group-dispatched actions
         # (supports_host=false) one invocation produces N per-host
-        # outcomes; we fan out post_run_sync to each host whose row is
-        # ``succeeded``. Skipped on dry-run, on cancel, and on whole-
+        # outcomes; we queue post_run_sync for each host whose row is
+        # ``succeeded``, and the member release in the caller's
+        # ``finally`` starts them. Skipped on dry-run, on cancel, and on whole-
         # run failure. Failures here are logged but never affect the
         # action's terminal status -- the action itself already
         # completed.
@@ -1404,7 +1447,7 @@ async def _aggregate_and_finalise(action_run_id: int, channel: str, r) -> None:
             if post_run_sync_modules or post_run_register_decls:
                 from app.sync.post_run import (
                     dispatch_post_run_register,
-                    dispatch_post_run_sync,
+                    queue_post_run_sync,
                 )
 
                 for hr in host_runs:
@@ -1417,25 +1460,25 @@ async def _aggregate_and_finalise(action_run_id: int, channel: str, r) -> None:
                         continue
                     if post_run_sync_modules:
                         try:
-                            dispatched_ids = await dispatch_post_run_sync(
+                            queued_ids = await queue_post_run_sync(
                                 db,
                                 host_id=hr.host_id,
                                 modules=post_run_sync_modules,
                                 triggered_by_user_id=run.triggered_by_user_id,
                             )
-                            if dispatched_ids:
+                            if queued_ids:
                                 await db.commit()
                                 logger.info(
-                                    "action_group: dispatched post_run_sync for "
+                                    "action_group: queued post_run_sync for "
                                     "action_run %d host %d -- modules=%s job_ids=%s",
                                     action_run_id,
                                     hr.host_id,
                                     list(post_run_sync_modules),
-                                    dispatched_ids,
+                                    queued_ids,
                                 )
                         except Exception:
                             logger.exception(
-                                "action_group: post_run_sync dispatch failed for "
+                                "action_group: post_run_sync queueing failed for "
                                 "action_run %d host %d",
                                 action_run_id,
                                 hr.host_id,

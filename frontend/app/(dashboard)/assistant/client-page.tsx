@@ -2,14 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useSearchParams } from "next/navigation"
+import { toast } from "sonner"
 
 import { ChatTranscript } from "@/components/ai/chat-transcript"
 import { BudgetMeters, NewSessionOptions, SessionSummary } from "@/components/ai/session-aside"
-import { SessionList } from "@/components/ai/session-list"
+import { SessionList, type SessionView } from "@/components/ai/session-list"
 import { TERMINAL_STATES } from "@/components/ai/session-meta"
-import { Banner, Confirm, Empty, PageHead, Tag } from "@/components/ld"
+import { Banner, BulkBar, Confirm, Empty, Field, Modal, PageHead, Tag } from "@/components/ld"
 import { API_BASE, apiFetch, ApiError } from "@/lib/api"
 import { plural } from "@/lib/fleet"
 import { AI_SESSION_STATUS, def } from "@/lib/status"
@@ -25,6 +26,38 @@ import type {
 } from "@/lib/types"
 
 const CRUMBS = [{ label: "assistant" }]
+
+/** Sessions per page of the list. */
+const PAGE_SIZE = 50
+
+interface BulkResult {
+  done: number[]
+  skipped: { session_id: number; reason: string }[]
+}
+
+/** A bulk result in one toast: what was done, and why the rest was not. */
+function reportBulk(result: BulkResult, verb: string) {
+  const done = `${plural(result.done.length, "session")} ${verb}`
+  if (result.skipped.length === 0) {
+    toast.success(done)
+    return
+  }
+  // The reasons repeat across a batch ("still counts towards the
+  // safeguards…"), so each is said once, with how many it kept.
+  const reasons = new Map<string, number>()
+  for (const s of result.skipped) reasons.set(s.reason, (reasons.get(s.reason) ?? 0) + 1)
+  toast.warning(`${done}, ${result.skipped.length} kept`, {
+    description: [...reasons].map(([reason, n]) => (n > 1 ? `${n}× ${reason}` : reason)).join(" "),
+    duration: 15_000,
+  })
+}
+
+/** Today minus `days`, as a date input's value. */
+function daysAgo(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() - days)
+  return d.toISOString().slice(0, 10)
+}
 
 export default function AssistantPage() {
   const queryClient = useQueryClient()
@@ -72,11 +105,58 @@ export default function AssistantPage() {
     queryFn: () => apiFetch<Host[]>("/api/hosts"),
   })
 
-  const { data: sessions } = useQuery<AISession[]>({
-    queryKey: ["ai-sessions"],
-    queryFn: () => apiFetch<AISession[]>("/api/ai/sessions"),
+  const [view, setView] = useState<SessionView>("active")
+  const [selecting, setSelecting] = useState(false)
+  const [picked, setPicked] = useState<Set<number>>(new Set())
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
+  const [archiveOld, setArchiveOld] = useState<{ before: string; alertsOnly: boolean } | null>(null)
+
+  // A page at a time, by an id cursor: the list is polled while sessions
+  // are added, which would shift an offset. Keyed by view, and every
+  // `["ai-sessions"]` invalidation below reaches both.
+  const sessionPages = useInfiniteQuery<AISession[]>({
+    queryKey: ["ai-sessions", view],
+    initialPageParam: undefined as number | undefined,
+    queryFn: ({ pageParam }) => {
+      const before = pageParam as number | undefined
+      return apiFetch<AISession[]>(`/api/ai/sessions?view=${view}&limit=${PAGE_SIZE}${before === undefined ? "" : `&before_id=${before}`}`)
+    },
+    getNextPageParam: (last) => (last.length === PAGE_SIZE ? last[last.length - 1].id : undefined),
     refetchInterval: 10_000,
   })
+  const sessions = useMemo(() => sessionPages.data?.pages.flat(), [sessionPages.data])
+
+  const changeView = (next: SessionView) => {
+    setView(next)
+    setPicked(new Set())
+  }
+  const togglePicked = (id: number) =>
+    setPicked((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+  /** Archive, unarchive or delete in bulk; the server says what it skipped. */
+  const bulk = useMutation({
+    mutationFn: ({ path, body }: { path: "archive" | "unarchive" | "delete"; body: object; verb: string }) =>
+      apiFetch<BulkResult>(`/api/ai/sessions/${path}`, { method: "POST", json: body }),
+    onSuccess: (result, { path, verb }) => {
+      reportBulk(result, verb)
+      setPicked(new Set())
+      setConfirmBulkDelete(false)
+      setArchiveOld(null)
+      if (path === "delete" && selectedId !== null && result.done.includes(selectedId)) setSelectedId(null)
+      queryClient.invalidateQueries({ queryKey: ["ai-sessions"] })
+      if (selectedId !== null) queryClient.invalidateQueries({ queryKey: ["ai-session", selectedId] })
+    },
+    onError: (e: unknown) => {
+      setConfirmBulkDelete(false)
+      toast.error(e instanceof ApiError ? e.message : "Could not update the sessions.")
+    },
+  })
+  const pickedIds = [...picked]
 
   // The same query the Settings usage panel reads, so the two share a
   // cache entry and the budget agrees on both pages.
@@ -346,7 +426,10 @@ export default function AssistantPage() {
   const toolless = enabled.filter((p) => !p.supports_tools)
   const canInvestigate = usable.length > 0
 
-  const composerLocked = loadingSession || isRunning || isParked || !canInvestigate
+  // The server's own sentence, so the page and the API's refusal cannot
+  // disagree about what is spent.
+  const followUpRefused = session?.follow_up_refused ?? null
+  const composerLocked = loadingSession || isRunning || isParked || !canInvestigate || followUpRefused !== null
   const busy = startSession.isPending || sendFollowUp.isPending
 
   function submit() {
@@ -498,6 +581,37 @@ export default function AssistantPage() {
           deleting={deleteSession.isPending}
           hostNames={hostNames}
           currency={currency}
+          view={view}
+          onView={changeView}
+          selecting={selecting}
+          onSelecting={(on) => {
+            setSelecting(on)
+            if (!on) setPicked(new Set())
+          }}
+          picked={picked}
+          onPick={togglePicked}
+          hasMore={!!sessionPages.hasNextPage}
+          loadingMore={sessionPages.isFetchingNextPage}
+          onMore={() => void sessionPages.fetchNextPage()}
+          onArchiveOld={() => setArchiveOld({ before: daysAgo(30), alertsOnly: false })}
+          bulkBar={
+            <BulkBar n={picked.size} onClear={() => setPicked(new Set())}>
+              {view === "active" ? (
+                <button type="button" className="btn btn-sm" disabled={bulk.isPending} onClick={() => bulk.mutate({ path: "archive", body: { session_ids: pickedIds }, verb: "archived" })}>
+                  archive
+                </button>
+              ) : (
+                <>
+                  <button type="button" className="btn btn-sm" disabled={bulk.isPending} onClick={() => bulk.mutate({ path: "unarchive", body: { session_ids: pickedIds }, verb: "back in the list" })}>
+                    unarchive
+                  </button>
+                  <button type="button" className="btn btn-sm btn-danger" disabled={bulk.isPending} onClick={() => setConfirmBulkDelete(true)}>
+                    delete
+                  </button>
+                </>
+              )}
+            </BulkBar>
+          }
         />
 
         <div className="order-2 flex min-w-0 shrink-0 flex-col lg:min-h-0 lg:flex-1 lg:shrink">
@@ -520,6 +634,15 @@ export default function AssistantPage() {
                   isRunning={isRunning}
                 />
                 {session.error_message && <Banner tone="danger">{session.error_message}</Banner>}
+                {/* Under the reply, because that is what it qualifies: a run
+                    stopped at a limit ends in a summary of what it had, which
+                    reads like an answer to whatever was last asked. */}
+                {session.stopped_reason && !isRunning && (
+                  <Banner tone="warn">
+                    The assistant stopped early: {session.stopped_reason}. Its last message is what it had by then, and may not
+                    answer what you asked.
+                  </Banner>
+                )}
               </>
             ) : sessionError ? (
               <Banner tone="danger">
@@ -537,6 +660,11 @@ export default function AssistantPage() {
               submit()
             }}
           >
+            {followUpRefused && (
+              <Banner tone="warn" action={<Link href="/settings?section=ai" className="btn btn-sm hover:no-underline">Settings → AI</Link>}>
+                {followUpRefused}
+              </Banner>
+            )}
             <textarea
               className="inp"
               rows={3}
@@ -546,13 +674,15 @@ export default function AssistantPage() {
               placeholder={
                 isParked
                   ? "Decide on the pending command above to continue this session."
-                  : session
-                    ? "Ask a follow-up…"
-                    : selectedId !== null
-                      ? sessionError
-                        ? "This session could not be loaded — pick another, or start a new one."
-                        : "Loading the session…"
-                      : "e.g. Check whether any service failed to start after the last reboot on node-1."
+                  : followUpRefused
+                    ? "This session cannot take another message."
+                    : session
+                      ? "Ask a follow-up…"
+                      : selectedId !== null
+                        ? sessionError
+                          ? "This session could not be loaded — pick another, or start a new one."
+                          : "Loading the session…"
+                        : "e.g. Check whether any service failed to start after the last reboot on node-1."
               }
               disabled={composerLocked}
               onKeyDown={(e) => {
@@ -601,6 +731,63 @@ export default function AssistantPage() {
           </Link>
         </aside>
       </div>
+
+      <Confirm
+        open={confirmBulkDelete}
+        onOpenChange={setConfirmBulkDelete}
+        title={`Delete ${plural(picked.size, "session")}`}
+        description="Delete these sessions and their transcripts? Recorded spend is kept in the usage totals. Any that LabDog still needs are kept and named: one still running, a full-auto alert fix the remediation safeguards still count, or one whose snapshot is still on the hypervisor."
+        confirmLabel="Delete"
+        variant="destructive"
+        loading={bulk.isPending}
+        onConfirm={() => bulk.mutate({ path: "delete", body: { session_ids: pickedIds }, verb: "deleted" })}
+      />
+
+      {archiveOld && (
+        <Modal
+          title="Archive old sessions"
+          description="Archived sessions leave this list and keep everything else: the transcript, the rollback, and what the alert safeguards count. Running sessions are left alone."
+          onClose={() => !bulk.isPending && setArchiveOld(null)}
+          w={440}
+          onSubmit={(e) => {
+            e.preventDefault()
+            bulk.mutate({
+              path: "archive",
+              body: {
+                finished_before: new Date(`${archiveOld.before}T00:00:00`).toISOString(),
+                ...(archiveOld.alertsOnly ? { mode: "alert_investigation" } : {}),
+              },
+              verb: "archived",
+            })
+          }}
+          footer={
+            <>
+              <button type="button" className="btn ml-auto" disabled={bulk.isPending} onClick={() => setArchiveOld(null)}>
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={bulk.isPending || !archiveOld.before}>
+                {bulk.isPending ? "Archiving…" : "Archive"}
+              </button>
+            </>
+          }
+        >
+          <Field label="finished before" htmlFor="archive-before">
+            <input
+              id="archive-before"
+              type="date"
+              className="inp mono"
+              style={{ width: 160 }}
+              value={archiveOld.before}
+              max={daysAgo(0)}
+              onChange={(e) => setArchiveOld({ ...archiveOld, before: e.target.value })}
+            />
+          </Field>
+          <label className="flex items-center gap-2 text-[12px] text-text-2">
+            <input type="checkbox" checked={archiveOld.alertsOnly} onChange={(e) => setArchiveOld({ ...archiveOld, alertsOnly: e.target.checked })} />
+            alert investigations only
+          </label>
+        </Modal>
+      )}
 
       <Confirm
         open={deleting !== null}

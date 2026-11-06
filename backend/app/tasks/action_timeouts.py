@@ -104,9 +104,21 @@ def _ai_wall_clock_floor() -> int:
         return 900
 
 
+def snapshot_lock_wait_budget() -> int:
+    """Seconds a pre-run snapshot may spend waiting out a locked VM.
+
+    Part of every destructive action's per-host deadline, so a host that sat behind a backup
+    for the whole ``workflow.snapshot_lock_wait_minutes`` window still
+    has its full playbook + verify budget afterwards.
+    """
+    from app.workflows.steps.snapshot import snapshot_lock_wait_seconds  # noqa: PLC0415
+
+    return snapshot_lock_wait_seconds()
+
+
 def per_host_deadline_seconds(action_key: str) -> int:
-    """Upper bound on one host's whole envelope (snapshot → playbook →
-    verify → rollback → cleanup).
+    """Upper bound on one host's whole envelope (snapshot, including any
+    wait for a locked VM → playbook → verify → rollback → cleanup).
 
     Deliberately generous: ansible-runner's own ``timeout`` always
     fires well before this, so any row still ``running`` past this age
@@ -125,7 +137,11 @@ def per_host_deadline_seconds(action_key: str) -> int:
     verify = (
         action.verify_timeout_seconds if action is not None else FALLBACK_VERIFY_TIMEOUT_SECONDS
     )
-    return effective_playbook_timeout(floor) + verify + ENVELOPE_GRACE_SECONDS
+    # Only destructive actions snapshot, so only they can sit behind a
+    # locked VM. A registry miss keeps the budget: too long a deadline
+    # only delays reaping a dead run, too short a one kills a live one.
+    lock_wait = snapshot_lock_wait_budget() if action is None or action.destructive else 0
+    return effective_playbook_timeout(floor) + verify + ENVELOPE_GRACE_SECONDS + lock_wait
 
 
 def run_deadline_seconds(action_key: str, host_count: int, parallelism: int) -> int:

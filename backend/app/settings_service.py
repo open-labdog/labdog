@@ -142,6 +142,20 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "max": 168,
         "description": "Max age in hours before orphaned Proxmox snapshots are cleaned up",
     },
+    "workflow.snapshot_lock_wait_minutes": {
+        "type": "int",
+        "default": 30,
+        "min": 0,
+        "max": 240,
+        "description": "Minutes to wait for a locked VM before a pre-run snapshot fails",
+        "help": (
+            "A destructive action snapshots the VM first. If Proxmox reports the VM as locked, "
+            "usually by a running backup, LabDog retries every 30 seconds for up to this long "
+            "and logs each wait in the run output. If the lock is still there, that host fails "
+            "before anything runs on it. 0 fails on the first lock, as before. The wait counts "
+            "against the run's time budget, which grows by the same amount."
+        ),
+    },
     TIMEZONE_SETTING: {
         "type": "string",
         "default": "UTC",
@@ -313,6 +327,18 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "help": (
             "They are not deleted when the session succeeds, because the point of them is that "
             "you can undo the change afterwards — this is how long 'afterwards' lasts."
+        ),
+    },
+    "ai.session_archive_after_days": {
+        "type": "int",
+        "default": 0,
+        "min": 0,
+        "max": 3650,
+        "description": "Archive finished assistant sessions after this many days (0 = never).",
+        "help": (
+            "Archived sessions leave the assistant's list and keep everything else: the "
+            "transcript, the rollback, and the record the alert remediation safeguards count. "
+            "Open the archive from the list to bring one back or delete it."
         ),
     },
     "ai.snapshot_before_mutating": {

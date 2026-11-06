@@ -22,14 +22,15 @@ cleanly with a 409.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
-from itertools import islice
+from collections import defaultdict
+from datetime import UTC, datetime, timedelta, tzinfo
+from itertools import islice, takewhile
 from typing import Any
 
 from croniter import croniter
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import ValidationError
-from sqlalchemy import desc, select, text
+from sqlalchemy import desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.actions.registry import ACTION_REGISTRY, ActionDefinition
@@ -58,6 +59,12 @@ logger = logging.getLogger(__name__)
 
 
 router = APIRouter(prefix="/scheduled-actions", tags=["scheduled-actions"])
+
+#: How far ahead ``upcoming_runs`` looks, and the most it lists. A
+#: ``*/5 * * * *`` schedule fires 2016 times a week; the timeline only
+#: needs to show that it is busy, not every mark.
+UPCOMING_WINDOW = timedelta(days=7)
+UPCOMING_CAP = 200
 
 
 # ---------------------------------------------------------------------------
@@ -146,14 +153,98 @@ def _scheduled_action_audit_payload(sa: ScheduledAction) -> dict[str, Any]:
     }
 
 
+def _fire_times(
+    sa: ScheduledAction, tz: tzinfo, now: datetime
+) -> tuple[datetime | None, list[datetime]]:
+    """``(next fire, every fire in the next week)`` for an enabled cron
+    schedule; ``(None, [])`` for a paused or cron-less one.
+
+    The walk starts at *now* rather than at the row's ``walk_start()``: a
+    fire the scheduler has not picked up yet is due at its next tick, and
+    an overview that showed it as "2 minutes ago" would read as missed.
+    """
+    if not sa.enabled or not sa.schedule_cron or not croniter.is_valid(sa.schedule_cron):
+        return None, []
+    horizon = now + UPCOMING_WINDOW
+    try:
+        fires = iter_fire_times(sa.schedule_cron, now, tz)
+        first = next(fires)
+        upcoming = [first] if first <= horizon else []
+        if upcoming:
+            upcoming += islice(takewhile(lambda t: t <= horizon, fires), UPCOMING_CAP - 1)
+    except Exception:  # noqa: BLE001 — a bad stored cron must not break the list
+        logger.warning("scheduled_action %d: cannot walk cron %r", sa.id, sa.schedule_cron)
+        return None, []
+    return first, upcoming
+
+
+async def _recent_runs_by_schedule(
+    db: AsyncSession, schedule_ids: list[int], per_schedule: int
+) -> dict[int, list[ScheduledActionRunSummary]]:
+    """The newest *per_schedule* runs of each schedule, newest first, in one
+    query (a row_number window), so the listing stays one round trip however
+    many schedules there are."""
+    if not schedule_ids or per_schedule <= 0:
+        return {}
+    ranked = (
+        select(
+            ActionRun.id,
+            ActionRun.scheduled_action_id,
+            ActionRun.status,
+            ActionRun.started_at,
+            ActionRun.finished_at,
+            ActionRun.created_at,
+            func.row_number()
+            .over(
+                partition_by=ActionRun.scheduled_action_id,
+                order_by=(desc(ActionRun.created_at), desc(ActionRun.id)),
+            )
+            .label("rn"),
+        )
+        .where(ActionRun.scheduled_action_id.in_(schedule_ids))
+        .subquery()
+    )
+    rows = (
+        await db.execute(
+            select(ranked)
+            .where(ranked.c.rn <= per_schedule)
+            .order_by(ranked.c.scheduled_action_id, ranked.c.rn)
+        )
+    ).all()
+    out: dict[int, list[ScheduledActionRunSummary]] = defaultdict(list)
+    for r in rows:
+        out[r.scheduled_action_id].append(
+            ScheduledActionRunSummary(
+                id=r.id,
+                status=r.status,
+                started_at=r.started_at,
+                finished_at=r.finished_at,
+                created_at=r.created_at,
+            )
+        )
+    return out
+
+
 async def _hydrate(
     db: AsyncSession,
     sa: ScheduledAction,
     *,
     include_last_run: bool,
+    tz: tzinfo | None = None,
+    recent_runs: list[ScheduledActionRunSummary] | None = None,
 ) -> ScheduledActionOut:
-    """Build the response model with server-resolved presentation hints."""
+    """Build the response model with server-resolved presentation hints.
+
+    *tz* is the scheduling timezone; the caller reads it once so a listing
+    doesn't read the setting per row. *recent_runs* comes from
+    :func:`_recent_runs_by_schedule`, batched the same way.
+    """
     out = ScheduledActionOut.model_validate(sa)
+    if tz is None:
+        tz = await get_schedule_timezone(db)
+    out.next_run_at, out.upcoming_runs = _fire_times(sa, tz, datetime.now(UTC))
+    if recent_runs is not None:
+        out.recent_runs = recent_runs
     target_name = await _resolve_target_name(db, sa.target_kind, sa.target_id)
     out.target_name = target_name
 
@@ -163,7 +254,10 @@ async def _hydrate(
         out.pack_name = action.pack_name
         out.destructive = action.destructive
 
-    if include_last_run:
+    if include_last_run and recent_runs is not None:
+        # The newest recent run is the last run: no query per schedule.
+        out.last_run = recent_runs[0] if recent_runs else None
+    elif include_last_run:
         last = await db.scalar(
             select(ActionRun)
             .where(ActionRun.scheduled_action_id == sa.id)
@@ -208,6 +302,9 @@ async def list_scheduled_actions(
     enabled: bool | None = Query(default=None),
     category: str | None = Query(default=None, description="'_builtin' or 'pack'"),
     include_last_run: bool = Query(default=True),
+    recent_runs: int = Query(
+        default=8, ge=0, le=50, description="how many of each schedule's newest runs to include"
+    ),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(current_active_user),
 ) -> list[ScheduledActionOut]:
@@ -226,7 +323,18 @@ async def list_scheduled_actions(
         stmt = stmt.where(~ScheduledAction.action_key.startswith("_builtin."))
 
     rows = (await db.execute(stmt)).scalars().all()
-    return [await _hydrate(db, sa, include_last_run=include_last_run) for sa in rows]
+    tz = await get_schedule_timezone(db)
+    recent = await _recent_runs_by_schedule(db, [sa.id for sa in rows], recent_runs)
+    return [
+        await _hydrate(
+            db,
+            sa,
+            include_last_run=include_last_run,
+            tz=tz,
+            recent_runs=recent.get(sa.id, []) if recent_runs else None,
+        )
+        for sa in rows
+    ]
 
 
 # NOTE: declared before "/{scheduled_action_id}" so the literal "runs"

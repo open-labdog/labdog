@@ -16,6 +16,7 @@ from app.ai.tools.base import ToolContext, ToolHandler, ToolResult
 from app.ai.tools.hosts import GET_HOST_FACTS, LIST_HOSTS
 from app.ai.tools.logs import QUERY_LOKI
 from app.ai.tools.metrics import QUERY_MIMIR, QUERY_MIMIR_RANGE
+from app.ai.tools.runs import GET_ACTION_RUN_OUTPUT, LIST_ACTION_RUNS
 from app.ai.tools.ssh import RUN_SSH_COMMAND
 
 #: Every registered tool, keyed by the name the model calls.
@@ -28,6 +29,8 @@ TOOL_REGISTRY: dict[str, ToolHandler] = {
         QUERY_MIMIR,
         QUERY_MIMIR_RANGE,
         QUERY_LOKI,
+        LIST_ACTION_RUNS,
+        GET_ACTION_RUN_OUTPUT,
     )
 }
 

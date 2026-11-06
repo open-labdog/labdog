@@ -7,6 +7,177 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-11-06
+
+### Added
+
+- **Per-host and per-group metrics destinations.** A host or a group can
+  be assigned its own Mimir and Loki instance (host page › Metrics, group
+  Overview). A host ships to its own assignment, then its
+  highest-priority group's, then the default. Actions with a
+  `metrics_backend` mapping (alloy-install) get each host's URL, Mimir
+  tenant, Loki tenant (the Loki instance's org ID) and TLS skip-verify;
+  a destination picked in the run dialog overrides every host in that
+  run. The host page, AI alert polling and the assistant's metrics and
+  logs tools query the instance the host actually ships to. Deleting an
+  instance that is still assigned is refused (409). New endpoints:
+  `GET`/`PUT /api/grafana/destinations/hosts/{id}` and
+  `/api/grafana/destinations/groups/{id}`; `metrics_backend` gains
+  `loki_tenant_var`, `prometheus_tls_skip_verify_var` and
+  `loki_tls_skip_verify_var`.
+
+- **Pre-run snapshots wait out a locked VM.** When Proxmox refuses a
+  destructive action's snapshot because the VM is locked, usually by a
+  running backup, LabDog now retries every 30 seconds instead of failing
+  the host at once, and logs each wait in the run output. The new
+  `workflow.snapshot_lock_wait_minutes` setting (Settings › Workflows,
+  default 30, `0` for the old behaviour) bounds the wait; a host still
+  locked after it fails before anything runs on it. Destructive actions'
+  time budgets grow by the same amount so the wait can't eat into the
+  playbook's.
+
+- **Host and group Overview tabs.** A host's Overview leads with its
+  scheduled runs: a banner when a schedule failed on this host, then every
+  schedule that reaches it, directly or through a group, with this host's
+  own result in its last ten runs, so a *partial* group run reads green on
+  the hosts that were fine. Drift is one line in the host card, and the
+  full fact list is behind **all facts**. Recent activity (runs, syncs,
+  alerts and AI, without the routine checks that worked), the host's
+  alerts, and the layers its config comes from follow; the VM mapping is
+  folded at the foot. A group's Overview gains headline numbers (members,
+  in sync, drifted, failed, sync success over 7 days, next run), a member
+  × module health grid, what members actually get after the merge, 14
+  days of drift and the schedules coming up. Settings, GitOps and a
+  folded danger zone move to a row at the foot. New read endpoints back
+  them: `GET /api/actions/host-runs?host_id=`,
+  `GET /api/groups/{id}/module-status`, a `host_id` filter on alerts and
+  assistant sessions, and a `group_id` filter on the dashboard's
+  sync-success and drift-trend series.
+
+- **Overview leads with scheduled runs.** The Overview's five views now
+  show how scheduled runs are doing before anything else. Summary has
+  tiles for failed runs, the 7-day success rate, stuck operations and the
+  next run, plus each schedule's last eight runs, failing first. Pending
+  gains **failed runs** (with the failing host's reason, taken from the
+  log) and **stuck** lanes. Fleet state shows snapshot, drift-check,
+  verification and host-key coverage, the OS and kernel mix, and resource
+  hot spots from Grafana. Activity covers 24 hours or 7 days, filters by
+  kind and hour, and includes alerts and assistant sessions. Upcoming has
+  a 7-day timeline that marks schedules touching the same host at the
+  same time. Drift is one line, not a panel.
+
+- **Expandable rail.** The navigation rail can expand to show each zone's
+  name next to its icon. The `»` button at the foot of the rail, or `]`,
+  expands it, and `«` or `]` again collapses it back to icons. The choice
+  is remembered in your browser.
+
+- **Investigate a run with AI.** A finished run's page has an
+  **Investigate with AI** button. It starts a read-only assistant session
+  about the run, or about the host picked in the log, and opens it. The
+  session is told what ran and how each host ended, and gets LabDog's
+  steps, the play recaps and every failed task from the log; it reads the
+  rest itself. A second press opens the same session. The run page links
+  to its investigations, and the session to its run.
+
+- **The assistant can read LabDog's action history.** Two read-only
+  tools: `list_action_runs` lists what LabDog recently ran on a host, and
+  `get_action_run_output` reads a run's captured output, a page at a time
+  or only the lines matching some text. Both are scoped to the session's
+  hosts.
+
+- **Archive assistant sessions.** The session list has an archive, and a
+  select mode to archive, unarchive or delete several sessions at once.
+  **archive old…** archives everything that finished before a date, and
+  `ai.session_archive_after_days` (off by default) does it daily. An
+  archived session keeps its transcript, rollback and alert link, and the
+  full-auto safeguards still count it. The list now pages with **load
+  older**; it used to stop at the newest 50.
+
+- **Docker images are tagged with their version.** Each release is
+  published as `openlabdog/labdog:X.Y.Z`, `X.Y` and `X`, all the same
+  image as `latest`, so an install can pin a version as the upgrade
+  guide says.
+
+### Changed
+
+- **Deleting a session keeps a full-auto alert fix the safeguards still
+  count.** For a day after it ended (or the cooldown, if longer), such a
+  session is refused with a pointer to archiving: deleting it reset the
+  host's daily cap and cooldown, and dropped the check after the fix. A
+  bulk delete also skips sessions whose snapshot is still on the
+  hypervisor.
+
+### Fixed
+
+- **A dry run no longer changes the host.** LabDog passed
+  `-e ansible_check_mode=True`, which ansible-core overrides with the
+  real value, so a dry run ran for real. It now runs the playbook with
+  `--check`, and skips the pre-action VM snapshot.
+
+- **The post-run verify log says how many services and packages it
+  checked**, instead of reporting "ok" when it checked none.
+
+- **The assistant answers follow-up questions on a Claude subscription.**
+  A follow-up on a `claude_agent` provider was saved to the transcript, and
+  the model was asked the session's original mission again, so it repeated
+  what it had already found. The question now reaches the model. (BUG-122)
+
+- **`ai.max_tokens_total` holds for a whole session.** On a Claude
+  subscription, a follow-up did not count what the session had spent before
+  it, so a session could use about twice its limit. (BUG-123)
+
+- **A session that has used up a limit says so.** It used to take a
+  follow-up, stop at the model's first response and reply with a summary,
+  with only a tag in the page header to show for it. The message box now
+  locks and names the limit, the API refuses the message with the same
+  sentence, and a notice under a run that stopped early says its last
+  message may not answer what you asked. A follow-up also clears the
+  previous run's "stopped early" tag. (BUG-124)
+
+- **An action's follow-up sync runs only the modules it names.** A
+  `post_run_sync` or `post_run_register` sync that had to wait for its
+  host was later run as a sync of every module: on valheim, alloy-install's
+  packages and services follow-ups rewrote the firewall and `/etc/hosts`
+  too. Each now records its module and runs that one. The host queue no
+  longer runs a row it cannot read as a sync at all, which also stops a
+  waiting CA certificate deploy from going out as a full sync. Waiting
+  follow-ups from before the upgrade are repaired. (BUG-116)
+
+- **Work queued behind an action starts when the action finishes.** An
+  action handed its host on before closing its run, so whatever was
+  waiting found the host still busy and waited again — until the next
+  operation on that host. The run is now closed first, for pack actions
+  and the built-in ones (`_builtin.sync`, drift check, collect state)
+  alike. (BUG-117)
+
+- **A CA certificate deploy takes its turn on the host.** It ran without
+  waiting for whatever else was working on the host, and when it finished
+  it did not hand the host on, so everything queued behind it waited for
+  the next operation there: eight hours, for valheim's follow-up syncs. It
+  now waits while the host is busy and starts the next queued operation
+  when it is done. (BUG-119)
+
+- **A synced `/etc/hosts` keeps the host's own name.** A hosts sync wrote
+  the file with only the two localhost lines and LabDog's entries, so the
+  `127.0.1.1 <name>` line the Debian installer and cloud-init put there
+  was lost. On a host whose DNS has no answer for its own name, every
+  `sudo` then complained that it could not resolve the host and mailed
+  root about it. The file now carries `127.0.1.1 <full name> <short
+  name>`, with the name the host reports, unless an entry already places
+  one of those names or uses 127.0.1.1, as a Proxmox node that must
+  resolve to its real address would. (BUG-115)
+
+- **LabDog leaves `/etc/hosts` alone on a host no entry applies to.** It
+  used to replace the file with the two localhost lines whenever the
+  module was synced, including in a "sync all". Such a host now reports
+  the module as in sync with nothing to change, and drift finds nothing
+  extra in its file. A host whose file was already cut down keeps it as it
+  is: give it an entry, or put the line back by hand. (BUG-115)
+
+- **The upgrade and production guides named an image LabDog is not
+  published as** (`ghcr.io/open-labdog/labdog:0.6.1`). They now use
+  `openlabdog/labdog` on Docker Hub.
+
 ## [1.0.0] — 2026-10-27
 
 The first stable release. From here LabDog follows Semantic Versioning:
@@ -3172,7 +3343,8 @@ SSH-pushed Ansible reconciliation, and a per-host detail tab:
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
-[Unreleased]: https://github.com/open-labdog/labdog/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/open-labdog/labdog/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/open-labdog/labdog/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/open-labdog/labdog/compare/v0.10.0...v1.0.0
 [0.10.0]: https://github.com/open-labdog/labdog/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/open-labdog/labdog/compare/v0.8.0...v0.9.0

@@ -9,6 +9,7 @@ import { Banner, PageHead, Pager, RunStatus, Table, Window, lastPage, pageSlice 
 import { useLocalPref } from "@/lib/local-pref"
 import type { ActionHostRun, ActionRun } from "@/lib/types"
 import { AnsibleLog, findMatches } from "@/components/ansible-log"
+import { InvestigateRunButton } from "@/components/investigate-run-button"
 import { FAILURE_KINDS, parseAnsibleLog } from "@/lib/ansible-log"
 
 const TERMINAL = new Set(["succeeded", "failed", "partial", "cancelled"])
@@ -237,6 +238,17 @@ export function ActionRunDetail({ runId }: { runId: number }) {
               </>
             )}
             {targetDeleted && <> · {run.target_label} (deleted)</>}
+            {(run.investigations?.length ?? 0) > 0 && (
+              <>
+                {" "}· investigated in{" "}
+                {run.investigations!.map((inv, i) => (
+                  <span key={inv.session_id}>
+                    {i > 0 && ", "}
+                    <Link href={`/assistant?session=${inv.session_id}`} className="mono underline hover:text-text-2" data-testid="run-investigation">session #{inv.session_id}</Link>
+                  </span>
+                ))}
+              </>
+            )}
           </>
         )}
         actions={run && !isTerminal && (
@@ -335,6 +347,9 @@ export function ActionRunDetail({ runId }: { runId: number }) {
                   </span>
                 )}
               </div>
+              {/* Next to the search: both are about reading this log, and the
+                  investigation follows the host picked for it. */}
+              {run && isTerminal && <InvestigateRunButton run={run} hostRun={selectedHost} />}
               {firstFailure >= 0 && (
                 <button type="button" className="btn btn-sm" style={{ color: "var(--danger)" }} onClick={jumpToFailure}>
                   {failureCount > 1 ? `first of ${failureCount} failures ↓` : "first failure ↓"}

@@ -202,6 +202,28 @@ export interface ProxmoxNode {
 export type GrafanaKind = "mimir" | "loki"
 export type GrafanaAuthType = "none" | "bearer" | "basic"
 
+/** The Mimir and Loki instances a host or group names (null = inherit). */
+export interface DestinationAssignment {
+  mimir_instance_id: number | null
+  loki_instance_id: number | null
+}
+
+/** Where a host's data goes for one kind once groups and the default are
+ *  taken into account. */
+export interface EffectiveDestination {
+  instance_id: number | null
+  instance_name: string | null
+  url: string | null
+  source: "host" | "group" | "default"
+  group_id: number | null
+  group_name: string | null
+}
+
+export interface HostDestinations {
+  assigned: DestinationAssignment
+  effective: Record<GrafanaKind, EffectiveDestination>
+}
+
 export interface GrafanaInstance {
   id: number
   name: string
@@ -900,6 +922,69 @@ export interface ActionRun {
   pending_reason: string | null
   created_at: string
   host_runs: ActionHostRun[]
+  /** Assistant sessions started from this run's page, newest first. Filled
+   *  in by the run detail endpoint only. */
+  investigations?: RunInvestigation[]
+  /** Hosts per status, e.g. `{succeeded: 17, failed: 1}`. Filled in by the
+   *  list endpoint, which leaves `host_runs` empty. */
+  host_counts?: Record<string, number>
+  /** The first host the run failed on. List endpoint only. */
+  first_failure?: RunHostFailure | null
+}
+
+/** GET /api/actions/host-runs — one host's part in a run that reached it,
+ *  directly or through a group or the fleet. `status` is this host's own
+ *  result; `run_status` is the run's. */
+export interface HostRunEntry {
+  host_run_id: number
+  action_run_id: number
+  action_key: string
+  run_status: string
+  status: string
+  target_kind: "host" | "group" | "fleet"
+  target_label: string
+  scheduled_action_id: number | null
+  alert_event_id: number | null
+  triggered_by_user_id: number | null
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+  exit_code: number | null
+  error_message: string | null
+  /** The first failed task's message from this host's log. */
+  reason: string | null
+  /** Failed here, and LabDog restored the pre-run snapshot. */
+  rolled_back: boolean
+}
+
+/** GET /api/groups/{id}/module-status — one cell of a group's health matrix. */
+export interface MemberModuleStatus {
+  host_id: number
+  module_type: string
+  sync_status: string
+  checked_at: string | null
+  error_message: string | null
+}
+
+/** GET /api/actions/runs — the first failing host of a run in the list. */
+export interface RunHostFailure {
+  host_run_id: number
+  host_id: number | null
+  hostname: string
+  exit_code: number | null
+  error_message: string | null
+  /** The failed task's own message, read from the log. `error_message`
+   *  usually only says ansible-runner exited non-zero. */
+  reason: string | null
+}
+
+/** An assistant session about a run, as the run detail lists it. */
+export interface RunInvestigation {
+  session_id: number
+  status: AISessionStatus
+  /** Every host of the run, or the one host it was asked about. */
+  target_host_ids: number[]
+  created_at: string
 }
 
 // ---------------------------------------------------------------------------
@@ -937,6 +1022,14 @@ export interface ScheduledAction {
   pack_name: string | null
   destructive: boolean | null
   last_run: ScheduledActionRunSummary | null
+  /** The next fire time, in the scheduling timezone's reading of the cron.
+   *  Null while paused, without a cron, or when the cron is invalid. */
+  next_run_at?: string | null
+  /** Every fire time in the next 7 days (at most 200), soonest first. */
+  upcoming_runs?: string[]
+  /** The schedule's newest runs, newest first (8 unless the list was asked
+   *  for another number with `?recent_runs=`). */
+  recent_runs?: ScheduledActionRunSummary[]
 }
 
 // GET /api/scheduled-actions/runs — flat, newest-first feed of individual
@@ -1130,6 +1223,9 @@ export interface AISession {
   /** True when this session opted out of pre-change snapshots. */
   skip_snapshots: boolean
   action_run_id: number | null
+  /** The run this session investigates, when it was started from the run
+   *  page. Null once that run is pruned. */
+  investigates_action_run_id?: number | null
   iterations: number
   prompt_tokens: number
   completion_tokens: number
@@ -1150,6 +1246,8 @@ export interface AISession {
   created_at: string
   started_at: string | null
   finished_at: string | null
+  /** Set while the session is archived: out of the list, kept whole. */
+  archived_at?: string | null
 }
 
 export type AIApprovalStatus = "pending" | "approved" | "rejected" | "expired"
@@ -1193,6 +1291,8 @@ export interface AISessionDetail extends AISession {
   rollbacks: AIRollback[]
   /** Each host the session changed, and whether it can be rolled back now. */
   rollback_targets: AIRollbackTarget[]
+  /** Why this session cannot take another message, ready to show; null when it can. */
+  follow_up_refused: string | null
 }
 
 export type AIRollbackStatus = "running" | "succeeded" | "failed" | "refused"
@@ -1451,4 +1551,61 @@ export interface NotificationDelivery {
   last_error: string | null
   created_at: string
   sent_at: string | null
+}
+
+// ---------------------------------------------------------------------------
+// Overview reads (GET /api/dashboard/*, GET /api/grafana/fleet/metrics)
+// ---------------------------------------------------------------------------
+
+/** An operation running past the stale threshold, with what waits behind it. */
+export interface StuckOperation {
+  kind: "sync" | "action"
+  /** SyncJob id or ActionRun id. */
+  id: number
+  /** The modules of a sync, the action key of a run. */
+  label: string
+  host_ids: number[]
+  hostnames: string[]
+  started_at: string
+  /** Operations queued on these hosts, waiting for this one. */
+  queued_behind: number
+}
+
+export interface StuckOperations {
+  threshold_minutes: number
+  items: StuckOperation[]
+}
+
+/** Hosts per module and status, from every host's module status rows. */
+export interface ModuleStatusCount {
+  module_type: string
+  sync_status: string
+  count: number
+}
+
+/** A deployed CA certificate and when it runs out, soonest first. */
+export interface CACertExpiry {
+  name: string
+  fingerprint_sha256: string
+  not_after: string
+  host_count: number
+  /** "group default-allow", "host media" — where it is declared. */
+  scopes: string[]
+}
+
+export interface FleetHostMetrics {
+  host_id: number
+  hostname: string
+  /** Percent, or null when Mimir has no series for the host. */
+  cpu: number | null
+  memory: number | null
+  disk: number | null
+}
+
+export interface FleetMetrics {
+  configured: boolean
+  unconfigured_reason: string | null
+  sampled_at: string | null
+  hosts: FleetHostMetrics[]
+  error: string | null
 }

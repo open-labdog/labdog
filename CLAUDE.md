@@ -241,9 +241,13 @@ their state and their snapshots get cleaned up).
 ### Per-host serialization
 
 Every host-writing operation participates in one shared per-host
-queue: syncs, host-targeted action runs, group-targeted action runs
-(locks every member), and the built-in `drift_check` /
-`collect_state` pseudo-actions. Shared helpers live at
+queue: syncs, CA certificate deploys, host-targeted action runs,
+group-targeted action runs (locks every member), and the built-in
+`drift_check` / `collect_state` pseudo-actions. A finishing op closes
+its own rows (an action closes its run) *before* it releases the host:
+the op the release starts checks the host again, and a run still
+`running` would send it back to `pending` with nothing left to wake it
+(BUG-117). Shared helpers live at
 `app/tasks/host_lock.py`. The pattern (lifted from the older
 sync-only orchestrator and extended): each Celery task opens a short
 transaction, takes a transaction-level Postgres advisory lock keyed
@@ -346,6 +350,9 @@ GitHub Actions pipeline (`.github/workflows/ci.yml`):
 - **build-image**: publishes `:latest` and `:<sha>` to Docker Hub —
   runs on push to `main` (PR-from-dev merges only; direct pushes are
   blocked by branch protection)
+- **tag-release-image**: after `release-artifacts`, adds `:X.Y.Z`,
+  `:X.Y` and `:X` (only `:X.Y.Z` for a pre-release) to that same
+  image, without rebuilding it
 - **pages-build / pages-deploy**: builds the docusaurus site under
   `website/` and deploys to GitHub Pages — runs on push to `main`
 - **release-artifacts**: builds `.tar.gz`, `.deb`, `.rpm`, `SHA256SUMS`

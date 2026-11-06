@@ -56,8 +56,15 @@ def fixed_setting():
 
     per_host_deadline (registry miss) = 1800 + 300(verify) + 900(grace) = 3000s
     run_deadline (1 host, parallelism 1) = 3000 + 3600(slack) = 6600s
+
+    The snapshot lock-wait budget is pinned to 0: the patched setting
+    reader returns 1800 for every key, which would read
+    ``workflow.snapshot_lock_wait_minutes`` as 30 hours.
     """
-    with patch("app.settings_service.get_setting_cached_typed", return_value=1800):
+    with (
+        patch("app.settings_service.get_setting_cached_typed", return_value=1800),
+        patch("app.tasks.action_timeouts.snapshot_lock_wait_budget", return_value=0),
+    ):
         yield
 
 

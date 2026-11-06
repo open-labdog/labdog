@@ -813,3 +813,40 @@ async def test_aggregate_partial_when_mix_of_success_and_failure(db, fake_redis,
 
     run_after = await db.get(ActionRun, run_id)
     assert run_after.status == "partial"
+
+
+async def test_a_group_dry_run_is_check_mode_and_takes_no_snapshot(db, fake_redis, fake_proxmox):
+    """Same as the per-host path: a dry run is ``--check``, not an
+    ``ansible_check_mode`` extra-var (which ansible-core ignores), and
+    nothing is snapshotted because nothing changes."""
+    from unittest.mock import MagicMock
+
+    from app.actions.validation import DRY_RUN_PARAM
+    from app.tasks.action_group import _run_action_group_async
+
+    key = await create_ssh_key(db)
+    group = await create_group(db)
+    h1 = await create_host(db, hostname="dry-h1", ssh_key_id=key.id, group_ids=[group.id])
+    pve_id = await _seed_proxmox_node(db)
+    await _seed_vm_mapping(db, h1.id, pve_id, vmid=201)
+    run = ActionRun(
+        action_key="k8s-upgrade",
+        action_version="1.0",
+        host_id=None,
+        group_id=group.id,
+        parameters={"target_version": "1.30.4", DRY_RUN_PARAM: True},
+        parallelism=1,
+        status="queued",
+    )
+    db.add(run)
+    await db.flush()
+    await db.commit()
+
+    run_ansible_mock = MagicMock(return_value=_runner_all_ok(["dry-h1"]))
+    with patch("app.ansible_runtime.runner.run_ansible", run_ansible_mock):
+        await _run_action_group_async(run.id)
+
+    kwargs = run_ansible_mock.call_args_list[0].kwargs
+    assert kwargs["check_mode"] is True
+    assert "ansible_check_mode" not in (kwargs["extra_vars"] or {})
+    assert fake_proxmox.created == []

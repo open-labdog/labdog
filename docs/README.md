@@ -136,7 +136,7 @@ When you sync, LabDog computes the full effective configuration and pushes it to
 |--------|----------|---------------------|-----------------------|
 | **Firewall (nftables)** | Full replacement | Writes complete `/etc/nftables.conf` (includes `flush ruleset`), validates, reloads | Overwritten |
 | **Firewall (iptables)** | Full replacement | Writes complete iptables rules via `iptables-restore`, validates, persists | Overwritten |
-| **/etc/hosts** | Full replacement | Writes complete `/etc/hosts` via atomic copy, validates localhost entry exists | Overwritten |
+| **/etc/hosts** | Full replacement, once an entry applies | Writes complete `/etc/hosts` via atomic copy, validates localhost entry exists. A host no entry applies to keeps its file untouched | Overwritten |
 | **Services** | Per-service tasks | Deploys unit files (full or override) if configured, sets `state` (started/stopped) and `enabled` (true/false), cleans up orphaned LabDog-managed files | Preserved (unmanaged services are left alone) |
 | **Packages** | Per-package tasks | Installs/removes individual packages via `apt`/`dnf`/`yum` (auto-detected) | Preserved (unmanaged packages are left alone) |
 | **Linux users** | Per-user tasks | Creates/removes users, sets authorized_keys (`exclusive=true`), writes `/etc/sudoers.d/{user}` | Preserved (unmanaged users are left alone) |
@@ -161,7 +161,7 @@ the Plans screen, delegate to the same orchestrator.
 ### Automatic Safety Rules
 
 - **SSH lockout prevention**: An SSH ACCEPT rule for the LabDog server IP is always injected at the top of the firewall ruleset (priority 999999). This rule cannot be deleted and ensures you never lock yourself out.
-- **System /etc/hosts entries**: `127.0.0.1 localhost` and `::1 localhost` are always injected into the rendered hosts file, regardless of what you configure.
+- **System /etc/hosts entries**: `127.0.0.1 localhost` and `::1 localhost` are always injected into the rendered hosts file, regardless of what you configure. So is `127.0.1.1 <full name> <short name>` with the name the host reports, unless one of your entries already maps one of those names or uses `127.0.1.1`.
 - **Protected service deny-list**: Critical services (`sshd`, `systemd-*`) are blocked from management to prevent accidental lockout.
 - **DNS resolver header**: A `# Managed by LabDog` comment is injected into rendered resolver config files.
 
@@ -499,7 +499,7 @@ Two `audit_log` rows per sync: `sync_triggered` at API entry,
 | `GET/POST/PUT/DELETE` | `/api/groups/{id}/hosts-entries` | Manage hosts file entries per group |
 | `GET/POST/PUT/DELETE` | `/api/hosts/{id}/hosts-entries` | Host-level hosts file overrides |
 | `GET` | `/api/hosts/{id}/effective-hosts-entries` | Merged effective entries |
-| `GET` | `/api/hosts/{id}/hosts-file-preview` | Preview rendered /etc/hosts |
+| `GET` | `/api/hosts/{id}/hosts-file-preview` | Preview rendered /etc/hosts (empty when no entry applies, as a sync then leaves the file alone) |
 | `POST` | `/api/hosts-mgmt/hosts/{id}/plan` | Preview hosts file changes |
 | `POST` | `/api/hosts-mgmt/hosts/{id}/sync` | Sync /etc/hosts via Ansible (delegated to the orchestrator with `module_filter=["hosts-file"]`) |
 | `POST` | `/api/hosts-mgmt/hosts/{id}/drift-check` | Check hosts file drift |
@@ -564,11 +564,14 @@ See [examples/gitops/README.md](./examples/gitops/README.md) for setup walkthrou
 | `GET/POST` | `/api/ai/providers` | List/register LLM providers (API key encrypted at rest) |
 | `PATCH/DELETE` | `/api/ai/providers/{id}` | Manage a provider |
 | `POST` | `/api/ai/providers/{id}/test` | Connection test |
-| `GET/POST` | `/api/ai/sessions` | List sessions / start one |
+| `GET/POST` | `/api/ai/sessions` | List sessions (`view=active\|archived\|all`, `before_id` cursor) / start one |
+| `POST` | `/api/ai/sessions/archive` · `/api/ai/sessions/unarchive` | Archive by id, or everything finished before a date (`finished_before`, `mode`) / put back by id |
+| `POST` | `/api/ai/sessions/delete` | Delete several by id; says per session why any were kept |
 | `GET/DELETE` | `/api/ai/sessions/{id}` | Session detail (transcript, tool calls, approvals) / delete |
 | `POST` | `/api/ai/sessions/{id}/messages` | Ask a follow-up in an existing session |
 | `POST` | `/api/ai/sessions/{id}/cancel` | Stop a running or parked session |
 | `GET` | `/api/ai/sessions/{id}/stream` | SSE stream of a session as it runs |
+| `POST` | `/api/actions/runs/{id}/investigate` | Start a read-only session about a finished run, or one host of it (`host_run_id`); a second call for the same hosts returns the same session |
 | `GET` | `/api/ai/approvals` · `POST /api/ai/approvals/{id}` | List pending approvals / approve or reject one |
 | `GET` | `/api/ai/usage` | Spend and token totals against the configured budgets |
 

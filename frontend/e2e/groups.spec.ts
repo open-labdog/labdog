@@ -82,6 +82,8 @@ test.describe("Groups page", () => {
     await expect(page.getByRole("button", { name: "Run action…" })).toBeVisible()
     // Plan sync is the sync entry point; an empty group has nothing to plan.
     await expect(page.getByRole("button", { name: "Plan sync — 0 hosts" })).toBeDisabled()
+    // Delete sits in the danger zone, folded until asked for.
+    await page.getByTestId("group-settings-row").getByRole("button", { name: "expand" }).click()
     await expect(page.getByRole("button", { name: "Delete group" })).toBeVisible()
   })
 

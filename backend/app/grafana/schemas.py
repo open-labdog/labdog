@@ -173,3 +173,55 @@ class HostMetrics(BaseModel):
     disk: MetricValue | None = None
     #: Populated when a query failed (vs. simply having no data yet).
     error: str | None = None
+
+
+class FleetHostMetrics(BaseModel):
+    """One host's instant usage, as percentages, in the fleet-wide read."""
+
+    host_id: int
+    hostname: str
+    cpu: float | None = None
+    memory: float | None = None
+    disk: float | None = None
+
+
+class FleetMetrics(BaseModel):
+    """Every host's CPU, memory and root-disk use from three PromQL queries,
+    for the Overview's resource hot spots. Same ``configured`` / ``error``
+    contract as :class:`HostMetrics`."""
+
+    configured: bool
+    unconfigured_reason: Literal["no_instance", "no_default"] | None = None
+    sampled_at: datetime | None = None
+    hosts: list[FleetHostMetrics] = []
+    error: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Per-host / per-group destinations
+# ---------------------------------------------------------------------------
+
+
+class DestinationAssignment(BaseModel):
+    """The Mimir and Loki instances a host or group names. ``None`` means
+    "inherit" (a group, then the default)."""
+
+    mimir_instance_id: int | None = None
+    loki_instance_id: int | None = None
+
+
+class EffectiveDestination(BaseModel):
+    """Where a host's data actually goes for one kind, and why."""
+
+    instance_id: int | None = None
+    instance_name: str | None = None
+    url: str | None = None
+    #: ``host``, ``group`` or ``default``.
+    source: str
+    group_id: int | None = None
+    group_name: str | None = None
+
+
+class HostDestinations(BaseModel):
+    assigned: DestinationAssignment
+    effective: dict[Kind, EffectiveDestination]

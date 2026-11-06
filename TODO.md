@@ -48,15 +48,24 @@ hold`, otherwise the kubeadm flow is identical.
 ## Grafana metrics — follow-ups
 
 **Context:** 0.4.0 shipped instant CPU/memory/disk on the host page,
-querying the **default** Grafana instance by the `labdog_host_id` label
-that the alloy-install action stamps. A few deliberate deferrals:
+querying by the `labdog_host_id` label that the alloy-install action
+stamps; hosts and groups can now name their own Mimir / Loki
+destinations. A few deliberate deferrals:
 
-- **Per-host metrics backend routing.** Today every host is queried
-  against the single default Grafana instance. Add a nullable
-  `host.metrics_instance_id` FK, set post-run when alloy-install runs
-  against a host with a chosen instance, and query that instead of the
-  default — so different hosts can report to different backends. (Needs
-  a post-run linking hook analogous to `post_run_register`.)
+- **Pass ingest auth and a private CA to the Alloy action.** Per-host
+  destinations pass each host's URL, tenant and TLS-verification flag to
+  alloy-install, but not the instance's bearer token, basic-auth
+  credentials or CA certificate, so a backend that needs any of them for
+  ingest can't be used through the action. Needs: `metrics_backend` vars
+  for auth type / username / secret / CA PEM; the secret passed so it never
+  lands in the run log or the ansible-runner artefacts on disk (extra-vars
+  are written to `env/extravars` in the private data dir, and printed in
+  `-vvv` output), which probably means a file the playbook reads with
+  `no_log` rather than an extra-var; `basic_auth` / `bearer_token` /
+  `tls_config.ca_pem` blocks in the pack's `endpoints.alloy.j2`, with the
+  secret file `0600` owned by the alloy user; and the reachability probe
+  sending the same credentials so a 401 still counts as reachable but a
+  TLS failure against the private CA doesn't.
 - **Loki log surfacing** on the host page (the integration already
   stores the Loki push URL; querying/displaying logs is unbuilt).
 - **More metrics / tuning:** network throughput, per-mount disk, and
@@ -226,9 +235,9 @@ phase 3:
   Permission should be granted per actionpack rather than per shell
   command: packs are already named, vetted and idempotent, where a
   command-pattern allowlist would re-create the classifier's problem in a
-  weaker form. Two read-only tools are missing alongside it: action
-  history (what LabDog recently did to a host, which is exactly the
-  context a post-upgrade check wants) and Proxmox status/backup checks.
+  weaker form. A read-only tool is missing alongside it: Proxmox
+  status/backup checks. (Action history shipped as `list_action_runs` and
+  `get_action_run_output`.)
 
 **Known gaps in what shipped:** the DB-backed tests under `tests/ai/` need
 testcontainers, so on a machine without Docker they are verified by review
@@ -283,6 +292,23 @@ Follow-ups it leaves open:
   saying nothing (leaves the signal unused), and closing as done (the
   panel keeps lying to subscription users). Move the window-label map
   out of `runner.py` into a shared module when doing this.
+
+---
+
+## Assistant — follow-ups close to a session's limits
+
+**Context:** a session that has used up a limit refuses another message and
+says why (BUG-124). One that is merely close still takes it. Session 39 had
+89,925 of 100,000 tokens booked, and picking its conversation back up cost
+about 23,000 before the model did anything, so a follow-up there gets one
+response and a summary, and the notice only comes afterwards.
+
+- **Warn before sending.** Show used against limit in the session aside, and
+  warn at the message box when the last exchange's cost would not fit in
+  what is left.
+- **More room for one session.** Today the way to continue is raising
+  `ai.max_tokens_total` for every session. An operator should be able to
+  grant one session more without touching the instance setting.
 
 ---
 

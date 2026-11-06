@@ -90,6 +90,17 @@ class ScheduledActionOut(BaseModel):
     pack_name: str | None = None
     destructive: bool | None = None
     last_run: ScheduledActionRunSummary | None = None
+    #: When the schedule fires next, in UTC. ``None`` while it is paused or
+    #: has no cron. Read in the ``scheduling.timezone`` zone, the same walk
+    #: the scheduler uses, so the overview never has to parse cron itself.
+    next_run_at: datetime | None = None
+    #: Every fire time in the next seven days, oldest first, capped. Feeds
+    #: the Upcoming timeline and the overlap warnings.
+    upcoming_runs: list[datetime] = Field(default_factory=list)
+    #: The schedule's newest runs, newest first (the listing's
+    #: ``recent_runs`` query parameter sets how many). ``last_run`` is the
+    #: first of these; it stays for the clients that read it.
+    recent_runs: list[ScheduledActionRunSummary] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -66,3 +66,14 @@ class GroupResponse(BaseModel):
     gitops_file_path: str | None = None
     git_repository_id: int | None = None
     model_config = {"from_attributes": True}
+
+
+class MemberModuleStatus(BaseModel):
+    """One member's status for one module: a cell in the group's health matrix."""
+
+    host_id: int
+    module_type: str
+    sync_status: str
+    #: The newest of collected, drift-checked and synced.
+    checked_at: datetime | None = None
+    error_message: str | None = None

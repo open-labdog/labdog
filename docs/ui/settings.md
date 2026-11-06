@@ -94,6 +94,7 @@ Two of them cover what comes *in* to LabDog:
 | Setting | Key | Default | Range | Description |
 |---------|-----|---------|-------|-------------|
 | Snapshot Max Age | `workflow.snapshot_max_age_hours` | `24` | 1 – 168 hours | Proxmox VM snapshots taken before a destructive scheduled action are automatically cleaned up after this many hours when the action completes successfully. |
+| Locked VM Wait | `workflow.snapshot_lock_wait_minutes` | `30` | 0 – 240 minutes | How long the pre-run snapshot of a destructive action keeps retrying (every 30 seconds) while Proxmox reports the VM as locked, usually by a running backup. Each wait is logged in the run output; if the lock is still held after this long, that host fails before anything runs on it. `0` fails on the first lock. The wait is added to the action's time budget. |
 
 ### Alert intake
 
@@ -171,7 +172,7 @@ what it established, so the work is not wasted.
 |---------|-----|---------|-------|-------------|
 | Max Iterations | `ai.max_iterations` | `15` | 1 – 100 | Model turns in one session. A full-auto alert session gets at least `ai.alert_max_commands` plus five. |
 | Max Commands | `ai.max_commands` | `20` | 1 – 200 | Shell commands across all hosts in one session. |
-| Max Tokens | `ai.max_tokens_total` | `200000` | 1000 – 5000000 | Prompt + completion tokens in one session. |
+| Max Tokens | `ai.max_tokens_total` | `200000` | 1000 – 5000000 | Prompt + completion tokens in one session, follow-ups included. |
 | Wall Clock | `ai.wall_clock_seconds` | `900` | 30 – 21600 s | Run time for one session. Time spent waiting for an approval does not count. |
 
 **Alert investigation.** Recording alerts is [Alert intake](#alert-intake),
@@ -210,6 +211,7 @@ safeguards a named alert must pass.
 | Snapshot Before Change | `ai.snapshot_before_mutating` | `1` (on) | 0 – 1 | Take a Proxmox snapshot before the assistant runs a command that changes a host. Hosts with no VM mapping are unaffected. While on, a snapshot that **fails blocks the command**. |
 | Snapshot Retention | `ai.snapshot_retention_days` | `7` | 0 – 365 days | How long to keep those snapshots (0 = forever). They are deliberately *not* deleted when a session succeeds — the point of them is that you can undo the change after reading what it did, and this is how long "afterwards" lasts. |
 | Approval Expiry | `ai.approval_expiry_hours` | `24` | 1 – 720 hours | How long an approval request waits before lapsing. The session is then told the change was not approved and finishes with a report, rather than sitting parked forever. |
+| Archive Sessions After | `ai.session_archive_after_days` | `0` (never) | 0 – 3650 days | Archive finished assistant sessions once they ended this long ago, checked daily. Archived sessions leave the assistant's list and keep everything else; see [Clearing out old sessions](assistant.md#clearing-out-old-sessions). |
 
 ### The investigation prompt
 

@@ -225,7 +225,7 @@ class _RunSpec:
     auto_rollback: bool
     #: Manifest-declared post-run module syncs. Fired against the same
     #: host after a successful, non-dry-run completion so labdog's desired
-    #: state is re-enforced. See ``app.sync.post_run.dispatch_post_run_sync``.
+    #: state is re-enforced. See ``app.sync.post_run.queue_post_run_sync``.
     post_run_sync: tuple[str, ...]
     #: Manifest-declared post-run resource registrations. After success the
     #: helper inserts host-scope override rows for each declared resource
@@ -704,7 +704,7 @@ async def _build_inventory(
     from app.actions.validation import DRY_RUN_PARAM
     from app.ansible_runtime.inventory import generate_inventory
     from app.ansible_runtime.known_hosts import write_known_hosts
-    from app.grafana.service import build_metrics_extra_vars
+    from app.grafana.service import METRICS_DESTINATIONS_PARAM, build_metrics_extra_vars
 
     # SEC-26: pin the run to the host key LabDog recorded over asyncssh.
     # Read fresh rather than from the cached scalars in the spec, because
@@ -721,6 +721,7 @@ async def _build_inventory(
     )
 
     dry_run = spec.parameters.pop(DRY_RUN_PARAM, False)
+    picked_destinations = spec.parameters.pop(METRICS_DESTINATIONS_PARAM, None)
     # Fail closed before these become extra-vars. Ansible evaluates
     # extra-vars on the controller — the LabDog host — not on the target, so
     # a template expression here is code execution here. The API rejects them
@@ -728,18 +729,23 @@ async def _build_inventory(
     # app/actions/extra_vars.py.
     sanitize_extra_vars(spec.parameters)
     extra_vars: dict | None = dict(spec.parameters) if spec.parameters else None
-    if dry_run:
-        extra_vars = extra_vars or {}
-        extra_vars["ansible_check_mode"] = True
+    # A dry run is ``--check`` (see run_ansible's ``check_mode``). It used to
+    # be an ``ansible_check_mode=True`` extra-var, which ansible-core
+    # overwrites with the real value, so every "dry run" changed the host.
 
     # Inject metrics integration vars: identity labels (always, so the agent
-    # stamps queryable labels) + the default Grafana instance's push URLs
-    # when the manifest opts in via ``metrics_backend``. Operator-supplied
-    # values win over injected URLs; identity is LabDog-owned and always wins.
-    _url_vars, _identity_vars = await build_metrics_extra_vars(
-        spec.host_id, spec.host_hostname, spec.metrics_backend
+    # stamps queryable labels) + this host's Grafana destinations (URL,
+    # tenant, TLS flag) when the manifest opts in via ``metrics_backend``.
+    # Operator-supplied values win over injected ones; identity is
+    # LabDog-owned and always wins.
+    _dest_vars, _identity_vars = await build_metrics_extra_vars(
+        spec.host_id,
+        spec.host_hostname,
+        spec.metrics_backend,
+        operator_params=spec.parameters,
+        picked=picked_destinations,
     )
-    extra_vars = {**_url_vars, **(extra_vars or {}), **_identity_vars}
+    extra_vars = {**_dest_vars, **(extra_vars or {}), **_identity_vars}
     return inventory_json, extra_vars, dry_run
 
 
@@ -777,11 +783,21 @@ async def _phase_a_snapshot(ctx: _RunCtx, spec: _RunSpec, env: _Envelope) -> boo
             )
         return True
 
-    from app.workflows.steps.snapshot import create_snapshot  # noqa: PLC0415
+    from app.workflows.steps.snapshot import (  # noqa: PLC0415
+        create_snapshot,
+        snapshot_lock_wait_seconds,
+    )
 
     try:
         env.snapshot_name = await create_snapshot(
-            env.client, env.pve_node, env.vmid, ctx.action_run_id, env.vm_type, spec.action_key
+            env.client,
+            env.pve_node,
+            env.vmid,
+            ctx.action_run_id,
+            env.vm_type,
+            spec.action_key,
+            lock_wait_seconds=snapshot_lock_wait_seconds(),
+            on_lock_wait=lambda msg: _log_step(ctx, f"[snapshot] {msg}"),
         )
         _log_step(ctx, f"[snapshot] created {env.snapshot_name} on {env.pve_node}/{env.vmid}")
         async with task_session() as db:
@@ -814,6 +830,8 @@ def _phase_b_playbook(
     inventory_json: str,
     extra_vars: dict | None,
     timeout: int,
+    *,
+    dry_run: bool = False,
 ) -> _PlaybookResult:
     """Run ansible-runner, streaming output live.
 
@@ -875,6 +893,7 @@ def _phase_b_playbook(
             timeout=timeout,
             roles_paths=list(spec.roles_paths) if spec.roles_paths else None,
             event_handler=_on_event,
+            check_mode=dry_run,
         )
     finally:
         hb_stop.set()
@@ -1031,7 +1050,9 @@ async def _verify_with_builtin_checks(
             ctx,
             f"[verify] passed={passed} "
             f"services_ok={verify_result.get('services_ok')} "
-            f"packages_ok={verify_result.get('packages_ok')}",
+            f"({verify_result.get('services_checked', 0)} checked) "
+            f"packages_ok={verify_result.get('packages_ok')} "
+            f"({verify_result.get('packages_checked', 0)} checked)",
         )
         if ai_result:
             # The verdict is logged separately from `passed` because they
@@ -1176,31 +1197,33 @@ async def _phase_g_persist(
         await db.commit()
 
         # Post-run module sync: only on success, never on dry-run, and only
-        # when the manifest opted in. Dispatch failures are logged but do not
-        # affect the action's status -- the action itself already completed.
+        # when the manifest opted in. The rows are only queued; releasing
+        # the host in ``_release_host`` is what starts them. Failures are
+        # logged but do not affect the action's status -- the action
+        # itself already completed.
         if success and not dry_run and spec.post_run_sync:
             try:
-                from app.sync.post_run import dispatch_post_run_sync
+                from app.sync.post_run import queue_post_run_sync
 
-                dispatched_ids = await dispatch_post_run_sync(
+                queued_ids = await queue_post_run_sync(
                     db,
                     host_id=spec.host_id,
                     modules=spec.post_run_sync,
                     triggered_by_user_id=spec.triggered_by_user_id,
                 )
-                if dispatched_ids:
+                if queued_ids:
                     await db.commit()
                     logger.info(
-                        "action_host: dispatched post_run_sync for "
+                        "action_host: queued post_run_sync for "
                         "action_run %d host %d -- modules=%s job_ids=%s",
                         ctx.action_run_id,
                         spec.host_id,
                         list(spec.post_run_sync),
-                        dispatched_ids,
+                        queued_ids,
                     )
             except Exception:
                 logger.exception(
-                    "action_host: post_run_sync dispatch failed for action_run %d host %d",
+                    "action_host: post_run_sync queueing failed for action_run %d host %d",
                     ctx.action_run_id,
                     spec.host_id,
                 )
@@ -1328,7 +1351,7 @@ async def _on_failure(ctx: _RunCtx, exc: Exception) -> None:
 
 
 async def _release_host(ctx: _RunCtx) -> None:
-    """Hand the host to the next pending op and close the parent run.
+    """Close the parent run, then hand the host to the next pending op.
 
     Runs even on the orchestrator-raised path so the per-host queue never
     stalls. Failures here are swallowed — they must not mask the real
@@ -1339,18 +1362,17 @@ async def _release_host(ctx: _RunCtx) -> None:
     if not (ctx.claimed and ctx.claimed_host_id is not None):
         return
 
-    await release_host_queue(
-        ctx.claimed_host_id,
-        after=f"action_run_id={ctx.action_run_id}",
-        exclude_action_run_id=ctx.action_run_id,
-    )
-
     # Close the parent run if this was the last member outstanding.
     #
     # BUG-62: a member deferred behind a busy host is re-dispatched long
     # after the orchestrator's batch wait returned, so nothing else would
     # ever aggregate. No-op unless every sibling is terminal, and idempotent
     # if two finish at once.
+    #
+    # BUG-117: before the release, not after. A host-targeted run holds its
+    # host for as long as it is ``running``, so the op the release hands the
+    # host to found it still busy, deferred again, and waited for whatever
+    # ran on the host next — eight hours, for a post-run sync on valheim.
     try:
         from app.tasks.action_orchestrator import finalise_run_if_complete  # noqa: PLC0415
 
@@ -1361,6 +1383,12 @@ async def _release_host(ctx: _RunCtx) -> None:
             ctx.action_run_id,
             ctx.host_run_id,
         )
+
+    await release_host_queue(
+        ctx.claimed_host_id,
+        after=f"action_run_id={ctx.action_run_id}",
+        exclude_action_run_id=ctx.action_run_id,
+    )
 
 
 def _remove_workspaces(ctx: _RunCtx) -> None:
@@ -1453,10 +1481,18 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
 
         _publish_status(ctx, "running", host_id=spec.host_id)
 
-        if not await _phase_a_snapshot(ctx, spec, env):
+        if dry_run:
+            # Check mode changes nothing, so there is nothing to snapshot,
+            # verify or roll back. No snapshot also keeps verify (gated on
+            # one) and rollback from running below.
+            _log_step(ctx, "[dry-run] ansible-playbook --check: no changes are made")
+            _log_step(ctx, "[snapshot] skipped — dry run")
+        elif not await _phase_a_snapshot(ctx, spec, env):
             return
 
-        playbook = _phase_b_playbook(ctx, spec, inventory_json, extra_vars, timeout)
+        playbook = _phase_b_playbook(
+            ctx, spec, inventory_json, extra_vars, timeout, dry_run=dry_run
+        )
 
         verification_passed = True
         verification_error: str | None = None

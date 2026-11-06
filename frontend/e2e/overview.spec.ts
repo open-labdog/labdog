@@ -68,10 +68,83 @@ test.describe("Overview page", () => {
         : r.fallback(),
     )
     await page.goto("/overview?view=upcoming")
-    const row = (name: string) => page.getByText(name, { exact: true }).locator("xpath=../..")
+    // The table, not the timeline above it, which names each schedule too.
+    const table = page.getByTestId("schedule-table")
+    const row = (name: string) => table.getByText(name, { exact: true }).locator("xpath=../..")
     await expect(row("Upgrade Linux packages").getByText("snap", { exact: true })).toBeVisible()
     await expect(row("Update Docker Compose images")).toBeVisible()
     await expect(row("Update Docker Compose images").getByText("snap", { exact: true })).toHaveCount(0)
+  })
+
+  test("a schedule whose last run failed waits in Pending with the failing host's reason", async ({ page }) => {
+    const now = Date.now()
+    const iso = (msAgo: number) => new Date(now - msAgo).toISOString()
+    const run = (id: number, status: string, msAgo: number) => ({ id, status, started_at: iso(msAgo), finished_at: iso(msAgo - 60_000), created_at: iso(msAgo) })
+    await page.route(/\/api\/scheduled-actions\/?(\?.*)?$/, (r) =>
+      r.request().method() === "GET"
+        ? r.fulfill({
+            json: [
+              {
+                id: 9201,
+                target_kind: "fleet",
+                target_id: null,
+                action_key: "e2e-upgrade",
+                parameters: {},
+                schedule_cron: "0 4 * * *",
+                enabled: true,
+                snapshot_enabled: false,
+                verify_enabled: true,
+                auto_rollback: true,
+                batch_size: 1,
+                last_dispatched_at: null,
+                created_at: iso(30 * 86_400_000),
+                updated_at: iso(30 * 86_400_000),
+                target_name: null,
+                action_name: "E2E upgrade",
+                pack_name: "e2e-pack",
+                destructive: false,
+                last_run: run(9302, "partial", 3_600_000),
+                next_run_at: new Date(now + 3_600_000).toISOString(),
+                upcoming_runs: [new Date(now + 3_600_000).toISOString()],
+                recent_runs: [run(9302, "partial", 3_600_000), run(9301, "failed", 86_400_000), run(9300, "succeeded", 2 * 86_400_000)],
+              },
+            ],
+          })
+        : r.fallback(),
+    )
+    await page.route(/\/api\/actions\/runs\/?\?.*status=failed/, (r) =>
+      r.fulfill({
+        json: [
+          {
+            ...run(9302, "partial", 3_600_000),
+            action_key: "e2e-upgrade",
+            action_version: "1",
+            host_id: null,
+            group_id: null,
+            target_kind: "fleet",
+            target_label: "All hosts",
+            scheduled_action_id: 9201,
+            alert_event_id: null,
+            parameters: {},
+            parallelism: 1,
+            snapshot_enabled: false,
+            verify_enabled: true,
+            auto_rollback: true,
+            triggered_by_user_id: null,
+            error_message: null,
+            pending_reason: null,
+            host_runs: [],
+            host_counts: { succeeded: 17, failed: 1 },
+            first_failure: { host_run_id: 1, host_id: null, hostname: "e2e-media", exit_code: 2, error_message: "ansible-runner exited with status=failed, rc=2", reason: "E: Could not get lock /var/lib/dpkg/lock-frontend" },
+          },
+        ],
+      }),
+    )
+    await page.goto("/overview?view=pending&lane=failed")
+    await expect(page.getByRole("button", { name: /failed runs\s*1/i })).toHaveAttribute("aria-pressed", "true")
+    await expect(page.getByText("E2E upgrade failed on some hosts · e2e-media · 2 times in a row")).toBeVisible()
+    await expect(page.getByText(/17 ok · 1 failed · e2e-media: E: Could not get lock/)).toBeVisible()
+    await expect(page.getByRole("button", { name: "Open run" })).toBeVisible()
   })
 
   test("the pane highlights the view that is open", async ({ page }) => {
@@ -95,6 +168,23 @@ test.describe("Overview page", () => {
     }
     // Config is not a zone: a module's desired state is edited on its group's page.
     await expect(rail.getByRole("button", { name: "Config", exact: true })).toHaveCount(0)
+  })
+
+  test("rail expands to show zone names and remembers it", async ({ page }) => {
+    await page.goto("/overview")
+    const rail = page.getByRole("navigation", { name: "Zones" })
+    // Collapsed: icons only, the names live in the buttons' labels.
+    await expect(rail.getByText("Fleet", { exact: true })).toHaveCount(0)
+    await rail.getByRole("button", { name: "Expand rail" }).click()
+    for (const zone of ["Overview", "Fleet", "Operations", "Assistant", "Settings"]) {
+      await expect(rail.getByText(zone, { exact: true })).toBeVisible()
+    }
+    await page.reload()
+    await expect(rail.getByText("Fleet", { exact: true })).toBeVisible()
+    // `]` collapses it again.
+    await page.keyboard.press("]")
+    await expect(rail.getByText("Fleet", { exact: true })).toHaveCount(0)
+    await expect(rail.getByRole("button", { name: "Expand rail" })).toBeVisible()
   })
 
   test("Fleet zone opens the hosts list with Hosts, Groups and Discovery in the pane", async ({ page }) => {

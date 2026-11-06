@@ -58,8 +58,12 @@ There are three ways to start one:
 
 The run dialog picks the **action**, takes its parameters (if any) and,
 for a group, a **parallelism** — *All at once*, or *Rolling* 1, 2 or 5 at a
-time. **Preview (dry-run)** runs the same playbook in check mode — nothing
-on any host changes — and **Run** runs it for real.
+time. **Preview (dry-run)** runs the same playbook with
+`ansible-playbook --check`: tasks report what they would change without
+changing it, and no snapshot is taken because nothing needs rolling back.
+**Run** runs it for real. A task a pack marks `check_mode: false` (a
+read-only probe) runs in a preview too, and a playbook that isn't written
+for check mode can fail in a preview where the real run would succeed.
 
 Either way you land on the run's own screen
 (`/hosts/{id}/actions/runs/{run}`, `/groups/{id}/actions/runs/{run}`, or
@@ -128,6 +132,22 @@ Also in the log's header:
 
 Copying from the log gives the plain text Ansible printed; the colours are
 not part of it.
+
+**Investigate with AI.** Once a run has finished, the log's toolbar has an
+**Investigate with AI** button next to the search box, shown when an
+[AI provider](assistant.md#ai-providers) is set up. It starts a read-only
+[assistant](assistant.md) session about the run and opens it. With a host
+picked in a multi-host run's table, the session covers that host alone. A confirmation first names the provider the log goes to, and
+says when that is off your network.
+
+The session is told what ran, with which parameters, and how each host
+ended. From each host's log (the failed hosts of a group run, up to three)
+it gets LabDog's own steps (`[preflight]`, `[verify]`, `[rollback]`…), the
+play recaps and every failed task with the lines before it. It reads the
+rest of the log itself, and can look at the hosts, but cannot change
+them. Pressing the button again opens the same session, unless that one
+failed or was stopped. The run's head links to every session started
+from it.
 
 A multi-host run survives LabDog restarting in the middle of it — which
 upgrading Docker on LabDog's own host will do. Within about ten minutes
@@ -529,8 +549,14 @@ are working examples of every field.
 - **Parameters arrive as top-level Ansible variables** via
   `--extra-vars`. A manifest param with `key: wait_seconds` becomes the
   fact `wait_seconds` in your playbook.
-- **`ansible_check_mode=true`** is set on dry runs — respect it if the
-  action has a dry-run path.
+- **Dry runs are `--check`.** `ansible_check_mode` is true, so modules
+  report instead of changing anything. Mark read-only probes whose output
+  later tasks need `check_mode: false` so they still run in a preview, and
+  guard anything `command`/`shell` would change with
+  `when: not ansible_check_mode`. (Before this was fixed, LabDog passed
+  `ansible_check_mode=True` as an extra-var, which ansible-core ignores, so
+  a "dry run" made real changes. A pack that had worked around that with
+  its own preview parameter can keep it.)
 - **Ansible-normal exit semantics.** A failing task fails the play
   fails the runner fails the action. No custom protocol. If you need
   an explicit assertion:
@@ -561,6 +587,14 @@ mapping**, LabDog automatically:
 4. On success, deletes the snapshot.
 5. On failure, rolls the VM back to the snapshot, starts it, waits for
    SSH, and marks the host as `out_of_sync`.
+
+If Proxmox reports the VM as locked when the snapshot is taken (most
+often because a scheduled backup is running), LabDog waits and retries
+every 30 seconds instead of failing straight away. Each wait shows up in
+the run log as a `[snapshot] VM 101 is locked (backup) — waiting for the
+lock to clear …` line. If the lock hasn't cleared after
+**Settings › Workflows › Minutes to wait for a locked VM** (default 30,
+`0` turns the wait off), that host fails before anything runs on it.
 
 Destructive actions on hosts **without** a VM mapping still execute —
 you'll see a `[snapshot] skipped — host has no Proxmox VM mapping (no
@@ -752,10 +786,13 @@ post_run_sync:
   - services
 ```
 
-After success, labdog dispatches a normal per-host sync for each
-named module against the same target host. The sync routes through
-the standard `host_sync_orchestrator` pipeline: per-host advisory
-lock, coalesced playbook, audit row, the works.
+After success, labdog queues a normal per-host sync for each named
+module against the same target host — only that module. The syncs
+start as soon as the action releases the host (or after anything
+already waiting on it) and route through the standard
+`host_sync_orchestrator` pipeline: per-host queue, coalesced
+playbook, audit row, the works. A module that already has a sync
+waiting on the host is not queued twice.
 
 Semantics are **push, not collect**. Use this when the action
 needs labdog's existing config to be (re-)enforced after the
@@ -787,9 +824,9 @@ post_run_register:
 After success, labdog inserts each declared resource as a **host-
 scope override row** (`host_id=<target>`, `group_id=NULL`) so the
 resource becomes labdog-managed from that point on. After the
-inserts, a `post_run_sync` is automatically dispatched for the
+inserts, a `post_run_sync` is automatically queued for the
 affected modules so the Host detail tabs reflect the new state
-immediately (no waiting for the next drift check).
+as soon as the action finishes (no waiting for the next drift check).
 
 Top-level keys are canonical module names: `packages`, `resolver`,
 `services`, `hosts-file`, `cron`, `linux-users`, `firewall`. Each
@@ -818,7 +855,8 @@ Four module categories overwrite the host with labdog's complete
 desired state on every sync (i.e. unknown entries get removed):
 
 - **firewall** — rebuilds the nftables ruleset from scratch
-- **hosts-file** — overwrites `/etc/hosts` with desired entries
+- **hosts-file** — overwrites `/etc/hosts` with desired entries (on a
+  host any entry applies to; others are left alone)
 - **resolver** — overwrites resolver config (resolv.conf / NM /
   systemd-resolved) with desired settings
 - **SSH keys** (within `linux-users`) — exclusive mode; deletes all

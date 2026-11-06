@@ -131,10 +131,25 @@ class TestHostsDiff:
         assert diff.entries_to_add[0].reason == "missing"
 
     def test_extra_entry(self):
-        current = [ParsedHostsEntry(ip_address="10.0.0.99", hostname="rogue", aliases=[])]
-        desired = []
+        current = [
+            ParsedHostsEntry(ip_address="10.0.0.1", hostname="db01", aliases=[]),
+            ParsedHostsEntry(ip_address="10.0.0.99", hostname="rogue", aliases=[]),
+        ]
+        desired = [
+            EffectiveHostsEntryResponse(
+                ip_address="10.0.0.1",
+                hostname="db01",
+                aliases=[],
+                comment=None,
+                is_system=False,
+                source="group",
+                source_id=1,
+                source_name="g",
+            )
+        ]
         diff = compute_hosts_diff(current, desired)
         assert len(diff.entries_to_remove) == 1
+        assert diff.entries_to_remove[0].ip_address == "10.0.0.99"
         assert diff.entries_to_remove[0].reason == "extra"
 
     def test_hostname_mismatch(self):

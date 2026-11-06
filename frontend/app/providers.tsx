@@ -10,6 +10,7 @@ import { queryClient } from '@/lib/query-client'
 import { AuthGuard } from '@/components/auth-guard'
 import { SyncTrayProvider } from '@/lib/sync-tray'
 import { SyncTray } from '@/components/sync-tray'
+import { ActionTrayProvider } from '@/lib/action-tray'
 
 function AuthProvider({ children }: { children: ReactNode }) {
   // Sonner does not read `data-theme`; hand it the resolved theme so the
@@ -89,10 +90,12 @@ export function Providers({ children }: { children: ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <SyncTrayProvider>
-            <AuthGuard>
-              {children}
-            </AuthGuard>
-            <SyncTray />
+            <ActionTrayProvider>
+              <AuthGuard>
+                {children}
+              </AuthGuard>
+              <SyncTray />
+            </ActionTrayProvider>
           </SyncTrayProvider>
         </AuthProvider>
       </QueryClientProvider>

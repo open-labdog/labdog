@@ -1121,16 +1121,13 @@ class AgentSDKRunner:
         """
         if self.session.command_count >= self.caps.max_commands:
             return f"command limit ({self.caps.max_commands})"
-        # Whichever source has seen more. Mid-run only the live estimate has
-        # anything in it; once `ResultMessage` books the authoritative
-        # figure the session's own counters take over. Taking the larger of
-        # the two means neither can mask the other on a resumed run, where
-        # the columns are already populated from the earlier process while
-        # the estimate restarts at zero.
-        total = max(
-            self.session.prompt_tokens + self.session.completion_tokens,
-            self._live_prompt + self._live_completion,
-        )
+        # The columns hold every earlier exchange of this session, and this
+        # one once `ResultMessage` books it. Until then this exchange exists
+        # only in the live estimate, so the two add up; the cap is for the
+        # session, not for each follow-up (BUG-123).
+        total = self.session.prompt_tokens + self.session.completion_tokens
+        if not self._usage_booked:
+            total += self._live_prompt + self._live_completion
         if total >= self.caps.max_tokens_total:
             return f"token budget ({self.caps.max_tokens_total})"
         return None

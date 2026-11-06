@@ -180,10 +180,9 @@ async def _finish_host_run(
     the freed host. Failures in the dispatcher are swallowed so they
     don't mask the real outcome.
 
-    ``dispatch_next=False`` is used by ``_builtin.sync``: the underlying
-    ``run_host_sync`` task already runs its own dispatch-next-pending in
-    its finally hook, so this layer's dispatch would either fire
-    redundantly or compete for the same pending row.
+    ``dispatch_next=False`` is for ``close_origin_host_run``, which runs
+    after a re-dispatched ``run_host_sync`` has already released the host
+    and closes a row that no longer holds it.
     """
     from sqlalchemy import select
 
@@ -208,20 +207,13 @@ async def _finish_host_run(
         action_run_id_for_dispatch = host_run.action_run_id
         await db.commit()
 
-    if dispatch_next and host_id_for_dispatch is not None:
-        from app.tasks.host_lock import release_host_queue
-
-        await release_host_queue(
-            host_id_for_dispatch,
-            after=f"host_run_id={host_run_id}",
-            exclude_action_run_id=action_run_id_for_dispatch,
-        )
-
     # Close the parent if this was its last host, as action_host does. The
     # orchestrator does it after its last batch, but not for a host it had
     # stopped waiting for: one the host queue re-sent, or one still running
     # when the run was cancelled, which left the run without an end
-    # (BUG-104). A no-op while any sibling is open.
+    # (BUG-104). A no-op while any sibling is open. Before the release,
+    # because a host-targeted run that is still ``running`` holds the host
+    # against the very op the release hands it to (BUG-117).
     from app.tasks.action_orchestrator import finalise_run_if_complete
 
     try:
@@ -231,6 +223,15 @@ async def _finish_host_run(
             "builtin_dispatchers: could not finalise action_run %s after host_run %s",
             action_run_id_for_dispatch,
             host_run_id,
+        )
+
+    if dispatch_next and host_id_for_dispatch is not None:
+        from app.tasks.host_lock import release_host_queue
+
+        await release_host_queue(
+            host_id_for_dispatch,
+            after=f"host_run_id={host_run_id}",
+            exclude_action_run_id=action_run_id_for_dispatch,
         )
 
 
@@ -641,7 +642,9 @@ async def _sync_async(action_run_id: int, host_run_id: int) -> None:
         error = str(exc)
         logger.exception("_builtin.sync failed for host %d", host_id)
 
-    # dispatch_next=False: ``run_host_sync.apply`` above already ran
-    # its own dispatch-next-pending in its finally; a second pick
-    # here would race for the same pending row.
-    await _finish_host_run(host_run_id, succeeded=succeeded, error=error, dispatch_next=False)
+    # Hand the host on again, after this run is closed. The inner sync
+    # released it in its own ``finally``, but this run's row was still
+    # ``running`` then, so whatever that release started deferred behind
+    # it and nothing else would wake it (BUG-117). A row both releases
+    # pick up is run once: the second task finds it no longer pending.
+    await _finish_host_run(host_run_id, succeeded=succeeded, error=error)

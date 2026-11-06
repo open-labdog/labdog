@@ -4,17 +4,20 @@ import json
 import logging
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
-from sqlalchemy import exists, select, text, update
+from sqlalchemy import case, exists, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.actions.registry import ACTION_REGISTRY, reload_registry_async
 from app.actions.run_target import describe_target
 from app.actions.validation import DRY_RUN_PARAM, build_param_model
+from app.ai.run_log import FAILURE_WINDOW_SQL, failure_reason
 from app.auth.users import current_active_user
 from app.db import get_db
+from app.grafana.models import GrafanaInstance
+from app.grafana.service import METRICS_DESTINATIONS_PARAM
 from app.models.action_run import ActionHostRun, ActionRun
 from app.models.host import Host
 from app.models.host_group import HostGroup
@@ -25,7 +28,12 @@ from app.schemas.actions import (
     ActionHostRunOut,
     ActionParameterOut,
     ActionRunOut,
+    HostRunEntry,
     RunCreateBody,
+    RunHostFailure,
+    RunInvestigateBody,
+    RunInvestigationOut,
+    RunInvestigationRef,
 )
 
 logger = logging.getLogger(__name__)
@@ -186,7 +194,11 @@ async def create_run(
     # "Extra inputs are not permitted". Accepting it from the client here
     # would leave the operator able to set it without asking for a dry run,
     # so it is discarded rather than honoured (BUG-53).
-    submitted = {k: v for k, v in (body.parameters or {}).items() if k != DRY_RUN_PARAM}
+    submitted = {
+        k: v
+        for k, v in (body.parameters or {}).items()
+        if k not in (DRY_RUN_PARAM, METRICS_DESTINATIONS_PARAM)
+    }
     try:
         build_param_model(action).model_validate(submitted)
     except ValidationError as exc:
@@ -195,6 +207,20 @@ async def create_run(
     stored_parameters = dict(submitted)
     if body.dry_run:
         stored_parameters[DRY_RUN_PARAM] = True
+    if body.metrics_destinations:
+        if not action.metrics_backend:
+            raise HTTPException(
+                status_code=422,
+                detail="This action does not ship to a metrics destination.",
+            )
+        for kind, instance_id in body.metrics_destinations.items():
+            inst = await db.get(GrafanaInstance, instance_id)
+            if inst is None or inst.kind != kind:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"No {kind} destination with id {instance_id}.",
+                )
+        stored_parameters[METRICS_DESTINATIONS_PARAM] = dict(body.metrics_destinations)
 
     # Validate that the target host/group actually exists
     if body.host_id is not None:
@@ -277,22 +303,198 @@ async def create_run(
 async def list_runs(
     host_id: int | None = Query(default=None),
     group_id: int | None = Query(default=None),
-    limit: int = Query(default=20, ge=1, le=100),
+    status: str | None = Query(
+        default=None, description="comma-separated run statuses, e.g. failed,partial"
+    ),
+    since: datetime | None = Query(default=None, description="only runs created at or after"),
+    scheduled: bool | None = Query(
+        default=None, description="true: only runs a schedule started; false: only the rest"
+    ),
+    limit: int = Query(default=20, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """List action runs, optionally filtered by host or group scope."""
+    """List action runs, newest first, optionally filtered by scope, status,
+    age and origin.
+
+    Each row carries ``host_counts`` and ``first_failure`` rather than its
+    host rows, so a list of group runs can say "17 ok, 1 failed on media"
+    in two extra queries however many runs it holds.
+    """
     q = select(ActionRun).order_by(ActionRun.created_at.desc()).limit(limit).offset(offset)
     if host_id is not None:
         q = q.where(ActionRun.host_id == host_id)
     if group_id is not None:
         q = q.where(ActionRun.group_id == group_id)
+    if status:
+        wanted = [s.strip() for s in status.split(",") if s.strip()]
+        if wanted:
+            q = q.where(ActionRun.status.in_(wanted))
+    if since is not None:
+        if since.tzinfo is None:
+            since = since.replace(tzinfo=UTC)
+        q = q.where(ActionRun.created_at >= since)
+    if scheduled is True:
+        q = q.where(ActionRun.scheduled_action_id.isnot(None))
+    elif scheduled is False:
+        q = q.where(ActionRun.scheduled_action_id.is_(None))
 
     result = await db.execute(q)
     runs = result.scalars().all()
-    # Return without nested host_runs for list view
-    return [ActionRunOut.model_validate(r) for r in runs]
+    out = [ActionRunOut.model_validate(r) for r in runs]
+    if not out:
+        return out
+
+    ids = [r.id for r in out]
+    counts = await db.execute(
+        select(ActionHostRun.action_run_id, ActionHostRun.status, func.count())
+        .where(ActionHostRun.action_run_id.in_(ids))
+        .group_by(ActionHostRun.action_run_id, ActionHostRun.status)
+    )
+    by_run: dict[int, dict[str, int]] = {}
+    for run_id, host_status, n in counts.all():
+        by_run.setdefault(run_id, {})[host_status] = n
+
+    # Columns, not the entity: ``output`` is up to a mebibyte per host, and
+    # only a short window of it from the first failed task is wanted.
+    failures = await db.execute(
+        select(
+            ActionHostRun.id,
+            ActionHostRun.action_run_id,
+            ActionHostRun.host_id,
+            ActionHostRun.hostname,
+            Host.hostname,
+            ActionHostRun.exit_code,
+            ActionHostRun.error_message,
+            func.substring(ActionHostRun.output, FAILURE_WINDOW_SQL),
+        )
+        .outerjoin(Host, Host.id == ActionHostRun.host_id)
+        .where(ActionHostRun.action_run_id.in_(ids), ActionHostRun.status == "failed")
+        .order_by(ActionHostRun.action_run_id, ActionHostRun.id)
+        .distinct(ActionHostRun.action_run_id)
+    )
+    first_failure: dict[int, RunHostFailure] = {}
+    for hr_id, run_id, h_id, run_hostname, hostname, rc, err, window in failures.all():
+        first_failure[run_id] = RunHostFailure(
+            host_run_id=hr_id,
+            host_id=h_id,
+            hostname=hostname or run_hostname,
+            exit_code=rc,
+            error_message=err,
+            reason=failure_reason(window),
+        )
+
+    for item in out:
+        item.host_counts = by_run.get(item.id, {})
+        item.first_failure = first_failure.get(item.id)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# GET /actions/host-runs — One host's part in every run that reached it
+# ---------------------------------------------------------------------------
+
+#: What ``_rollback`` logs when the snapshot restore worked.
+_ROLLED_BACK = "[rollback] success=True"
+
+
+@router.get("/host-runs", response_model=list[HostRunEntry])
+async def list_host_runs(
+    host_id: int = Query(...),
+    since: datetime | None = Query(default=None, description="only runs created at or after"),
+    scheduled: bool | None = Query(
+        default=None, description="true: only runs a schedule started; false: only the rest"
+    ),
+    limit: int = Query(default=100, ge=1, le=500),
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Every run that reached this host, newest first, with this host's
+    own result.
+
+    ``/runs?host_id=`` only finds runs aimed at the host itself. A host
+    usually gets its scheduled work through a group, so its history is
+    read from its per-host rows instead, joined to the run each belongs
+    to.
+    """
+    failed = ActionHostRun.status == "failed"
+    q = (
+        select(
+            ActionHostRun.id,
+            ActionHostRun.action_run_id,
+            ActionRun.action_key,
+            ActionRun.status,
+            ActionHostRun.status,
+            ActionRun.target_kind,
+            ActionRun.target_label,
+            ActionRun.scheduled_action_id,
+            ActionRun.alert_event_id,
+            ActionRun.triggered_by_user_id,
+            ActionRun.created_at,
+            ActionHostRun.started_at,
+            ActionHostRun.finished_at,
+            ActionHostRun.exit_code,
+            ActionHostRun.error_message,
+            # Only a failed row needs its log read, and then only a window.
+            case((failed, func.substring(ActionHostRun.output, FAILURE_WINDOW_SQL)), else_=None),
+            case((failed, func.strpos(ActionHostRun.output, _ROLLED_BACK) > 0), else_=False),
+        )
+        .join(ActionRun, ActionRun.id == ActionHostRun.action_run_id)
+        .where(ActionHostRun.host_id == host_id)
+        .order_by(ActionRun.created_at.desc(), ActionHostRun.id.desc())
+        .limit(limit)
+    )
+    if since is not None:
+        if since.tzinfo is None:
+            since = since.replace(tzinfo=UTC)
+        q = q.where(ActionRun.created_at >= since)
+    if scheduled is True:
+        q = q.where(ActionRun.scheduled_action_id.isnot(None))
+    elif scheduled is False:
+        q = q.where(ActionRun.scheduled_action_id.is_(None))
+
+    rows = (await db.execute(q)).all()
+    return [
+        HostRunEntry(
+            host_run_id=hr_id,
+            action_run_id=run_id,
+            action_key=key,
+            run_status=run_status,
+            status=host_status,
+            target_kind=kind,
+            target_label=label,
+            scheduled_action_id=sched_id,
+            alert_event_id=alert_id,
+            triggered_by_user_id=user_id,
+            created_at=created,
+            started_at=started,
+            finished_at=finished,
+            exit_code=rc,
+            error_message=err,
+            reason=failure_reason(window),
+            rolled_back=bool(rolled),
+        )
+        for (
+            hr_id,
+            run_id,
+            key,
+            run_status,
+            host_status,
+            kind,
+            label,
+            sched_id,
+            alert_id,
+            user_id,
+            created,
+            started,
+            finished,
+            rc,
+            err,
+            window,
+            rolled,
+        ) in rows
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -329,6 +531,25 @@ async def get_run(
         hr_out.hostname = hostname or hr.hostname
         host_runs_out.append(hr_out)
     out.host_runs = host_runs_out
+
+    from app.ai.models import AISession
+
+    sessions = (
+        await db.execute(
+            select(AISession)
+            .where(AISession.investigates_action_run_id == id)
+            .order_by(AISession.created_at.desc(), AISession.id.desc())
+        )
+    ).scalars()
+    out.investigations = [
+        RunInvestigationRef(
+            session_id=s.id,
+            status=s.status,
+            target_host_ids=list(s.target_host_ids or []),
+            created_at=s.created_at,
+        )
+        for s in sessions
+    ]
     if run.alert_event_id is not None:
         from app.ai.models import AlertEvent
 
@@ -399,6 +620,83 @@ async def get_host_run_output_by_row(
     from fastapi.responses import PlainTextResponse
 
     return PlainTextResponse(content=host_run.output or "")
+
+
+# ---------------------------------------------------------------------------
+# POST /actions/runs/{id}/investigate — Hand the run to the assistant
+# ---------------------------------------------------------------------------
+
+
+@router.post("/runs/{id}/investigate", response_model=RunInvestigationOut)
+async def investigate_run(
+    id: int,
+    response: Response,
+    body: RunInvestigateBody | None = None,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Start a read-only assistant session about this run, or reopen one.
+
+    The session's mission carries the run's details and an excerpt of each
+    host's log; the model reads the rest with ``get_action_run_output``.
+    ``host_run_id`` narrows it to that host. A second press for the same
+    hosts returns the earlier session (200) unless it failed or was
+    stopped; a new one is 201.
+
+    The same gates as the alerts page's investigate button: the kill
+    switch, a provider that can run tools, and the budget. Opening an
+    existing session needs none of them.
+    """
+    from app.ai import service
+    from app.ai.run_investigation import (
+        RunInvestigationRefused,
+        existing_investigation,
+        investigation_scope,
+        start_run_investigation,
+    )
+    from app.ai.service import AIDisabledError, BudgetExceededError
+
+    run = await db.get(ActionRun, id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Action run not found")
+    host_run = None
+    if body is not None and body.host_run_id is not None:
+        host_run = await db.scalar(
+            select(ActionHostRun).where(
+                ActionHostRun.id == body.host_run_id, ActionHostRun.action_run_id == id
+            )
+        )
+        if host_run is None:
+            raise HTTPException(status_code=404, detail="Host run not found")
+
+    try:
+        host_runs, host_ids = await investigation_scope(db, run, host_run)
+    except RunInvestigationRefused as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    earlier = await existing_investigation(db, run.id, host_ids)
+    if earlier is not None:
+        return RunInvestigationOut(session_id=earlier.id, created=False)
+
+    try:
+        provider = await service.resolve_provider(db, None)
+        service.assert_can_investigate(provider)
+        await service.assert_within_budget(db, provider)
+    except AIDisabledError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except BudgetExceededError as exc:
+        raise HTTPException(status_code=402, detail=str(exc)) from exc
+
+    session = await start_run_investigation(
+        db, run, provider, host_runs=host_runs, host_ids=host_ids, host_run=host_run, user=user
+    )
+    await db.commit()
+
+    from app.tasks import celery_app
+
+    celery_app.send_task("app.tasks.ai_task.run_chat_session", kwargs={"session_id": session.id})
+    response.status_code = 201
+    return RunInvestigationOut(session_id=session.id, created=True)
 
 
 # ---------------------------------------------------------------------------

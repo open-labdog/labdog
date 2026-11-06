@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 
 from app.grafana.client import PrometheusClient
-from app.grafana.schemas import HostMetrics, MetricValue
+from app.grafana.schemas import FleetHostMetrics, HostMetrics, MetricValue
 
 # node_exporter pseudo-filesystems we never want to treat as "disk".
 _FS_EXCLUDE = "tmpfs|overlay|squashfs|ramfs|devtmpfs"
@@ -126,3 +126,80 @@ async def fetch_host_metrics(client: PrometheusClient, host_id: int) -> HostMetr
 
     sampled_at = datetime.fromtimestamp(sampled_ts, tz=UTC) if sampled_ts is not None else None
     return HostMetrics(configured=True, sampled_at=sampled_at, cpu=cpu, memory=memory, disk=disk)
+
+
+# ---------------------------------------------------------------------------
+# Fleet-wide: one query per resource, grouped by labdog_host_id.
+# ---------------------------------------------------------------------------
+
+_ANY_HOST = 'labdog_host_id!=""'
+
+
+def fleet_cpu_percent_query() -> str:
+    return (
+        "100 - (avg by (labdog_host_id)(rate(node_cpu_seconds_total"
+        f'{{{_ANY_HOST},mode="idle"}}[5m])) * 100)'
+    )
+
+
+def fleet_memory_percent_query() -> str:
+    # ``max by`` on both sides so a host scraped twice (two jobs, two
+    # instances) still divides one series by one series.
+    return (
+        "100 * (1 - (max by (labdog_host_id)(node_memory_MemAvailable_bytes"
+        f"{{{_ANY_HOST}}}) / max by (labdog_host_id)(node_memory_MemTotal_bytes"
+        f"{{{_ANY_HOST}}})))"
+    )
+
+
+def fleet_disk_percent_query() -> str:
+    sel = f'{_ANY_HOST},mountpoint="/",fstype!~"{_FS_EXCLUDE}"'
+    return (
+        "100 * (1 - (max by (labdog_host_id)(node_filesystem_avail_bytes"
+        f"{{{sel}}}) / max by (labdog_host_id)(node_filesystem_size_bytes{{{sel}}})))"
+    )
+
+
+def _by_host(result: list[dict]) -> tuple[dict[int, float], float | None]:
+    """``{host_id: percent}`` from an instant-vector result, plus the newest
+    sample time. Series without a numeric host id are skipped."""
+    values: dict[int, float] = {}
+    newest: float | None = None
+    for series in result:
+        raw_id = series.get("metric", {}).get("labdog_host_id", "")
+        try:
+            host_id = int(raw_id)
+            ts, val = series["value"]
+            pct = round(max(0.0, min(100.0, float(val))), 1)
+        except (KeyError, TypeError, ValueError):
+            continue
+        values[host_id] = pct
+        newest = float(ts) if newest is None else max(newest, float(ts))
+    return values, newest
+
+
+async def fetch_fleet_metrics(
+    client: PrometheusClient, hostnames: dict[int, str]
+) -> tuple[list[FleetHostMetrics], float | None]:
+    """Every known host's CPU, memory and disk percentages, plus the newest
+    sample time. Hosts with no series at all are left out; a series for a
+    host id LabDog doesn't know (a deleted host still reporting) is too."""
+    cpu_r, mem_r, disk_r = await asyncio.gather(
+        client.query(fleet_cpu_percent_query()),
+        client.query(fleet_memory_percent_query()),
+        client.query(fleet_disk_percent_query()),
+    )
+    (cpu, t1), (mem, t2), (disk, t3) = _by_host(cpu_r), _by_host(mem_r), _by_host(disk_r)
+    stamps = [t for t in (t1, t2, t3) if t is not None]
+    ids = (set(cpu) | set(mem) | set(disk)) & set(hostnames)
+    rows = [
+        FleetHostMetrics(
+            host_id=h,
+            hostname=hostnames[h],
+            cpu=cpu.get(h),
+            memory=mem.get(h),
+            disk=disk.get(h),
+        )
+        for h in sorted(ids)
+    ]
+    return rows, (max(stamps) if stamps else None)

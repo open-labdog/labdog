@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, type ReactNode } from "react"
+import Link from "next/link"
 
 import { Dot, Facts, Field, Meter, Seg, Tag, toneVar, type Tone } from "@/components/ld"
 import { money } from "@/components/ai/usage-panel"
@@ -177,6 +178,23 @@ export function SessionSummary({
         </span>
         <span className={note}>{AUTONOMY_HELP[session.autonomy_level]}</span>
       </Section>
+
+      {session.investigates_action_run_id != null && (
+        <Section label="about">
+          <Link href={`/actions/runs/${session.investigates_action_run_id}`} className="mono text-[11.5px] text-ld-accent hover:no-underline" data-testid="session-run">
+            run #{session.investigates_action_run_id} →
+          </Link>
+        </Section>
+      )}
+
+      {session.archived_at && (
+        <Section label="archived">
+          <span className="mono text-[11.5px] text-text-2" title={session.archived_at}>
+            {formatTimestamp(session.archived_at)}
+          </span>
+          <span className={note}>Out of the session list, kept whole. Select it in the archive to bring it back.</span>
+        </Section>
+      )}
 
       <Section label="hosts in scope">
         <span className="mono text-[11.5px] text-text-2" title={scope.join(", ") || undefined}>

@@ -14,10 +14,11 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import service
+from app.ai.loop import LoopCaps
 from app.ai.models import (
     TERMINAL_SESSION_STATUSES,
     AIApprovalRequest,
@@ -44,13 +45,18 @@ from app.ai.schemas import (
     AIRollbackRequest,
     AIRollbackResponse,
     AIRollbackTarget,
+    AISessionArchiveRequest,
+    AISessionBulkResult,
     AISessionCreate,
     AISessionDetail,
+    AISessionIdsRequest,
     AISessionMessageRequest,
     AISessionResponse,
+    AISessionSkipped,
     AIUsageDayResponse,
     AIUsageSummary,
     AlertEventResponse,
+    SessionView,
     provider_to_response,
     session_to_response,
 )
@@ -312,13 +318,173 @@ async def test_provider(
 @router.get("/sessions", response_model=list[AISessionResponse])
 async def list_sessions(
     limit: int = 50,
+    before_id: int | None = None,
+    view: SessionView = "active",
+    host_id: int | None = None,
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(AISession).order_by(AISession.created_at.desc()).limit(min(limit, 200))
-    )
+    """Sessions, newest first, a page at a time.
+
+    ``host_id`` keeps the sessions whose host allowlist names that host:
+    the ones that could look at it, which is what a host's page lists.
+
+    ``view`` is the sessions not archived (the default), the archived
+    ones, or both. ``before_id`` is the last id of the previous page: a
+    cursor rather than an offset, because the list is polled while new
+    sessions arrive, and an offset would then repeat rows. Before paging,
+    the list stopped at the newest 50 and older sessions could not be
+    reached from the UI at all.
+    """
+    stmt = select(AISession).order_by(AISession.id.desc())
+    if view == "active":
+        stmt = stmt.where(AISession.archived_at.is_(None))
+    elif view == "archived":
+        stmt = stmt.where(AISession.archived_at.is_not(None))
+    if before_id is not None:
+        stmt = stmt.where(AISession.id < before_id)
+    if host_id is not None:
+        stmt = stmt.where(AISession.target_host_ids.contains([host_id]))
+    result = await db.execute(stmt.limit(min(max(limit, 1), 200)))
     return [session_to_response(s) for s in result.scalars().all()]
+
+
+@router.post("/sessions/archive", response_model=AISessionBulkResult)
+async def archive_sessions(
+    payload: AISessionArchiveRequest,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Archive finished sessions: these ids, or every one that finished
+    before ``finished_before`` (of ``mode``, when given).
+
+    An archived session leaves the list and keeps everything else, the
+    full-auto safeguards' counts included, so this is safe to do to any
+    finished session. A live one is skipped: it would vanish from the
+    list while it is still working.
+    """
+    from app.ai.session_housekeeping import TERMINAL
+
+    now = datetime.now(UTC)
+    skipped: list[AISessionSkipped] = []
+    if payload.session_ids:
+        done: list[int] = []
+        for session_id in dict.fromkeys(payload.session_ids):
+            session = await db.get(AISession, session_id)
+            if session is None:
+                skipped.append(AISessionSkipped(session_id=session_id, reason="Not found."))
+            elif session.status not in TERMINAL:
+                skipped.append(
+                    AISessionSkipped(
+                        session_id=session_id,
+                        reason=f"This session is {session.status}. Archive it once it has ended.",
+                    )
+                )
+            elif session.archived_at is None:
+                session.archived_at = now
+                done.append(session_id)
+    elif payload.finished_before is not None:
+        before = payload.finished_before
+        if before.tzinfo is None:
+            before = before.replace(tzinfo=UTC)
+        stmt = (
+            update(AISession)
+            .where(
+                AISession.archived_at.is_(None),
+                AISession.status.in_(TERMINAL),
+                func.coalesce(AISession.finished_at, AISession.created_at) < before,
+            )
+            .values(archived_at=now)
+            .returning(AISession.id)
+        )
+        if payload.mode is not None:
+            stmt = stmt.where(AISession.mode == payload.mode)
+        done = sorted((await db.execute(stmt)).scalars().all())
+    else:
+        raise HTTPException(
+            status_code=422, detail="Name the sessions to archive, or a finished_before date."
+        )
+
+    if done:
+        await log_action(
+            db,
+            action="ai_sessions_archived",
+            entity_type="ai_session",
+            user_id=user.id,
+            after_state={
+                "session_ids": done,
+                "finished_before": (
+                    payload.finished_before.isoformat() if payload.finished_before else None
+                ),
+                "mode": payload.mode,
+            },
+        )
+    await db.commit()
+    return AISessionBulkResult(done=done, skipped=skipped)
+
+
+@router.post("/sessions/unarchive", response_model=AISessionBulkResult)
+async def unarchive_sessions(
+    payload: AISessionIdsRequest,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Put archived sessions back in the list."""
+    done: list[int] = []
+    skipped: list[AISessionSkipped] = []
+    for session_id in dict.fromkeys(payload.session_ids):
+        session = await db.get(AISession, session_id)
+        if session is None:
+            skipped.append(AISessionSkipped(session_id=session_id, reason="Not found."))
+        elif session.archived_at is not None:
+            session.archived_at = None
+            done.append(session_id)
+    if done:
+        await log_action(
+            db,
+            action="ai_sessions_unarchived",
+            entity_type="ai_session",
+            user_id=user.id,
+            after_state={"session_ids": done},
+        )
+    await db.commit()
+    return AISessionBulkResult(done=done, skipped=skipped)
+
+
+@router.post("/sessions/delete", response_model=AISessionBulkResult)
+async def delete_sessions(
+    payload: AISessionIdsRequest,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete several sessions, skipping the ones that may not go.
+
+    The rules are the single delete's (:func:`delete_session`), with one
+    more: a session whose snapshot is still on the hypervisor is skipped
+    rather than deleted, because deleting it leaves the snapshot there
+    untracked. The single delete still allows that, deliberately and one
+    at a time. Each deleted session gets its own audit row, as there.
+    """
+    from app.ai import session_housekeeping
+
+    now = datetime.now(UTC)
+    done: list[int] = []
+    skipped: list[AISessionSkipped] = []
+    for session_id in dict.fromkeys(payload.session_ids):
+        session = await db.get(AISession, session_id)
+        if session is None:
+            skipped.append(AISessionSkipped(session_id=session_id, reason="Not found."))
+            continue
+        refusal = await session_housekeeping.deletion_refusal(
+            db, session, now, leave_snapshots=False
+        )
+        if refusal is not None:
+            skipped.append(AISessionSkipped(session_id=session_id, reason=refusal))
+            continue
+        await session_housekeeping.delete_session(db, session, user_id=user.id)
+        done.append(session_id)
+    await db.commit()
+    return AISessionBulkResult(done=done, skipped=skipped)
 
 
 @router.post("/sessions", response_model=AISessionResponse, status_code=201)
@@ -383,6 +549,15 @@ async def create_session(
     return session_to_response(session)
 
 
+async def _follow_up_refusal(db: AsyncSession, session: AISession) -> str | None:
+    """Why ``session`` cannot take another message, in the operator's terms."""
+    provider = await db.get(AIProvider, session.provider_id) if session.provider_id else None
+    caps = await LoopCaps.for_session(db, session)
+    return caps.follow_up_refusal(
+        session, turns_carry_over=provider is not None and not runs_on_agent_sdk(provider)
+    )
+
+
 @router.get("/sessions/{session_id}", response_model=AISessionDetail)
 async def get_session(
     session_id: int,
@@ -427,6 +602,8 @@ async def get_session(
     )
 
     detail = AISessionDetail.model_validate(session)
+    if session.status in TERMINAL_STATES:
+        detail.follow_up_refused = await _follow_up_refusal(db, session)
     # The system prompt is scaffolding, not conversation — showing it in the
     # transcript would bury the actual exchange.
     detail.messages = [m for m in messages if m.role != "system"]
@@ -610,10 +787,18 @@ async def send_message(
     except BudgetExceededError as exc:
         raise HTTPException(status_code=402, detail=str(exc)) from exc
 
+    # Accepted, this would be cut off at the model's first response and
+    # answered with a summary of the turns before it.
+    if refusal := await _follow_up_refusal(db, session):
+        raise HTTPException(status_code=409, detail=refusal)
+
     await service.append_message(db, session.id, role="user", content=payload.message)
     session.status = "queued"
     session.finished_at = None
     session.error_message = None
+    # How the last run ended says nothing about this one, and only a run
+    # that stops early writes this column.
+    session.stopped_reason = None
     await db.commit()
     await db.refresh(session)
 
@@ -677,62 +862,27 @@ async def delete_session(
     from under it turns a working run into a confusing crash. Cancel first,
     then delete.
 
+    Also refused for a full-auto alert fix the remediation safeguards still
+    count: deleting it would reset the host's daily cap and cooldown. Such
+    a session can be archived instead. See
+    :mod:`app.ai.session_housekeeping` for both rules.
+
     Spend is unaffected: the daily ledger in ``ai_usage_days`` is keyed by
     date and provider, not by session, precisely so that accounting
     survives housekeeping like this. Messages and tool calls go with the
     session via ON DELETE CASCADE.
     """
+    from app.ai import session_housekeeping
+
     session = await db.get(AISession, session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
-    if session.status not in TERMINAL_STATES:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"This session is {session.status}. Cancel it before deleting, so the "
-                "run that owns it can stop cleanly."
-            ),
-        )
-
-    # Any snapshot this session took is about to lose the row that records
-    # it, which is the only thing the retention sweep works from. Naming
-    # them here is what stops them becoming invisible as well as orphaned —
-    # they are still on the hypervisor, and someone has to be able to find
-    # out that they exist.
-    orphaned = (
-        (
-            await db.execute(
-                select(AIToolCall.snapshot_name).where(
-                    AIToolCall.session_id == session_id,
-                    AIToolCall.snapshot_name.is_not(None),
-                    AIToolCall.snapshot_pruned_at.is_(None),
-                )
-            )
-        )
-        .scalars()
-        .all()
+    refusal = await session_housekeeping.deletion_refusal(
+        db, session, datetime.now(UTC), leave_snapshots=True
     )
-
-    # The transcript is about to be unrecoverable, so what it was goes in
-    # the audit trail — a deleted investigation should not be invisible.
-    await log_action(
-        db,
-        action="ai_session_deleted",
-        entity_type="ai_session",
-        entity_id=session.id,
-        user_id=user.id,
-        before_state={
-            "snapshots_left_behind": list(orphaned),
-            "mission": session.mission[:500],
-            "status": session.status,
-            "mode": session.mode,
-            "iterations": session.iterations,
-            "command_count": session.command_count,
-            "target_host_ids": list(session.target_host_ids or []),
-            "created_at": session.created_at.isoformat() if session.created_at else None,
-        },
-    )
-    await db.delete(session)
+    if refusal is not None:
+        raise HTTPException(status_code=409, detail=refusal)
+    await session_housekeeping.delete_session(db, session, user_id=user.id)
     await db.commit()
 
 

@@ -33,7 +33,7 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-114`, `SEC-38`,
+ID counter as of last housekeeping pass: `BUG-124`, `SEC-38`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry.
 
@@ -73,3 +73,70 @@ content policy.
       follow redirects by default — and a documented homelab decision. Git
       repo URLs *do* block these (`app/schemas/git_repos.py:18-25`). Filed
       so it is not re-discovered as new, not because it needs changing.
+
+---
+
+## Open — 2026-10-29 valheim
+
+Filed 2026-10-29 while tracing why a hosts sync rewrote `/etc/hosts` on
+the valheim game-server VM (BUG-115 to BUG-117 and BUG-119, since fixed),
+against lin-manager's `sync_jobs` and audit rows. BUG-120 and BUG-121
+turned up while fixing those, by reading the code.
+
+### Correctness — Medium
+
+- [ ] **BUG-118** `backend/app/hosts_mgmt/merge.py:95`,
+      `backend/app/hosts_mgmt/diff.py:34-35` — hosts entries that share an
+      address collapse into one line, and the lower-priority names are
+      dropped without a word
+
+      Symptom: lin-manager's `add-hosts` group maps both
+      `loki.lan.tyresson.se` (priority 100) and `mimir.lan.tyresson.se`
+      (priority 101) to 10.10.200.3. nextcloud's effective view and its
+      file preview carry only the mimir line, and nothing in the UI says
+      why. Its `/etc/hosts` still has both: the file was last written
+      2026-08-21, five minutes after LabDog's sync, apparently by hand. The
+      next hosts sync there drops loki.
+
+      Root cause: the merge is keyed on the resolved address (`first_wins`
+      with the IP as key), so per address only the highest-priority entry
+      survives and its names replace the others'. An `/etc/hosts` line may
+      carry any number of names, and two lines for one address are valid
+      too. The diff and the collector use the same key, so a host file with
+      two lines for one address is also read as one.
+
+      Workaround: put every name for an address in one entry, as hostname
+      plus aliases.
+
+      Severity Medium: a configured name silently does not resolve.
+
+- [ ] **BUG-120** `backend/app/tasks/builtin_dispatchers.py:565-569` — a
+      `_builtin.sync` row records neither its module type nor its modules
+
+      Symptom (by reading): `_sync_async` creates its `SyncJob` with no
+      `module_type`, so the column takes its server default `firewall`, and
+      no `module_filter`. The modules are passed to the inner run only. If
+      the host is busy the job defers, and the queue later re-dispatches it
+      from the row: `module_filter_for` reads `firewall`, so a scheduled
+      sync of every module applies the firewall alone and reports success.
+      The same default makes the insert collide with an operator's pending
+      firewall sync on `uq_sync_job_active`, and the run fails with a
+      duplicate-key error.
+
+      Severity Medium: a scheduled sync silently does less than it says.
+
+### Correctness — Low
+
+- [ ] **BUG-121** `backend/app/ca_certs/actions.py:72-78` — a CA
+      certificate deploy is dispatched before its row is committed
+
+      Symptom (by reading): `enqueue_ca_cert_action_for_host` flushes the
+      `SyncJob` and calls `run_ca_cert_action.delay` at once, leaving the
+      commit to its five callers — the BUG-37 pattern. A worker that picks
+      the task up first cannot see the row. It used to raise and leave the
+      row `pending` for good; since the deploy takes its turn in the host
+      queue (BUG-119) it returns "deferred", and the row waits for the next
+      operation on the host to release it.
+
+      Severity Low: a deploy that should start at once can wait; it is no
+      longer lost.

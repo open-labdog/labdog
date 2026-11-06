@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
@@ -8,6 +8,7 @@ import { Banner, Field, Modal } from "@/components/ld"
 import { ActionParameterForm } from "@/components/action-parameter-form"
 import { apiFetch } from "@/lib/api"
 import { nextCodename } from "@/lib/os-upgrade-paths"
+import { useActionTray } from "@/lib/action-tray"
 import { toast } from "sonner"
 import type {
   ActionDefinition,
@@ -39,6 +40,7 @@ const NO_PARAMS: Record<string, unknown> = {}
 
 export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOsCodename, actions, onPickAction, targetLabel }: ActionRunDialogProps) {
   const router = useRouter()
+  const { trackRun } = useActionTray()
   // Parameters are kept per action key so switching the picked action
   // never carries one playbook's values into another's form.
   const [paramsByAction, setParamsByAction] = useState<Record<string, Record<string, unknown>>>({})
@@ -46,7 +48,6 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
   const setParams = (next: Record<string, unknown>) => {
     if (action) setParamsByAction((prev) => ({ ...prev, [action.key]: next }))
   }
-  const actionKey = action?.key
   const [parallelism, setParallelism] = useState(1)
   const [submitting, setSubmitting] = useState(false)
 
@@ -88,26 +89,10 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
     staleTime: 30_000,
   })
 
-  // Seed each picker param with its kind's default (or first) instance URL
-  // once instances load, so the shown selection is what actually runs.
-  useEffect(() => {
-    if (!grafanaInstances || !actionKey) return
-    setParamsByAction((prev) => {
-      const cur = prev[actionKey] ?? {}
-      let changed = false
-      const next = { ...cur }
-      for (const [key, kind] of Object.entries(instancePickers)) {
-        if (next[key] !== undefined) continue
-        const list = grafanaInstances.filter((i) => i.kind === kind)
-        const def = list.find((i) => i.is_default) ?? list[0]
-        if (def) {
-          next[key] = def.url
-          changed = true
-        }
-      }
-      return changed ? { ...prev, [actionKey]: next } : prev
-    })
-  }, [grafanaInstances, instancePickers, actionKey])
+  // Pickers start on "each host's assigned destination" (empty value):
+  // the backend resolves every target host to its own Mimir / Loki
+  // (host, then highest-priority group, then default). Picking a specific
+  // instance overrides that for every host in this run.
 
   // Block running when a required picker has no registered instance.
   const missingDestination =
@@ -126,7 +111,20 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
       // Build params with defaults for unset bool fields
       const currentForPrepop = scope === "host" ? hostOsCodename : groupSingleCodename
       const resolvedParams: Record<string, unknown> = {}
+      const metricsDestinations: Record<string, number> = {}
       for (const p of action.parameters) {
+        const pickerKind = instancePickers[p.key]
+        if (pickerKind) {
+          // Picker value is an instance id, or "" for per-host routing.
+          // Only an explicit pick becomes a URL param (for older backends
+          // and the run log) plus an id the backend trusts over the URL.
+          const picked = (grafanaInstances ?? []).find((i) => String(i.id) === String(params[p.key] ?? ""))
+          if (picked) {
+            resolvedParams[p.key] = picked.url
+            metricsDestinations[pickerKind] = picked.id
+          }
+          continue
+        }
         const val = params[p.key]
         if (val !== undefined) {
           resolvedParams[p.key] = val
@@ -161,6 +159,9 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
         parameters: resolvedParams,
         dry_run: dryRun,
       }
+      if (Object.keys(metricsDestinations).length > 0) {
+        body.metrics_destinations = metricsDestinations
+      }
       if (scope === "host") {
         body.host_id = targetId
       } else {
@@ -172,6 +173,7 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
         method: "POST",
         json: body,
       })
+      trackRun(run)
       toast.success("Action started")
       onClose()
       // Navigate to run page

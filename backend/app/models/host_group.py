@@ -21,6 +21,15 @@ class HostGroup(Base):
     priority: Mapped[int] = mapped_column(Integer, unique=True)  # higher = higher priority
     input_policy: Mapped[str | None] = mapped_column(String(6), nullable=True)
     output_policy: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    #: Metrics and logs destinations for member hosts that don't set their
+    #: own. NULL means "no opinion": a lower-priority group or the default
+    #: instance decides. See ``app.grafana.service.resolve_host_instance``.
+    mimir_instance_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("grafana_instances.id"), nullable=True, default=None
+    )
+    loki_instance_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("grafana_instances.id"), nullable=True, default=None
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),

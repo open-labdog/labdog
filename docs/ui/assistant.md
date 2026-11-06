@@ -47,7 +47,10 @@ block — its verdict, the command, the host and a one-line result — so you
 can follow the reasoning without re-reading the raw log output it read.
 
 When the session finishes you can ask follow-up questions in the same
-conversation; it keeps the full context of what it already found.
+conversation; it keeps the full context of what it already found. A
+follow-up shares the session's [limits](#limits): it adds to the tokens and
+commands already used, and picking a long conversation back up costs
+tokens before the assistant has done anything.
 
 **Stopping one early.** A running session has a **Stop** button in the
 header. It interrupts the model mid-turn, keeps the transcript and
@@ -67,11 +70,51 @@ same scheduled check — or of the same alert — are titled identically, so
 the timestamp is what distinguishes them. Hover it for the exact ISO
 value if you are lining a run up against a Grafana panel or a journal.
 
+**From a run.** A finished action run's page has **Investigate with AI**
+(see [Running actions](actions.md#running-actions)). It starts a
+read-only session about the run, or one host of it, with the run's
+details and the failing parts of its log as the prompt, and opens it
+here. The session's **about** line links back to the run, and the list
+marks it **run**. You can carry on the conversation like any other.
+
 Good prompts are specific about the question, not the method:
 
 - *"Check whether any service failed to start after the last reboot on node-1."*
 - *"Compare installed package versions on web-1 and web-2 and tell me what differs."*
 - *"Disk usage on backup-1 jumped yesterday. Find out what grew."*
+
+### Clearing out old sessions
+
+The list has two views: **in use** and **archived**. Archiving is the
+everyday way to clear the list. An archived session leaves the list and
+keeps everything else: its transcript, its rollback, its alert's link,
+and its place in what the [alert remediation](alerts.md) safeguards count
+(the cooldown, the daily cap and the check after a fix). It still opens
+from a link, and its summary says when it was archived.
+
+- **select** puts a checkbox on each row. With some picked, the bar under
+  the list offers **archive** under **in use**, and **unarchive** or
+  **delete** under **archived**.
+- **archive old…** archives every finished session that ended before a
+  date, or only the alert investigations among them.
+- `ai.session_archive_after_days` (default 0, never) does the same every
+  day for sessions older than that many days. See
+  [Settings](settings.md).
+- **load older** at the foot of the list fetches the next 50.
+
+Deleting removes a session for good, and keeps the ones LabDog still
+needs, saying why for each:
+
+- one that is still running, or waiting for an approval: stop it first;
+- a full-auto alert fix the safeguards still count, for a day after it
+  ended or for the cooldown if that is longer: archive it instead;
+- in a bulk delete only, one whose snapshot is still on the hypervisor:
+  deleting it would leave the snapshot there untracked. The **delete**
+  on the session's own row still does that, and the audit log names the
+  snapshot.
+
+Recorded spend is kept either way: the usage totals are counted by day
+and provider, not by session.
 
 ---
 
@@ -291,6 +334,10 @@ makes strays identifiable in the Proxmox UI.
   that host.
 - **Metrics** — instant PromQL against the default Mimir instance
   registered under [Grafana](../ui/README.md), if one is configured.
+- **Action history** — the action runs LabDog recently ran against a host
+  in scope (`list_action_runs`), and the output each one captured
+  (`get_action_run_output`), read a page at a time or only the lines
+  matching some text.
 
 Command output is scanned for credentials before it enters the transcript,
 so passwords, tokens, and private keys in a config file are replaced with a
@@ -360,7 +407,17 @@ succeeded   Stopped early: token budget (10000)
 and as a **cut short** marker in the session list, which is what lets you
 decide which of several runs is worth reopening. If the answer looks
 truncated, that badge tells you whether it ran out of room or genuinely
-finished.
+finished. A notice under the last message says the same, because after a
+limit that message is a summary of what the assistant had by then, and may
+not answer what you asked.
+
+**A session that has used up a limit takes no more messages.** Tokens and
+commands count over the whole session, so a follow-up could only be cut off
+at its first response. The message box locks instead, and says which limit
+was reached. Raise it under Settings → AI and the same session carries on,
+or start a new session. The HTTP backends count turns the same way; on a
+Claude subscription turns restart with each run, so `ai.max_iterations` does
+not lock a session there.
 
 **Token limits overshoot slightly.** Usage is only known once a turn
 completes, so the turn that crosses the limit has already been paid for —

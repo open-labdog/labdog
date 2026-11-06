@@ -11,9 +11,10 @@ from app.db import get_db
 from app.models.git_repository import GitOpsStatus, GitRepository
 from app.models.host import Host, HostGroupMembership
 from app.models.host_group import HostGroup
+from app.models.host_module_status import HostModuleStatus
 from app.models.user import User
 from app.schemas.git_repos import GitOpsEnableRequest, GitOpsStatusResponse
-from app.schemas.groups import GroupCreate, GroupResponse, GroupUpdate
+from app.schemas.groups import GroupCreate, GroupResponse, GroupUpdate, MemberModuleStatus
 from app.schemas.hosts import HostResponse
 
 
@@ -307,6 +308,44 @@ async def get_group_host_count(
         .where(HostGroupMembership.c.group_id == group_id)
     )
     return {"count": result.scalar()}
+
+
+@router.get("/{group_id}/module-status", response_model=list[MemberModuleStatus])
+async def get_group_module_status(
+    group_id: int,
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Every member's status for every module it has a row for.
+
+    One call for the group's health matrix, instead of one current-state
+    call per member. A module with no row has never been collected on
+    that host, and is left out rather than reported as unknown.
+    """
+    if await db.get(HostGroup, group_id) is None:
+        raise HTTPException(status_code=404, detail="Group not found")
+    rows = await db.execute(
+        select(
+            HostModuleStatus.host_id,
+            HostModuleStatus.module_type,
+            HostModuleStatus.sync_status,
+            func.greatest(
+                HostModuleStatus.collected_at,
+                HostModuleStatus.last_drift_check_at,
+                HostModuleStatus.last_sync_at,
+            ),
+            HostModuleStatus.error_message,
+        )
+        .join(HostGroupMembership, HostGroupMembership.c.host_id == HostModuleStatus.host_id)
+        .where(HostGroupMembership.c.group_id == group_id)
+        .order_by(HostModuleStatus.host_id, HostModuleStatus.module_type)
+    )
+    return [
+        MemberModuleStatus(
+            host_id=h, module_type=m, sync_status=st, checked_at=at, error_message=err
+        )
+        for h, m, st, at, err in rows.all()
+    ]
 
 
 @router.get("/{group_id}/hosts", response_model=list[HostResponse])

@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.hosts_mgmt.models import HostsEntry
-from app.hosts_mgmt.schemas import EffectiveHostsEntryResponse
+from app.hosts_mgmt.schemas import HOSTNAME_RE, EffectiveHostsEntryResponse
 from app.merge_utils import first_wins, load_owned_rows
 from app.models.host import Host
 
@@ -54,6 +54,59 @@ SYSTEM_ENTRIES = [
     },
 ]
 
+#: Where the host's own name goes when no entry places it — the line the
+#: Debian installer and cloud-init's ``manage_etc_hosts`` write, and the
+#: one a synced file used to drop (BUG-115).
+OWN_NAME_IP = "127.0.1.1"
+
+
+def own_names(host: Host) -> list[str]:
+    """The names *host* calls itself, the full one first.
+
+    ``reported_hostname`` is read from the host by facts collection. A
+    host added before that column existed, or whose facts have not been
+    collected yet, falls back to its LabDog name, which is usually the
+    same — and a wrong guess here costs one extra name on the loopback
+    address. Nothing, when the name is not a valid hostname: a LabDog
+    name may be anything.
+    """
+    name = host.reported_hostname or host.hostname
+    if not name or not HOSTNAME_RE.match(name):
+        return []
+    short = name.split(".", 1)[0]
+    return [name] if short == name else [name, short]
+
+
+def _own_name_entry(
+    host: Host | None, entries: list[EffectiveHostsEntryResponse]
+) -> EffectiveHostsEntryResponse | None:
+    """``127.0.1.1 <full> <short>`` for *host*, unless an entry got there first.
+
+    An entry that names any of the host's own names, or that uses
+    127.0.1.1, means someone has decided where the name goes — a Proxmox
+    node, say, which must resolve its own name to its real address — so
+    the line is left out rather than contradicting it.
+    """
+    names = own_names(host) if host is not None else []
+    if not names:
+        return None
+    taken = {n.lower() for e in entries for n in (e.hostname, *e.aliases)}
+    if any(n.lower() in taken for n in names):
+        return None
+    if any(e.ip_address == OWN_NAME_IP for e in entries):
+        return None
+    return EffectiveHostsEntryResponse(
+        ip_address=OWN_NAME_IP,
+        hostname=names[0],
+        aliases=names[1:],
+        comment=None,
+        priority=0,
+        is_system=True,
+        source="system",
+        source_id=0,
+        source_name="system",
+    )
+
 
 async def get_effective_hosts_entries(
     host_id: int, db: AsyncSession
@@ -62,8 +115,16 @@ async def get_effective_hosts_entries(
 
     Merge key: the resolved ``ip_address``. Host override replaces a group
     entry entirely; among rows at the same level the highest priority
-    wins. The two system entries are seeded first and nothing may displace
-    them.
+    wins. The two system entries are seeded first and no group may
+    displace them; the host's own name is added on 127.0.1.1 unless an
+    entry already places it (see ``_own_name_entry``).
+
+    Empty when no entry applies to the host. LabDog then does not manage
+    the host's ``/etc/hosts`` at all: a sync leaves the file alone and
+    drift has nothing to compare. Writing the system entries on their own
+    replaced a working file with two loopback lines (BUG-115). Every
+    caller reads "empty" this way, so they agree on which hosts the
+    module manages.
 
     Unlike its sibling modules the key cannot be read straight off the
     row: an entry may name a ``host_ref_id`` instead of an address, so
@@ -114,6 +175,13 @@ async def get_effective_hosts_entries(
             source_id=owner.source_id,
             source_name=owner.source_name,
         )
+
+    if all(e.is_system for e in merged.values()):
+        return []
+
+    own = _own_name_entry(await db.get(Host, host_id), list(merged.values()))
+    if own is not None:
+        merged[own.ip_address] = own
 
     # System entries first, then highest priority first — `/etc/hosts` is
     # read top to bottom and the first match for a name wins, so this is

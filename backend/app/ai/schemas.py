@@ -259,6 +259,9 @@ class AISessionResponse(BaseModel):
     target_host_ids: list | None
     skip_snapshots: bool
     action_run_id: int | None
+    #: The run this session investigates, when it was started from the
+    #: run page. NULL once that run is pruned.
+    investigates_action_run_id: int | None = None
     iterations: int
     prompt_tokens: int
     completion_tokens: int
@@ -277,6 +280,36 @@ class AISessionResponse(BaseModel):
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+    #: Set while the session is archived: left out of the default list.
+    archived_at: datetime | None = None
+
+
+SessionView = Literal["active", "archived", "all"]
+
+
+class AISessionArchiveRequest(BaseModel):
+    """Which sessions to archive: these ids, or every finished one older
+    than ``finished_before`` (of ``mode``, when given)."""
+
+    session_ids: list[int] | None = Field(default=None, max_length=500)
+    finished_before: datetime | None = None
+    mode: SessionMode | None = None
+
+
+class AISessionIdsRequest(BaseModel):
+    session_ids: list[int] = Field(min_length=1, max_length=500)
+
+
+class AISessionSkipped(BaseModel):
+    session_id: int
+    reason: str
+
+
+class AISessionBulkResult(BaseModel):
+    """What a bulk archive, unarchive or delete did, session by session."""
+
+    done: list[int]
+    skipped: list[AISessionSkipped] = []
 
 
 class AIApprovalResponse(BaseModel):
@@ -362,6 +395,11 @@ class AISessionDetail(AISessionResponse):
     approvals: list[AIApprovalResponse] = Field(default_factory=list)
     rollbacks: list[AIRollbackResponse] = Field(default_factory=list)
     rollback_targets: list[AIRollbackTarget] = Field(default_factory=list)
+    #: Why this finished session cannot take another message, in words for
+    #: the operator; NULL when it can. Computed at read time, because
+    #: raising a limit under Settings → AI lifts it. The API refuses such a
+    #: message with the same sentence.
+    follow_up_refused: str | None = None
 
 
 def session_to_response(session: AISession) -> AISessionResponse:
