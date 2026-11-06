@@ -218,6 +218,10 @@ export function SyncTray() {
   const actionTray = useActionTray()
   const runs = actionTray.runs
   const [collapsed, setCollapsed] = useState(false)
+  // Opened from the background indicator: the card stays up with nothing
+  // of the operator's own in it until they close it again.
+  const [pinned, setPinned] = useState(false)
+  const [bgOpen, setBgOpen] = useState(false)
 
   const { data: hosts } = useQuery<Host[]>({
     queryKey: ["hosts"],
@@ -234,17 +238,49 @@ export function SyncTray() {
   })
   const actionName = (key: string) => actions?.find((a) => a.key === key)?.name ?? actionLabel(key)
 
-  if (operations.length === 0 && runs.length === 0) return null
+  // The operator's own runs pop the card up; everything else (schedules,
+  // alerts, other operators) is "background" and never does on its own.
+  // On a fleet with many scheduled runs a day the card would otherwise
+  // hardly ever go away.
+  const ownRuns = runs.filter((t) => t.own)
+  const bgRuns = runs.filter((t) => !t.own)
+  const bgActive = bgRuns.filter((t) => t.finishedAt == null).length
+  const showCard = operations.length > 0 || ownRuns.length > 0 || pinned
 
-  const activeCount = operations.filter((o) => !operationDone(o, jobs)).length + runs.filter((t) => t.finishedAt == null).length
-  const finishedCount = operations.length + runs.length - activeCount
+  if (!showCard) {
+    if (bgActive === 0) return null
+    return (
+      <div className="fixed bottom-4 right-4 z-40">
+        <button
+          type="button"
+          className="btn btn-sm inline-flex items-center gap-1.5 shadow-ld"
+          onClick={() => {
+            setPinned(true)
+            setBgOpen(true)
+            setCollapsed(false)
+          }}
+          title="Action runs started by schedules, alerts or other operators"
+          data-testid="tray-background-indicator"
+        >
+          <Dot tone="sync" pulse />
+          {bgActive} background run{bgActive === 1 ? "" : "s"}
+        </button>
+      </div>
+    )
+  }
+
+  const activeCount =
+    operations.filter((o) => !operationDone(o, jobs)).length + ownRuns.filter((t) => t.finishedAt == null).length
+  const finishedCount = operations.length + ownRuns.length - activeCount
+  const meta =
+    activeCount > 0 ? `${activeCount} running` : finishedCount > 0 ? `${finishedCount} finished` : `${bgActive} in background`
 
   return (
     <div className="fixed bottom-4 right-4 z-40 w-[360px] max-w-[calc(100vw-2rem)]">
       <Panel
         className="shadow-ld"
         title="activity"
-        meta={activeCount > 0 ? `${activeCount} running` : `${finishedCount} finished`}
+        meta={meta}
         actions={
           <>
             {finishedCount > 0 && (
@@ -262,6 +298,11 @@ export function SyncTray() {
             <button type="button" className="btn btn-sm btn-ghost" onClick={() => setCollapsed((v) => !v)} aria-label={collapsed ? "Expand" : "Collapse"}>
               {collapsed ? "▲" : "▼"}
             </button>
+            {pinned && (
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setPinned(false)} aria-label="Close">
+                ✕
+              </button>
+            )}
           </>
         }
       >
@@ -270,9 +311,30 @@ export function SyncTray() {
             {operations.map((op) => (
               <OperationRow key={op.id} op={op} jobs={jobs} hostName={hostName} onDismiss={() => dismiss(op.id)} />
             ))}
-            {runs.map((t) => (
+            {ownRuns.map((t) => (
               <RunRow key={t.run.id} t={t} name={actionName(t.run.action_key)} onDismiss={() => actionTray.dismiss(t.run.id)} />
             ))}
+            {bgRuns.length > 0 && (
+              <div className="border-b border-line-faint last:border-b-0">
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 border-0 bg-transparent px-[11px] py-2 text-left"
+                  onClick={() => setBgOpen((v) => !v)}
+                  data-testid="tray-background-row"
+                >
+                  <span className="tt text-[8px] text-text-faint">{bgOpen ? "▼" : "▶"}</span>
+                  <span className="flex-1 text-xs text-text-2">
+                    {bgActive > 0 ? `${bgActive} background run${bgActive === 1 ? "" : "s"}` : "background runs finished"}
+                  </span>
+                  <span className="tt text-[9px] text-text-faint">scheduled · alerts · others</span>
+                  {bgActive > 0 && <Dot tone="sync" pulse />}
+                </button>
+                {bgOpen &&
+                  bgRuns.map((t) => (
+                    <RunRow key={t.run.id} t={t} name={actionName(t.run.action_key)} onDismiss={() => actionTray.dismiss(t.run.id)} />
+                  ))}
+              </div>
+            )}
           </div>
         )}
       </Panel>
