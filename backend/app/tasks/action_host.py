@@ -728,9 +728,9 @@ async def _build_inventory(
     # app/actions/extra_vars.py.
     sanitize_extra_vars(spec.parameters)
     extra_vars: dict | None = dict(spec.parameters) if spec.parameters else None
-    if dry_run:
-        extra_vars = extra_vars or {}
-        extra_vars["ansible_check_mode"] = True
+    # A dry run is ``--check`` (see run_ansible's ``check_mode``). It used to
+    # be an ``ansible_check_mode=True`` extra-var, which ansible-core
+    # overwrites with the real value, so every "dry run" changed the host.
 
     # Inject metrics integration vars: identity labels (always, so the agent
     # stamps queryable labels) + the default Grafana instance's push URLs
@@ -824,6 +824,8 @@ def _phase_b_playbook(
     inventory_json: str,
     extra_vars: dict | None,
     timeout: int,
+    *,
+    dry_run: bool = False,
 ) -> _PlaybookResult:
     """Run ansible-runner, streaming output live.
 
@@ -885,6 +887,7 @@ def _phase_b_playbook(
             timeout=timeout,
             roles_paths=list(spec.roles_paths) if spec.roles_paths else None,
             event_handler=_on_event,
+            check_mode=dry_run,
         )
     finally:
         hb_stop.set()
@@ -1470,10 +1473,18 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
 
         _publish_status(ctx, "running", host_id=spec.host_id)
 
-        if not await _phase_a_snapshot(ctx, spec, env):
+        if dry_run:
+            # Check mode changes nothing, so there is nothing to snapshot,
+            # verify or roll back. No snapshot also keeps verify (gated on
+            # one) and rollback from running below.
+            _log_step(ctx, "[dry-run] ansible-playbook --check: no changes are made")
+            _log_step(ctx, "[snapshot] skipped — dry run")
+        elif not await _phase_a_snapshot(ctx, spec, env):
             return
 
-        playbook = _phase_b_playbook(ctx, spec, inventory_json, extra_vars, timeout)
+        playbook = _phase_b_playbook(
+            ctx, spec, inventory_json, extra_vars, timeout, dry_run=dry_run
+        )
 
         verification_passed = True
         verification_error: str | None = None
