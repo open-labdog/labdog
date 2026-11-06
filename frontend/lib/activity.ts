@@ -38,6 +38,8 @@ export interface ActivityItem {
   tally?: string
   /** The action run behind the item, for Investigate with AI. */
   run?: ActionRun
+  /** The sync job behind an apply, for Investigate with AI. */
+  syncJobId?: number
 }
 
 /** Alerts and assistant sessions join the stream on the Overview's
@@ -97,6 +99,7 @@ export function jobToItem(j: SyncJobRow, hostname: string): ActivityItem {
     who: j.triggered_by_user_id ? "user" : "system",
     href: null,
     hostId: j.host_id,
+    syncJobId: j.id,
     userId: j.triggered_by_user_id,
     durationMs: durationMs({ started_at: j.started_at, finished_at: j.completed_at }),
   }

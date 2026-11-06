@@ -9,7 +9,7 @@ non-blank value replaces it.
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -262,6 +262,11 @@ class AISessionResponse(BaseModel):
     #: The run this session investigates, when it was started from the
     #: run page. NULL once that run is pruned.
     investigates_action_run_id: int | None = None
+    #: What an Investigate with AI button elsewhere started it about
+    #: ("resource", "sync", "stuck", "drift", "host") and that subject's
+    #: key ("resource:7:disk"). NULL for other sessions.
+    subject_kind: str | None = None
+    subject_key: str | None = None
     iterations: int
     prompt_tokens: int
     completion_tokens: int
@@ -510,4 +515,75 @@ class AlertEventResponse(BaseModel):
     rollback_detail: str | None = None
     #: What the alert's labdog_action label came to: at most one entry.
     actions: list[AlertDispatchOut] = []
+    created_at: datetime
+
+
+# --- investigate with AI (subjects) ----------------------------------------
+#
+# What an "Investigate with AI" button names. Ids only: the server reads
+# its own rows and writes the mission (app.ai.subject_investigation).
+
+
+class ResourceSubject(BaseModel):
+    """A host's CPU, memory or root disk, from the resource hot spots or
+    the host's Metrics tab."""
+
+    kind: Literal["resource"]
+    host_id: int
+    metric: Literal["cpu", "memory", "disk"]
+
+
+class SyncSubject(BaseModel):
+    """A failed sync job."""
+
+    kind: Literal["sync"]
+    sync_job_id: int
+
+
+class StuckSubject(BaseModel):
+    """An operation running past the stale threshold."""
+
+    kind: Literal["stuck"]
+    op: Literal["sync", "action"]
+    id: int
+
+
+class DriftSubject(BaseModel):
+    """A host's drift: one module's, or (``module`` unset) every module
+    that is drifted or could not be checked."""
+
+    kind: Literal["drift"]
+    host_id: int
+    module: str | None = Field(default=None, max_length=50)
+
+
+class HostSubject(BaseModel):
+    """A whole host's health."""
+
+    kind: Literal["host"]
+    host_id: int
+
+
+InvestigationSubject = Annotated[
+    ResourceSubject | SyncSubject | StuckSubject | DriftSubject | HostSubject,
+    Field(discriminator="kind"),
+]
+
+
+class InvestigateRequest(BaseModel):
+    subject: InvestigationSubject
+
+
+class InvestigateResponse(BaseModel):
+    session_id: int
+    #: False when an earlier session about the same subject was reopened.
+    created: bool
+
+
+class InvestigationRef(BaseModel):
+    """The session a button reopens instead of starting another."""
+
+    subject_key: str
+    session_id: int
+    status: str
     created_at: datetime

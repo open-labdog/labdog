@@ -1,6 +1,7 @@
 "use client"
 
 import { useQuery } from "@tanstack/react-query"
+import { InvestigateButton, METRIC_WORD } from "@/components/investigate-button"
 import { Meter, Panel, Spark, Status, StatusBar, type Tone } from "@/components/ld"
 import { apiFetch } from "@/lib/api"
 import { ageLabel, countStatuses, daysSince, plural, staleHosts, STALE_DAYS, STATUS, STATUS_ORDER } from "@/lib/fleet"
@@ -87,11 +88,11 @@ export function StateTab({
   // The four fullest resources across the fleet.
   const hot = (metrics?.hosts ?? [])
     .flatMap((m) => [
-      { host: m.hostname, id: m.host_id, what: "disk /", pct: m.disk },
-      { host: m.hostname, id: m.host_id, what: "memory", pct: m.memory },
-      { host: m.hostname, id: m.host_id, what: "cpu", pct: m.cpu },
+      { host: m.hostname, id: m.host_id, what: "disk /", metric: "disk" as const, pct: m.disk },
+      { host: m.hostname, id: m.host_id, what: "memory", metric: "memory" as const, pct: m.memory },
+      { host: m.hostname, id: m.host_id, what: "cpu", metric: "cpu" as const, pct: m.cpu },
     ])
-    .filter((r): r is { host: string; id: number; what: string; pct: number } => r.pct != null)
+    .filter((r): r is typeof r & { pct: number } => r.pct != null)
     .sort((a, b) => b.pct - a.pct)
     .slice(0, 4)
 
@@ -177,9 +178,18 @@ export function StateTab({
               ) : (
                 <div className="flex flex-col gap-2.5 p-[11px]">
                   {hot.map((r) => (
-                    <button key={`${r.id}:${r.what}`} type="button" className="flex border-0 bg-transparent p-0 text-left" onClick={() => go(`/hosts/${r.id}?tab=metrics`)}>
-                      <Meter label={`${r.host} · ${r.what}`} pct={r.pct} />
-                    </button>
+                    <div key={`${r.id}:${r.what}`} className="flex items-end gap-2" data-testid="hot-spot">
+                      <button type="button" className="flex min-w-0 flex-1 border-0 bg-transparent p-0 text-left" onClick={() => go(`/hosts/${r.id}?tab=metrics`)}>
+                        <Meter label={`${r.host} · ${r.what}`} pct={r.pct} />
+                      </button>
+                      <InvestigateButton
+                        icon
+                        ghost
+                        subject={{ kind: "resource", host_id: r.id, metric: r.metric }}
+                        about={`${r.host}'s ${METRIC_WORD[r.metric]}`}
+                        sends={`${r.host}'s current and recent ${METRIC_WORD[r.metric]} use`}
+                      />
+                    </div>
                   ))}
                 </div>
               )}

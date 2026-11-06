@@ -8,6 +8,7 @@ import { apiFetch, ApiError } from "@/lib/api"
 import { toast } from "sonner"
 import { shortAgo } from "@/lib/fleet"
 import { def, ALERT_SEVERITY, ALERT_STATUS, AI_AUTONOMY, AI_ROLLBACK, AI_SESSION_STATUS, REMEDIATION_OUTCOME } from "@/lib/status"
+import { AISpark } from "@/components/investigate-button"
 import { PageHead, RunStatus, Seg, Table, Tabs, Tag, type Tone } from "@/components/ld"
 import { AlertHandling } from "@/components/alerts/alert-handling"
 import type { AlertDispatch, AlertEvent, AlertIntakeStatus } from "@/lib/types"
@@ -237,9 +238,9 @@ function Received({ focus }: { focus: number | null }) {
           {
             k: "go", label: "", w: "110px", right: true, sortable: false,
             cell: (a) => a.investigation_session_id ? (
-              <button type="button" className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); router.push(`/assistant?session=${a.investigation_session_id}`) }}>view →</button>
+              <button type="button" className="btn btn-sm btn-ghost" style={{ color: "var(--hold-ink)" }} onClick={(e) => { e.stopPropagation(); router.push(`/assistant?session=${a.investigation_session_id}`) }}><AISpark />view →</button>
             ) : a.status === "firing" ? (
-              <button type="button" className="btn btn-sm btn-ghost" disabled={investigate.isPending} onClick={(e) => { e.stopPropagation(); investigate.mutate(a.id) }}>investigate</button>
+              <button type="button" className="btn btn-sm btn-ghost" style={{ color: "var(--hold-ink)" }} disabled={investigate.isPending} onClick={(e) => { e.stopPropagation(); investigate.mutate(a.id) }}><AISpark />investigate</button>
             ) : null,
           },
         ]}

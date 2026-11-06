@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
+import { InvestigateButton, METRIC_WORD } from "@/components/investigate-button"
 import { Meter } from "@/components/ld"
 import type { HostMetrics, HostMetricValue } from "@/lib/types"
 
@@ -63,14 +64,40 @@ export function useHostMetrics(hostId: number) {
 
 /** CPU, memory and root-disk meters. `detail` prints the absolute figures
  *  under each bar; without it they are the bar's tooltip. */
-export function MetricMeters({ data, dim, detail }: { data: HostMetrics; dim?: boolean; detail?: boolean }) {
-  const cells: [string, HostMetricValue | null][] = [["cpu", data.cpu], ["memory", data.memory], ["disk /", data.disk]]
+export function MetricMeters({
+  data,
+  dim,
+  detail,
+  investigate,
+}: {
+  data: HostMetrics
+  dim?: boolean
+  detail?: boolean
+  /** Adds an Investigate with AI button under each meter that has data. */
+  investigate?: { hostId: number; hostname: string }
+}) {
+  const cells: [string, "cpu" | "memory" | "disk", HostMetricValue | null][] = [
+    ["cpu", "cpu", data.cpu],
+    ["memory", "memory", data.memory],
+    ["disk /", "disk", data.disk],
+  ]
   return (
     <div className={`grid grid-cols-1 gap-3 sm:grid-cols-3 ${dim ? "opacity-60" : ""}`}>
-      {cells.map(([label, m]) => (
+      {cells.map(([label, metric, m]) => (
         <div key={label} title={!detail && m ? subLine(m) : undefined}>
           <Meter pct={m?.percent ?? 0} label={label} value={m ? undefined : "—"} />
           {detail && m && subLine(m) && <div className="mono num mt-1 text-[11px] text-text-3">{subLine(m)}</div>}
+          {investigate && m && (
+            <div className="mt-1.5">
+              <InvestigateButton
+                ghost
+                label={`Ask AI about ${METRIC_WORD[metric]} use`}
+                subject={{ kind: "resource", host_id: investigate.hostId, metric }}
+                about={`${investigate.hostname}'s ${METRIC_WORD[metric]}`}
+                sends={`${investigate.hostname}'s current and recent ${METRIC_WORD[metric]} use`}
+              />
+            </div>
+          )}
         </div>
       ))}
     </div>

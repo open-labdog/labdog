@@ -12,7 +12,7 @@ import json
 import logging
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -56,6 +56,9 @@ from app.ai.schemas import (
     AIUsageDayResponse,
     AIUsageSummary,
     AlertEventResponse,
+    InvestigateRequest,
+    InvestigateResponse,
+    InvestigationRef,
     SessionView,
     provider_to_response,
     session_to_response,
@@ -485,6 +488,84 @@ async def delete_sessions(
         done.append(session_id)
     await db.commit()
     return AISessionBulkResult(done=done, skipped=skipped)
+
+
+@router.get("/investigations", response_model=list[InvestigationRef])
+async def list_investigations(
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """The session each Investigate with AI subject would reopen.
+
+    One call for every button on a page: each looks its own subject key
+    up here to show "View investigation" instead of starting another.
+    """
+    from app.ai.subject_investigation import recent_investigations
+
+    return [
+        InvestigationRef(
+            subject_key=s.subject_key,
+            session_id=s.id,
+            status=s.status,
+            created_at=s.created_at,
+        )
+        for s in await recent_investigations(db)
+    ]
+
+
+@router.post("/investigations", response_model=InvestigateResponse)
+async def investigate_subject(
+    payload: InvestigateRequest,
+    response: Response,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Start a read-only assistant session about a subject, or reopen one.
+
+    The subject names ids only; the mission is written here from LabDog's
+    own rows. A second press reopens the earlier session (200) unless it
+    failed, was stopped or archived, or is about a condition and more than
+    a day old; a new one is 201. The gates are the run page's: the kill
+    switch, a provider that can run tools, and the budget. Reopening needs
+    none of them.
+    """
+    from app.ai.subject_investigation import (
+        SubjectNotFound,
+        SubjectRefused,
+        existing_investigation,
+        prepare,
+        start_subject_investigation,
+        subject_key,
+    )
+
+    earlier = await existing_investigation(db, subject_key(payload.subject))
+    if earlier is not None:
+        return InvestigateResponse(session_id=earlier.id, created=False)
+
+    try:
+        provider = await service.resolve_provider(db, None)
+        service.assert_can_investigate(provider)
+        await service.assert_within_budget(db, provider)
+    except AIDisabledError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except BudgetExceededError as exc:
+        raise HTTPException(status_code=402, detail=str(exc)) from exc
+
+    try:
+        prepared = await prepare(db, payload.subject)
+    except SubjectNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SubjectRefused as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    session = await start_subject_investigation(db, payload.subject, prepared, provider, user=user)
+    await db.commit()
+
+    from app.tasks import celery_app
+
+    celery_app.send_task("app.tasks.ai_task.run_chat_session", kwargs={"session_id": session.id})
+    response.status_code = 201
+    return InvestigateResponse(session_id=session.id, created=True)
 
 
 @router.post("/sessions", response_model=AISessionResponse, status_code=201)

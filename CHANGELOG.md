@@ -7,6 +7,17 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+### Added
+
+- **Investigate with AI from where a problem shows up.** The sparkle
+  button now sits on the Fleet state resource hot spots, a host's Metrics
+  tab and header, failed syncs, the Pending stuck and drift lanes, and
+  each Drift finding. It starts a read-only assistant session about that
+  subject, with a prompt LabDog writes from its own data, and reopens the
+  earlier one on a second press. New endpoints:
+  `POST`/`GET /api/ai/investigations`; `ai_sessions` gains `subject_kind`
+  and `subject_key` (alembic 0056).
+
 ### Changed
 
 - **A tidier group Overview.** The fifteen panels in five rows, which left

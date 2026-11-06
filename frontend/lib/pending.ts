@@ -55,8 +55,11 @@ export interface PendingItem {
   open: string
   /** A failed run, for Investigate with AI. */
   run?: ActionRun
-  /** A stuck operation, for Cancel. */
+  /** A stuck operation, for Cancel and Investigate with AI. */
   stuck?: StuckOperation
+  /** The one drifted host, for Investigate with AI. Unset when several
+   *  have drifted: the Drift page has a button per finding. */
+  driftHost?: { id: number; hostname: string }
 }
 
 const STORAGE_KEY = "labdog:pending-dismissed"
@@ -244,7 +247,8 @@ export function usePendingQueue(enabled = true) {
       })
     }
 
-    const drifted = (hosts.data ?? []).filter((h) => h.sync_status === "out_of_sync").map((h) => h.hostname)
+    const driftedHosts = (hosts.data ?? []).filter((h) => h.sync_status === "out_of_sync")
+    const drifted = driftedHosts.map((h) => h.hostname)
     if (drifted.length > 0) {
       out.push({
         id: "drift",
@@ -259,6 +263,7 @@ export function usePendingQueue(enabled = true) {
         dismissible: false,
         hosts: drifted,
         open: "Review",
+        driftHost: driftedHosts.length === 1 ? { id: driftedHosts[0].id, hostname: driftedHosts[0].hostname } : undefined,
       })
     }
 

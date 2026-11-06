@@ -1226,6 +1226,10 @@ export interface AISession {
   /** The run this session investigates, when it was started from the run
    *  page. Null once that run is pruned. */
   investigates_action_run_id?: number | null
+  /** What an Investigate with AI button elsewhere started it about, and
+   *  that subject's key ("resource:7:disk"). Null for other sessions. */
+  subject_kind?: InvestigationSubject["kind"] | null
+  subject_key?: string | null
   iterations: number
   prompt_tokens: number
   completion_tokens: number
@@ -1608,4 +1612,25 @@ export interface FleetMetrics {
   sampled_at: string | null
   hosts: FleetHostMetrics[]
   error: string | null
+}
+
+// ---------------------------------------------------------------------------
+// Investigate with AI (POST /api/ai/investigations)
+// ---------------------------------------------------------------------------
+
+/** What an Investigate with AI button is about. Ids only: the server
+ *  writes the mission from its own rows (app/ai/subject_investigation.py). */
+export type InvestigationSubject =
+  | { kind: "resource"; host_id: number; metric: "cpu" | "memory" | "disk" }
+  | { kind: "sync"; sync_job_id: number }
+  | { kind: "stuck"; op: "sync" | "action"; id: number }
+  | { kind: "drift"; host_id: number; module?: string | null }
+  | { kind: "host"; host_id: number }
+
+/** The session a button would reopen instead of starting another. */
+export interface InvestigationRef {
+  subject_key: string
+  session_id: number
+  status: string
+  created_at: string
 }

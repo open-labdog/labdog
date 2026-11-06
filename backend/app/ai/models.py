@@ -182,6 +182,15 @@ class AISession(Base):
     investigates_action_run_id: Mapped[int | None] = mapped_column(
         ForeignKey("action_runs.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # What an "Investigate with AI" button outside the run page started
+    # this session about (app.ai.subject_investigation): the kind
+    # ("resource", "sync", "stuck", "drift", "host") and the stable key a
+    # second press finds it by ("resource:7:disk"). NULL for every other
+    # session, run investigations included.
+    subject_kind: Mapped[str | None] = mapped_column(String(16), nullable=True, default=None)
+    subject_key: Mapped[str | None] = mapped_column(
+        String(120), nullable=True, default=None, index=True
+    )
     # Opt out of the pre-change Proxmox snapshot for this session only.
     #
     # Composes with ``ai.snapshot_before_mutating`` by agreement, not

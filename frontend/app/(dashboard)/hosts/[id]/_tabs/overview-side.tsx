@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
+import { InvestigateButton } from "@/components/investigate-button"
 import { Dot, Panel } from "@/components/ld"
 import { toneVar } from "@/components/ld/tone"
 import { plural, shortAgo, type Tone } from "@/lib/fleet"
@@ -75,6 +76,22 @@ export function HostActivityPanel({ items, loading, onAll }: { items: FeedItem[]
             </>
           )
           const cls = "flex items-center gap-2.5 border-b border-line-faint px-[11px] py-1.5"
+          // A failed sync has no page of its own; the assistant can look into it.
+          if (a.kind === "apply" && a.status === "failed" && a.syncJobId != null) {
+            return (
+              <div key={a.id} className={cls} style={{ boxShadow: "inset 2px 0 0 var(--danger)" }}>
+                {row}
+                <InvestigateButton
+                  icon
+                  ghost
+                  label="Investigate this sync with AI"
+                  subject={{ kind: "sync", sync_job_id: a.syncJobId }}
+                  about="this failed sync"
+                  sends="the sync's modules, its error and the failing part of its Ansible log"
+                />
+              </div>
+            )
+          }
           return a.href ? (
             <Link
               key={a.id}
