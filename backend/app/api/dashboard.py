@@ -25,13 +25,14 @@ async def get_sync_success_rate(
     days: int = Query(7, ge=1, le=90),
     granularity: Literal["day", "hour"] = Query("day"),
     module: str | None = Query(None),
+    group_id: int | None = Query(None, description="only syncs of this group's members"),
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> SyncRateSeries:
     """Sync success-rate chart data: bucketed totals + success rate over time."""
     since = datetime.now(UTC) - timedelta(days=days)
     return await service.get_sync_success_rate(
-        db, since=since, granularity=granularity, module=module
+        db, since=since, granularity=granularity, module=module, group_id=group_id
     )
 
 
@@ -40,12 +41,15 @@ async def get_drift_trend(
     days: int = Query(7, ge=1, le=90),
     granularity: Literal["day", "hour"] = Query("day"),
     module: str | None = Query(None),
+    group_id: int | None = Query(None, description="only checks of this group's members"),
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> DriftTrendSeries:
     """Drift trend chart data: bucketed drift-check counts + drift volume over time."""
     since = datetime.now(UTC) - timedelta(days=days)
-    return await service.get_drift_trend(db, since=since, granularity=granularity, module=module)
+    return await service.get_drift_trend(
+        db, since=since, granularity=granularity, module=module, group_id=group_id
+    )
 
 
 @router.get("/drift-coverage", response_model=DriftCoverage)

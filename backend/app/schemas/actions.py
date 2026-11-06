@@ -135,6 +135,36 @@ class RunHostFailure(BaseModel):
     reason: str | None = None
 
 
+class HostRunEntry(BaseModel):
+    """One host's part in a run, for that host's own history.
+
+    A group or fleet run lists here too: the row is this host's result,
+    so a run that was ``partial`` overall reads ``succeeded`` on a host it
+    did not fail on.
+    """
+
+    host_run_id: int
+    action_run_id: int
+    action_key: str
+    #: The run's overall status; ``status`` is this host's.
+    run_status: str
+    status: str
+    target_kind: str
+    target_label: str
+    scheduled_action_id: int | None = None
+    alert_event_id: int | None = None
+    triggered_by_user_id: int | None = None
+    created_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    exit_code: int | None = None
+    error_message: str | None = None
+    #: The first failed task's message from this host's log, when it failed.
+    reason: str | None = None
+    #: The run failed here and LabDog restored the pre-run snapshot.
+    rolled_back: bool = False
+
+
 class ActionRunOut(BaseModel):
     id: int
     action_key: str

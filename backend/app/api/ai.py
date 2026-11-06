@@ -320,10 +320,14 @@ async def list_sessions(
     limit: int = 50,
     before_id: int | None = None,
     view: SessionView = "active",
+    host_id: int | None = None,
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Sessions, newest first, a page at a time.
+
+    ``host_id`` keeps the sessions whose host allowlist names that host:
+    the ones that could look at it, which is what a host's page lists.
 
     ``view`` is the sessions not archived (the default), the archived
     ones, or both. ``before_id`` is the last id of the previous page: a
@@ -339,6 +343,8 @@ async def list_sessions(
         stmt = stmt.where(AISession.archived_at.is_not(None))
     if before_id is not None:
         stmt = stmt.where(AISession.id < before_id)
+    if host_id is not None:
+        stmt = stmt.where(AISession.target_host_ids.contains([host_id]))
     result = await db.execute(stmt.limit(min(max(limit, 1), 200)))
     return [session_to_response(s) for s in result.scalars().all()]
 

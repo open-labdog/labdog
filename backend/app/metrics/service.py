@@ -25,11 +25,21 @@ from app.metrics.schemas import (
     SyncRateSeries,
 )
 from app.models.drift_sample import DriftSample
-from app.models.host import Host
+from app.models.host import Host, HostGroupMembership
 from app.models.host_module_status import HostModuleStatus
 from app.models.sync_job import JobStatus, SyncJob
 
 _TERMINAL_STATUSES = (JobStatus.success, JobStatus.failed, JobStatus.cancelled)
+
+
+def _members(group_id: int):
+    """The hosts in a group, as a subquery for ``host_id IN (…)``.
+
+    Membership as it stands now, not as it stood when each row was
+    written: a host that left the group takes its history with it, which
+    is what "this group's members" means on the group's page.
+    """
+    return select(HostGroupMembership.c.host_id).where(HostGroupMembership.c.group_id == group_id)
 
 
 async def get_sync_success_rate(
@@ -38,6 +48,7 @@ async def get_sync_success_rate(
     since: datetime,
     granularity: Literal["day", "hour"],
     module: str | None = None,
+    group_id: int | None = None,
 ) -> SyncRateSeries:
     """Bucket terminal ``SyncJob`` rows by ``created_at`` and compute success rate.
 
@@ -58,6 +69,8 @@ async def get_sync_success_rate(
     )
     if module is not None:
         query = query.where(SyncJob.module_type == module)
+    if group_id is not None:
+        query = query.where(SyncJob.host_id.in_(_members(group_id)))
     query = query.group_by(bucket).order_by(bucket)
 
     result = await db.execute(query)
@@ -80,6 +93,7 @@ async def get_drift_trend(
     since: datetime,
     granularity: Literal["day", "hour"],
     module: str | None = None,
+    group_id: int | None = None,
 ) -> DriftTrendSeries:
     """Bucket ``DriftSample`` rows by ``checked_at`` into a drift trend series."""
     bucket = func.date_trunc(granularity, DriftSample.checked_at).label("bucket")
@@ -94,6 +108,8 @@ async def get_drift_trend(
     ).where(DriftSample.checked_at >= since)
     if module is not None:
         query = query.where(DriftSample.module_type == module)
+    if group_id is not None:
+        query = query.where(DriftSample.host_id.in_(_members(group_id)))
     query = query.group_by(bucket).order_by(bucket)
 
     result = await db.execute(query)

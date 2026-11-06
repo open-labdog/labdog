@@ -9,6 +9,24 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Added
 
+- **Host and group Overview tabs.** A host's Overview leads with its
+  scheduled runs: a banner when a schedule failed on this host, then every
+  schedule that reaches it, directly or through a group, with this host's
+  own result in its last ten runs, so a *partial* group run reads green on
+  the hosts that were fine. Drift is one line in the host card, and the
+  full fact list is behind **all facts**. Recent activity (runs, syncs,
+  alerts and AI, without the routine checks that worked), the host's
+  alerts, and the layers its config comes from follow; the VM mapping is
+  folded at the foot. A group's Overview gains headline numbers (members,
+  in sync, drifted, failed, sync success over 7 days, next run), a member
+  × module health grid, what members actually get after the merge, 14
+  days of drift and the schedules coming up. Settings, GitOps and a
+  folded danger zone move to a row at the foot. New read endpoints back
+  them: `GET /api/actions/host-runs?host_id=`,
+  `GET /api/groups/{id}/module-status`, a `host_id` filter on alerts and
+  assistant sessions, and a `group_id` filter on the dashboard's
+  sync-success and drift-trend series.
+
 - **Overview leads with scheduled runs.** The Overview's five views now
   show how scheduled runs are doing before anything else. Summary has
   tiles for failed runs, the 7-day success rate, stuck operations and the

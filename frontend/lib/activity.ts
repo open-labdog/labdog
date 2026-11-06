@@ -47,7 +47,7 @@ export interface FeedItem extends Omit<ActivityItem, "kind"> {
   kind: FeedKind
 }
 
-interface SyncJobRow extends SyncJob {
+export interface SyncJobRow extends SyncJob {
   created_at: string
   started_at: string | null
   completed_at: string | null
@@ -80,7 +80,7 @@ export function runStatus(status: string): ActivityStatus {
   return RUN_STATUS[status] ?? "queued"
 }
 
-function jobToItem(j: SyncJobRow, hostname: string): ActivityItem {
+export function jobToItem(j: SyncJobRow, hostname: string): ActivityItem {
   const mods = j.module_filter?.length ? j.module_filter : j.module_type === "bulk" ? null : [j.module_type]
   const what = mods === null ? "all modules" : mods.map(syncModuleLabel).join(", ")
   const status = JOB_STATUS[j.status] ?? "queued"
@@ -214,36 +214,10 @@ export function useFeedExtras(hours: number, refetchInterval = 30_000) {
     const name = new Map((hosts.data ?? []).map((h) => [h.id, h.hostname]))
     const out: FeedItem[] = []
     for (const al of alerts.data ?? []) {
-      if (new Date(al.starts_at).getTime() < cutoff) continue
-      const host = al.host_id != null ? name.get(al.host_id) : undefined
-      const outcome = al.investigation_outcome
-      out.push({
-        id: `alert:${al.id}`,
-        at: al.starts_at,
-        kind: "alert",
-        status: al.status === "firing" ? "running" : "ok",
-        title: `${al.alertname}${host ? ` fired on ${host}` : " fired"}`,
-        detail: `${al.status === "firing" ? "still firing" : `resolved after ${shortSpan(al.starts_at, al.ends_at)}`}${al.severity ? ` · ${al.severity}` : ""}${outcome ? ` · ${outcome.replace(/_/g, " ")}` : ""}`,
-        who: "alert",
-        href: al.investigation_session_id ? `/assistant?session=${al.investigation_session_id}` : "/alerts",
-        hostId: al.host_id,
-      })
+      if (new Date(al.starts_at).getTime() >= cutoff) out.push(alertToItem(al, al.host_id != null ? name.get(al.host_id) : undefined))
     }
     for (const s of sessions.data ?? []) {
-      if (new Date(s.created_at).getTime() < cutoff) continue
-      const status = SESSION_STATUS[s.status] ?? "queued"
-      out.push({
-        id: `ai:${s.id}`,
-        at: s.created_at,
-        kind: "ai",
-        status,
-        title: s.title ?? s.mission.split("\n")[0].slice(0, 120),
-        detail: s.error_message ?? `${s.command_count} command${s.command_count === 1 ? "" : "s"}${s.stopped_reason ? ` · stopped: ${s.stopped_reason}` : ""}`,
-        who: s.investigates_action_run_id ? "system" : "user",
-        href: `/assistant?session=${s.id}`,
-        hostId: s.target_host_ids?.length === 1 ? s.target_host_ids[0] : null,
-        durationMs: durationMs(s),
-      })
+      if (new Date(s.created_at).getTime() >= cutoff) out.push(sessionToItem(s))
     }
     return out
   }, [alerts.data, sessions.data, hosts.data, hours, now])
@@ -251,7 +225,40 @@ export function useFeedExtras(hours: number, refetchInterval = 30_000) {
   return { items, isLoading: alerts.isLoading || sessions.isLoading }
 }
 
-function shortSpan(from: string, to: string | null): string {
+/** An alert in the stream's shape; "running" while it fires. */
+export function alertToItem(al: AlertEvent, host: string | undefined): FeedItem {
+  const outcome = al.investigation_outcome
+  return {
+    id: `alert:${al.id}`,
+    at: al.starts_at,
+    kind: "alert",
+    status: al.status === "firing" ? "running" : "ok",
+    title: `${al.alertname}${host ? ` fired on ${host}` : " fired"}`,
+    detail: `${al.status === "firing" ? "still firing" : `resolved after ${shortSpan(al.starts_at, al.ends_at)}`}${al.severity ? ` · ${al.severity}` : ""}${outcome ? ` · ${outcome.replace(/_/g, " ")}` : ""}`,
+    who: "alert",
+    href: al.investigation_session_id ? `/assistant?session=${al.investigation_session_id}` : "/alerts",
+    hostId: al.host_id,
+  }
+}
+
+/** An assistant session in the stream's shape. */
+export function sessionToItem(s: AISession): FeedItem {
+  const status = SESSION_STATUS[s.status] ?? "queued"
+  return {
+    id: `ai:${s.id}`,
+    at: s.created_at,
+    kind: "ai",
+    status,
+    title: s.title ?? s.mission.split("\n")[0].slice(0, 120),
+    detail: s.error_message ?? `${s.command_count} command${s.command_count === 1 ? "" : "s"}${s.stopped_reason ? ` · stopped: ${s.stopped_reason}` : ""}`,
+    who: s.investigates_action_run_id ? "system" : "user",
+    href: `/assistant?session=${s.id}`,
+    hostId: s.target_host_ids?.length === 1 ? s.target_host_ids[0] : null,
+    durationMs: durationMs(s),
+  }
+}
+
+export function shortSpan(from: string, to: string | null): string {
   if (!to) return "—"
   const m = Math.round((new Date(to).getTime() - new Date(from).getTime()) / 60_000)
   return m < 60 ? `${m}m` : m < 48 * 60 ? `${Math.round(m / 60)}h` : `${Math.round(m / 1440)}d`

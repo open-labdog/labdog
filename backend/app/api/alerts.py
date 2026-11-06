@@ -168,6 +168,7 @@ async def _with_investigation(db: AsyncSession, rows: list[AlertEvent]) -> list[
 async def list_alerts(
     limit: int = 100,
     status: str | None = None,
+    host_id: int | None = None,
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -181,6 +182,8 @@ async def list_alerts(
     stmt = select(AlertEvent).order_by(AlertEvent.created_at.desc()).limit(min(limit, 500))
     if status in ("firing", "resolved"):
         stmt = stmt.where(AlertEvent.status == status)
+    if host_id is not None:
+        stmt = stmt.where(AlertEvent.host_id == host_id)
     result = await db.execute(stmt)
     return await _with_investigation(db, list(result.scalars().all()))
 
