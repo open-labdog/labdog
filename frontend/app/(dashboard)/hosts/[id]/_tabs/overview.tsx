@@ -108,10 +108,10 @@ async function fetchMapping(hostId: number): Promise<VMMapping | null> {
   }
 }
 
-/** Collapsed at the foot of the tab: the mapping itself is a fact line in
- *  the host card, and this is where it is discovered or inspected. */
+/** Under the host card and open: which VM this host is, which is what lets
+ *  a destructive action snapshot it first. */
 function ProxmoxVMSection({ hostId }: { hostId: number }) {
-  const [open, setExpanded] = useState(false)
+  const [open, setExpanded] = useState(true)
   const queryClient = useQueryClient()
 
   const { data: mapping, isLoading, error } = useQuery<VMMapping | null>({
@@ -235,7 +235,8 @@ export type HostTabTarget = "config" | "metrics" | "actions" | "schedules"
  * A host's Overview: how its scheduled work is going first (a banner when
  * its own result in a schedule's newest run failed, then every schedule
  * that reaches it), then the host card, where drift is one line, and what
- * happened on it lately. The VM mapping and automatic fixes sit at the foot.
+ * happened on it lately. The VM mapping sits under the host card; automatic
+ * fixes sit at the foot.
  */
 export function OverviewTab({ hostId, host, groups, goTab }: { hostId: number; host: Host | undefined; groups: HostGroup[] | undefined; goTab: (t: HostTabTarget) => void }) {
   const queryClient = useQueryClient()
@@ -248,7 +249,6 @@ export function OverviewTab({ hostId, host, groups, goTab }: { hostId: number; h
   const runs = useHostRuns(hostId)
   const { data: summaries } = useQuery<GroupSummary[]>({ queryKey: ["groups-summary"], queryFn: () => apiFetch<GroupSummary[]>("/api/groups/summary") })
   const { data: hostSummaries } = useQuery<HostSummary[]>({ queryKey: ["hosts-summary"], queryFn: () => apiFetch<HostSummary[]>("/api/hosts/summary") })
-  const { data: mapping } = useQuery<VMMapping | null>({ queryKey: ["host-vm-mapping", hostId], queryFn: () => fetchMapping(hostId), retry: false })
   const feed = useHostFeed(hostId, host?.hostname ?? "", runs.data, schedules)
   const alerts = useHostAlerts(hostId)
 
@@ -281,46 +281,48 @@ export function OverviewTab({ hostId, host, groups, goTab }: { hostId: number; h
       <ScheduledRunsPanel schedules={reaching} hostId={hostId} hostname={host.hostname} loading={runs.isLoading} onAll={() => goTab("schedules")} />
 
       <div className="grid items-start gap-3 lg:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.1fr)]">
-        <Panel
-          title="host"
-          meta={[host.os_pretty_name ?? "os not collected", host.kernel_version].filter(Boolean).join(" · ")}
-          actions={<button type="button" className="btn btn-sm btn-ghost" onClick={() => goTab("metrics")}>metrics →</button>}
-          pad={11}
-        >
-          <div className="flex flex-col gap-3">
-            <HostMetricsSection hostId={hostId} />
-            <Facts
-              min={150}
-              items={[
-                { k: "address", v: `${host.ip_address}:${host.ssh_port}`, mono: true },
-                { k: "firewall", v: <FirewallBackendTag backend={host.firewall_backend} /> },
-                { k: "proxmox", v: mapping ? `${mapping.pve_node_name} / vmid ${mapping.vmid}` : "not mapped", mono: !!mapping },
-                { k: "last verified", v: host.last_verified_at ? <span title={new Date(host.last_verified_at).toLocaleString()}>{shortAgo(host.last_verified_at)} ago</span> : "never" },
-              ]}
-            />
-            <div className="flex flex-col gap-0.5 text-[11.5px]" data-testid="host-config-line">
-              <span className="tt text-[8.5px]">config</span>
-              <ConfigLine host={host} modules={currentState} onConfig={() => goTab("config")} />
-            </div>
-            <button type="button" className="btn btn-sm btn-ghost self-start" aria-expanded={allFacts} onClick={() => setAllFacts(!allFacts)}>
-              {allFacts ? "fewer facts ▴" : "all facts ▾"}
-            </button>
-            {allFacts && (
+        <div className="flex min-w-0 flex-col gap-3">
+          <Panel
+            title="host"
+            meta={[host.os_pretty_name ?? "os not collected", host.kernel_version].filter(Boolean).join(" · ")}
+            actions={<button type="button" className="btn btn-sm btn-ghost" onClick={() => goTab("metrics")}>metrics →</button>}
+            pad={11}
+          >
+            <div className="flex flex-col gap-3">
+              <HostMetricsSection hostId={hostId} />
               <Facts
+                min={150}
                 items={[
-                  { k: "hostname", v: host.hostname, mono: true },
-                  { k: "management ip", v: host.labdog_source_ip ?? "not yet detected", mono: !!host.labdog_source_ip },
-                  { k: "sync status", v: <Status s={host.sync_status} /> },
-                  { k: "last sync", v: host.last_sync_at ? new Date(host.last_sync_at).toLocaleString() : "never" },
-                  { k: "last drift check", v: host.last_drift_check_at ? new Date(host.last_drift_check_at).toLocaleString() : "never" },
-                  ...(host.kernel_version ? [{ k: "kernel", v: host.kernel_version, mono: true }] : []),
-                  ...(host.default_nic ? [{ k: "default nic", v: host.default_nic, mono: true }] : []),
-                  { k: "drift monitoring", v: <button type="button" className="cursor-pointer border-0 bg-transparent p-0" onClick={toggleDrift}><Tag tone={host.drift_check_enabled ? "ok" : undefined}>{host.drift_check_enabled ? "enabled" : "disabled"}</Tag></button> },
+                  { k: "address", v: `${host.ip_address}:${host.ssh_port}`, mono: true },
+                  { k: "firewall", v: <FirewallBackendTag backend={host.firewall_backend} /> },
+                  { k: "last verified", v: host.last_verified_at ? <span title={new Date(host.last_verified_at).toLocaleString()}>{shortAgo(host.last_verified_at)} ago</span> : "never" },
                 ]}
               />
-            )}
-          </div>
-        </Panel>
+              <div className="flex flex-col gap-0.5 text-[11.5px]" data-testid="host-config-line">
+                <span className="tt text-[8.5px]">config</span>
+                <ConfigLine host={host} modules={currentState} onConfig={() => goTab("config")} />
+              </div>
+              <button type="button" className="btn btn-sm btn-ghost self-start" aria-expanded={allFacts} onClick={() => setAllFacts(!allFacts)}>
+                {allFacts ? "fewer facts ▴" : "all facts ▾"}
+              </button>
+              {allFacts && (
+                <Facts
+                  items={[
+                    { k: "hostname", v: host.hostname, mono: true },
+                    { k: "management ip", v: host.labdog_source_ip ?? "not yet detected", mono: !!host.labdog_source_ip },
+                    { k: "sync status", v: <Status s={host.sync_status} /> },
+                    { k: "last sync", v: host.last_sync_at ? new Date(host.last_sync_at).toLocaleString() : "never" },
+                    { k: "last drift check", v: host.last_drift_check_at ? new Date(host.last_drift_check_at).toLocaleString() : "never" },
+                    ...(host.kernel_version ? [{ k: "kernel", v: host.kernel_version, mono: true }] : []),
+                    ...(host.default_nic ? [{ k: "default nic", v: host.default_nic, mono: true }] : []),
+                    { k: "drift monitoring", v: <button type="button" className="cursor-pointer border-0 bg-transparent p-0" onClick={toggleDrift}><Tag tone={host.drift_check_enabled ? "ok" : undefined}>{host.drift_check_enabled ? "enabled" : "disabled"}</Tag></button> },
+                  ]}
+                />
+              )}
+            </div>
+          </Panel>
+          <ProxmoxVMSection hostId={hostId} />
+        </div>
 
         <div className="flex min-w-0 flex-col gap-3">
           <HostActivityPanel items={feed.items} loading={feed.isLoading || runs.isLoading} onAll={() => goTab("actions")} />
@@ -337,7 +339,6 @@ export function OverviewTab({ hostId, host, groups, goTab }: { hostId: number; h
         </div>
       </div>
 
-      <ProxmoxVMSection hostId={hostId} />
       <AlertsSection hostId={hostId} />
     </div>
   )

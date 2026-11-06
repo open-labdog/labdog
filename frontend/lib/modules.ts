@@ -46,10 +46,10 @@ export type ModuleId =
 
 export const MODULES: ModuleDef[] = [
   { id: "firewall", label: "Firewall", unit: "rules", blurb: "nftables / iptables", groupSegment: "rules", hostTab: "rules", countKey: "firewall", syncModule: "firewall", statusTypes: ["firewall"] },
-  { id: "services", label: "Services", unit: "units", blurb: "systemd state + overrides", groupSegment: "services", hostTab: "services", countKey: "services", syncModule: "services", statusTypes: ["services"] },
+  { id: "services", label: "Services", unit: "units", blurb: "systemd state + overrides", groupSegment: "services", hostTab: "services", countKey: "services", syncModule: "services", statusTypes: ["service", "services"] },
   { id: "hosts-file", label: "Hosts file", unit: "entries", blurb: "/etc/hosts, system entries protected", groupSegment: "hosts-entries", hostTab: "hosts-file", countKey: "hosts_file", syncModule: "hosts-file", statusTypes: ["hosts-file", "hosts_file", "hosts"] },
-  { id: "packages", label: "Packages", unit: "packages", blurb: "apt / dnf / yum", groupSegment: "packages", hostTab: "packages", countKey: "packages", syncModule: "packages", statusTypes: ["packages"] },
-  { id: "users", label: "Users & SSH", unit: "users", blurb: "users, keys, sudo", groupSegment: "users", hostTab: "users", countKey: "users", syncModule: "linux-users", statusTypes: ["linux-users", "linux_users", "users"] },
+  { id: "packages", label: "Packages", unit: "packages", blurb: "apt / dnf / yum", groupSegment: "packages", hostTab: "packages", countKey: "packages", syncModule: "packages", statusTypes: ["package", "packages"] },
+  { id: "users", label: "Users & SSH", unit: "users", blurb: "users, keys, sudo", groupSegment: "users", hostTab: "users", countKey: "users", syncModule: "linux-users", statusTypes: ["linux_user", "linux-users", "linux_users", "users"] },
   { id: "cron", label: "Cron", unit: "jobs", blurb: "declarative schedules", groupSegment: "cron-jobs", hostTab: "cron-jobs", countKey: "cron", syncModule: "cron", statusTypes: ["cron"] },
   { id: "resolver", label: "DNS resolver", unit: "servers", blurb: "resolv.conf / resolved", groupSegment: "resolver", hostTab: "dns", countKey: "resolver", syncModule: "resolver", statusTypes: ["resolver"] },
   { id: "ca-certs", label: "CA certificates", unit: "certs", blurb: "trust store", groupSegment: "ca-certs", hostTab: "ca-certs", countKey: "ca_certs", syncModule: null, statusTypes: ["ca-certs", "ca_certs"] },

@@ -98,19 +98,30 @@ test.describe("Host and group Overview", () => {
     await expect(page.getByTestId("config-layers").getByRole("link", { name: group.name })).toBeVisible()
   })
 
-  test("a group's Overview shows its members' health and keeps delete folded away", async ({ request, page }) => {
+  test("a group's Overview shows its members' health and folds the settings into one bar", async ({ request, page }) => {
     const stamp = Date.now()
     const group = await (await request.post(`${API_BASE}/api/groups`, { data: { name: `e2e-ov-g-${stamp}`, description: null, priority: 32 } })).json()
     const hostname = `e2e-ov-member-${stamp}`
     await request.post(`${API_BASE}/api/hosts`, { data: { hostname, ip_address: "10.0.0.32", ssh_port: 22, group_ids: [group.id] } })
 
+    // No schedule reaches this group; fleet-wide ones from other specs would.
+    await page.route(/\/api\/scheduled-actions\/?(\?.*)?$/, (r) => (r.request().method() === "GET" ? r.fulfill({ json: [] }) : r.fallback()))
     await page.goto(`/groups/${group.id}`)
+    // A member never checked is a problem row, so it shows without "show all".
     await expect(page.getByTestId("health-matrix").getByText(hostname)).toBeVisible()
-    await expect(page.getByTestId("group-settings-row")).toBeVisible()
+    await expect(page.getByTestId("group-numbers")).toContainText("members1")
+    await expect(page.getByTestId("group-runs")).toContainText("Nothing is scheduled on this group")
 
-    // Delete is rare: the danger zone starts folded.
+    // Settings, GitOps and delete are folded into one bar.
+    const bar = page.getByTestId("group-settings-row")
+    await expect(bar).toContainText(`name${group.name}`)
+    await expect(page.getByRole("button", { name: "Save changes" })).toHaveCount(0)
+    await bar.getByRole("button", { name: "edit settings" }).click()
+    await expect(page.getByRole("button", { name: "Save changes" })).toBeVisible()
+
+    // Delete is rarer still: the danger zone inside it starts folded too.
     await expect(page.getByRole("button", { name: "Delete group" })).toHaveCount(0)
-    await page.getByTestId("group-settings-row").getByRole("button", { name: "expand" }).click()
+    await bar.getByRole("button", { name: "expand" }).click()
     await expect(page.getByRole("button", { name: "Delete group" })).toBeVisible()
   })
 })

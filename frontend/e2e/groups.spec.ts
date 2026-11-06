@@ -82,7 +82,8 @@ test.describe("Groups page", () => {
     await expect(page.getByRole("button", { name: "Run action…" })).toBeVisible()
     // Plan sync is the sync entry point; an empty group has nothing to plan.
     await expect(page.getByRole("button", { name: "Plan sync — 0 hosts" })).toBeDisabled()
-    // Delete sits in the danger zone, folded until asked for.
+    // Delete sits in the danger zone inside the settings bar, folded twice.
+    await page.getByRole("button", { name: "edit settings" }).click()
     await page.getByTestId("group-settings-row").getByRole("button", { name: "expand" }).click()
     await expect(page.getByRole("button", { name: "Delete group" })).toBeVisible()
   })
@@ -96,6 +97,9 @@ test.describe("Groups page", () => {
 
     await page.goto(`/groups/${group.id}`)
     await expect(page.getByRole("heading", { name: groupName }).getByText("priority 42")).toBeVisible()
+    // The folded settings bar names it too; the form opens on edit.
+    await expect(page.getByTestId("group-settings-row")).toContainText("priority42")
+    await page.getByRole("button", { name: "edit settings" }).click()
     await expect(page.getByLabel("priority", { exact: true })).toHaveValue("42")
   })
 
@@ -107,6 +111,7 @@ test.describe("Groups page", () => {
     const group = await res.json()
 
     await page.goto(`/groups/${group.id}`)
+    await page.getByRole("button", { name: "edit settings" }).click()
     const save = page.getByRole("button", { name: "Save changes" })
     await expect(save).toBeDisabled()
     await page.getByLabel("description").fill("after")
