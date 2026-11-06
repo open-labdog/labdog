@@ -10,6 +10,7 @@ import { useSyncTray } from "@/lib/sync-tray"
 import { statusDef, ageLabel } from "@/lib/fleet"
 import { MODULES } from "@/lib/modules"
 import { Banner, Confirm, Dot, PageHead, Seg, Status, Tabs } from "@/components/ld"
+import { InvestigateButton } from "@/components/investigate-button"
 import { RunActionButton } from "@/components/run-action-button"
 import { moduleLabel } from "@/components/module-diff-view"
 import type { Host, HostGroup, ModuleCurrentState, ModuleDiff, SSHKey } from "@/lib/types"
@@ -229,6 +230,12 @@ export default function HostDetailPage() {
           host && (
             <>
               <RunActionButton scope="host" targetId={id} targetLabel={host.hostname} host={host} />
+              <InvestigateButton
+                label="Ask AI about this host"
+                subject={{ kind: "host", host_id: id }}
+                about={host.hostname}
+                sends={`${host.hostname}'s status, recent failures, firing alerts and current metrics`}
+              />
               <button type="button" className="btn btn-sm btn-ghost" disabled={refreshing} title="Refresh data for the current tab" onClick={handleRefresh}>
                 {refreshing ? "refreshing…" : "refresh"}
               </button>

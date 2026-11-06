@@ -4,6 +4,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
+import { AISpark } from "@/components/investigate-button"
 import { Confirm } from "@/components/ld"
 import { ApiError, apiFetch } from "@/lib/api"
 import type { ActionHostRun, ActionRun, AIProvider } from "@/lib/types"
@@ -77,7 +78,8 @@ export function InvestigateRunButton({
 
   if (earlier) {
     return (
-      <button type="button" className={`btn btn-sm ${ghost ? "btn-ghost" : ""}`} onClick={() => router.push(`/assistant?session=${earlier.session_id}`)}>
+      <button type="button" className={`btn btn-sm ${ghost ? "btn-ghost" : ""}`} style={{ color: "var(--hold-ink)" }} onClick={() => router.push(`/assistant?session=${earlier.session_id}`)}>
+        <AISpark />
         View investigation →
       </button>
     )
@@ -97,6 +99,7 @@ export function InvestigateRunButton({
         disabled
         title={provider ? `The default AI provider, ${provider.name}, cannot run tools, so it cannot investigate.` : "No AI provider is marked as the default."}
       >
+        <AISpark />
         {label}
       </button>
     )
@@ -106,7 +109,8 @@ export function InvestigateRunButton({
   const where = provider.sends_data_offsite ? `${provider.name}, off your network` : provider.name
   return (
     <>
-      <button type="button" className={`btn btn-sm ${ghost ? "btn-ghost" : ""}`} data-testid="investigate-run" onClick={() => setConfirming(true)}>
+      <button type="button" className={`btn btn-sm ${ghost ? "btn-ghost" : ""}`} data-testid="investigate-run" style={{ color: "var(--hold-ink)" }} onClick={() => setConfirming(true)}>
+        <AISpark />
         {label}
       </button>
       <Confirm

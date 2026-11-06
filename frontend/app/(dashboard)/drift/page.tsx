@@ -10,6 +10,7 @@ import { shortAgo } from "@/lib/fleet"
 import { moduleByAnyName, MODULES, type ModuleDef } from "@/lib/modules"
 import { showError, showSuccess } from "@/lib/toast"
 import type { DriftCoverage, Host, ModuleCurrentState } from "@/lib/types"
+import { InvestigateButton } from "@/components/investigate-button"
 import { Banner, Empty, Filter, PageHead, Panel, Seg, Tag } from "@/components/ld"
 
 interface Finding {
@@ -221,6 +222,14 @@ export default function DriftPage() {
                     <button type="button" className="btn btn-sm btn-ghost" onClick={() => router.push(`/hosts/${f.host.id}${f.mod ? `?tab=${f.mod.hostTab}` : ""}`)}>
                       Inspect
                     </button>
+                    <InvestigateButton
+                      icon
+                      ghost
+                      label={f.sev === "high" ? "Ask AI why it could not be checked" : "Explain this drift with AI"}
+                      subject={{ kind: "drift", host_id: f.host.id, module: f.moduleType === "host" ? null : f.moduleType }}
+                      about={`${f.mod?.label.toLowerCase() ?? "the"} drift on ${f.host.hostname}`}
+                      sends={`what LabDog's last check found on ${f.host.hostname}${f.sev === "high" ? "" : " and what a sync would change"}`}
+                    />
                   </div>
                 </div>
               ))}

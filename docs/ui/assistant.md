@@ -77,6 +77,26 @@ details and the failing parts of its log as the prompt, and opens it
 here. The session's **about** line links back to the run, and the list
 marks it **run**. You can carry on the conversation like any other.
 
+**From anywhere else.** The same violet sparkle button sits where a
+problem shows up:
+
+| Where | What the session is about |
+|-------|---------------------------|
+| Overview › Fleet state › resource hot spots, and a host's Metrics tab | One host's CPU, memory or root disk: its current value, with pointers to the 7-day trend in Mimir and the read-only commands that find the cause |
+| Overview › Pending, stuck lane | An operation running too long: what it is, what waits behind it, its output so far, and whether cancelling is safe |
+| Overview › Pending, drift lane (one drifted host), Drift findings, and the host Overview's config line | Drift on a host, or why its modules could not be checked, with what a sync would change |
+| Host Overview › recent activity, and the Overview's Activity feed | A failed sync: its modules, its error and the failing part of its Ansible log |
+| Host header › **Ask AI about this host** | The host's health: status, failures in the last 7 days, firing alerts and current metrics |
+
+The button sends only what it is about; LabDog writes the prompt from
+its own data. Every session it starts is read-only and scoped to that
+subject's hosts. Pressing it again opens the session already started,
+for as long as it exists for a failed sync or stuck operation, and for a
+day for a condition (a full disk, drift, a host's health) that may have
+a new cause tomorrow. A session that failed, was stopped or archived is
+replaced. Without a tool-capable default provider the button is disabled
+with the reason, and without any provider it is not shown.
+
 Good prompts are specific about the question, not the method:
 
 - *"Check whether any service failed to start after the last reboot on node-1."*

@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState, type ReactNode } from "react"
+import { InvestigateButton } from "@/components/investigate-button"
 import { InvestigateRunButton } from "@/components/investigate-run-button"
 import { Confirm, Dot, Tag, type Tone } from "@/components/ld"
 import { toneVar } from "@/components/ld/tone"
@@ -300,6 +301,24 @@ export function PendRow({ p, go, onDismiss }: { p: PendingItem; go: (href: strin
           {p.open}
         </button>
         {p.run && ff && <InvestigateRunButton run={p.run} hostRun={{ id: ff.host_run_id, host_id: ff.host_id, hostname: ff.hostname }} ghost />}
+        {p.stuck && (
+          <InvestigateButton
+            ghost
+            label="Why is it stuck?"
+            subject={{ kind: "stuck", op: p.stuck.kind, id: p.stuck.id }}
+            about={`the stuck ${p.stuck.kind === "sync" ? "sync" : "run"} on ${p.stuck.hostnames.length === 1 ? p.stuck.hostnames[0] : `${p.stuck.hostnames.length} hosts`}`}
+            sends="what it is, how long it has run, what waits behind it and its output so far"
+          />
+        )}
+        {p.driftHost && (
+          <InvestigateButton
+            ghost
+            label="Explain drift"
+            subject={{ kind: "drift", host_id: p.driftHost.id }}
+            about={`the drift on ${p.driftHost.hostname}`}
+            sends={`what LabDog's last checks found on ${p.driftHost.hostname} and what a sync would change`}
+          />
+        )}
         {p.stuck?.kind === "action" && <CancelRun id={p.stuck.id} label={p.stuck.label} />}
         {p.dismissible && (
           <button type="button" className="btn btn-sm btn-ghost" onClick={() => onDismiss(p.id)} title="Hide from this browser's queue — it stays in history">
@@ -352,6 +371,14 @@ export function FeedRow({ a, go, who }: { a: FeedItem; go: (href: string) => voi
       )}
       <span className="tt shrink-0 text-[9px]">{who ?? WHO[a.who]}</span>
       {a.run && ff && failed && <InvestigateRunButton run={a.run} hostRun={{ id: ff.host_run_id, host_id: ff.host_id, hostname: ff.hostname }} ghost />}
+      {a.kind === "apply" && failed && a.syncJobId != null && (
+        <InvestigateButton
+          ghost
+          subject={{ kind: "sync", sync_job_id: a.syncJobId }}
+          about="this failed sync"
+          sends="the sync's modules, its error and the failing part of its Ansible log"
+        />
+      )}
       {a.href ? (
         <button type="button" className="btn btn-sm btn-ghost" onClick={() => go(a.href!)}>
           open →

@@ -92,7 +92,7 @@ export function MetricsTab({ hostId, host }: { hostId: number; host?: Host }) {
             unreachable from it.
           </Banner>
         )}
-        <MetricMeters data={data} dim={stale} detail />
+        <MetricMeters data={data} dim={stale} detail investigate={host ? { hostId, hostname: host.hostname } : undefined} />
       </>
     )
   }
