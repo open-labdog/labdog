@@ -443,3 +443,75 @@ async def test_preflight_success_proceeds_to_playbook(db, fake_redis):
     run_ansible_mock.assert_called_once()
     hr = (await db.execute(select(ActionHostRun).where(ActionHostRun.id == hr_id))).scalar_one()
     assert hr.status == "succeeded"
+
+
+# ---------------------------------------------------------------------------
+# Dry run
+# ---------------------------------------------------------------------------
+
+
+async def test_a_dry_run_is_check_mode_and_takes_no_snapshot(
+    db, fake_redis, fake_proxmox, fake_verify_pass
+):
+    """A dry run used to set ``ansible_check_mode=True`` as an extra-var.
+    ansible-core overwrites that magic var with the real value, so the
+    playbook ran for real and changed the host. It is ``--check`` now, and
+    because nothing changes, nothing is snapshotted, verified or rolled
+    back either."""
+    from app.actions.validation import DRY_RUN_PARAM
+    from app.tasks.action_host import _run_action_host_async
+
+    run_id, hr_id, _, _ = await _make_destructive_run(db)
+    run = (await db.execute(select(ActionRun).where(ActionRun.id == run_id))).scalar_one()
+    run.parameters = {DRY_RUN_PARAM: True}
+    await db.commit()
+
+    run_ansible_mock = MagicMock(return_value=_runner())
+    verify = MagicMock()
+    with (
+        patch("app.ansible_runtime.runner.run_ansible", run_ansible_mock),
+        patch("app.workflows.steps.verify.run_verification", verify),
+    ):
+        await _run_action_host_async(run_id, hr_id)
+
+    run_ansible_mock.assert_called_once()
+    kwargs = run_ansible_mock.call_args.kwargs
+    assert kwargs["check_mode"] is True
+    assert "ansible_check_mode" not in (kwargs["extra_vars"] or {})
+    assert fake_proxmox.created == []
+    verify.assert_not_called()
+
+
+async def test_a_real_run_is_not_check_mode(db, fake_redis, fake_proxmox, fake_verify_pass):
+    from app.tasks.action_host import _run_action_host_async
+
+    run_id, hr_id, _, _ = await _make_destructive_run(db)
+
+    run_ansible_mock = MagicMock(return_value=_runner())
+    with patch("app.ansible_runtime.runner.run_ansible", run_ansible_mock):
+        await _run_action_host_async(run_id, hr_id)
+
+    assert run_ansible_mock.call_args_list[0].kwargs["check_mode"] is False
+    assert len(fake_proxmox.created) == 1
+
+
+def test_run_ansible_passes_check_to_ansible_runner(tmp_path):
+    """``check_mode`` has to become ``--check`` on the command line; that
+    is the only thing that turns check mode on."""
+    from app.ansible_runtime.runner import run_ansible
+
+    with patch("ansible_runner.run") as run:
+        run_ansible(
+            playbook_yaml="- hosts: all\n  tasks: []\n",
+            inventory_json="{}",
+            private_data_dir=str(tmp_path),
+            check_mode=True,
+        )
+        assert run.call_args.kwargs["cmdline"] == "--check"
+
+        run_ansible(
+            playbook_yaml="- hosts: all\n  tasks: []\n",
+            inventory_json="{}",
+            private_data_dir=str(tmp_path),
+        )
+        assert run.call_args.kwargs["cmdline"] is None

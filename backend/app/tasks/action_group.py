@@ -510,7 +510,18 @@ async def _run_action_group_async(action_run_id: int) -> None:
         # is marked ``failed`` and it is dropped from the inventory before
         # the playbook runs — matching the per-host path's bail-on-snapshot
         # behaviour).
-        if action_destructive and run_snapshot_enabled:
+        # A dry run is ``ansible-playbook --check`` and changes nothing, so
+        # there is nothing to snapshot (and, with no snapshot, verify and
+        # rollback below don't run either).
+        run_is_dry = bool(parameters.get(DRY_RUN_PARAM, False))
+        if run_is_dry:
+            _publish_global(
+                r,
+                channel,
+                "[group] dry run: ansible-playbook --check, no changes are made; "
+                "snapshot skipped\n",
+            )
+        elif action_destructive and run_snapshot_enabled:
             await _snapshot_all(
                 host_ctxs,
                 action_run_id,
@@ -570,9 +581,8 @@ async def _run_action_group_async(action_run_id: int) -> None:
         # through that path. See app/actions/extra_vars.py.
         sanitize_extra_vars(parameters)
         extra_vars: dict | None = dict(parameters) if parameters else None
-        if dry_run:
-            extra_vars = extra_vars or {}
-            extra_vars["ansible_check_mode"] = True
+        # Dry run is ``--check`` via run_ansible, not an extra-var: see
+        # run_ansible's ``check_mode``.
 
         # Per-action floor — see the matching comment in action_host.py.
         timeout = effective_playbook_timeout(action_playbook_timeout)
@@ -584,6 +594,7 @@ async def _run_action_group_async(action_run_id: int) -> None:
             extra_vars=extra_vars,
             timeout=timeout,
             roles_paths=list(action_roles_paths) if action_roles_paths else None,
+            check_mode=bool(dry_run),
         )
 
         playbook_output: str = (

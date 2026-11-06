@@ -58,8 +58,12 @@ There are three ways to start one:
 
 The run dialog picks the **action**, takes its parameters (if any) and,
 for a group, a **parallelism** — *All at once*, or *Rolling* 1, 2 or 5 at a
-time. **Preview (dry-run)** runs the same playbook in check mode — nothing
-on any host changes — and **Run** runs it for real.
+time. **Preview (dry-run)** runs the same playbook with
+`ansible-playbook --check`: tasks report what they would change without
+changing it, and no snapshot is taken because nothing needs rolling back.
+**Run** runs it for real. A task a pack marks `check_mode: false` (a
+read-only probe) runs in a preview too, and a playbook that isn't written
+for check mode can fail in a preview where the real run would succeed.
 
 Either way you land on the run's own screen
 (`/hosts/{id}/actions/runs/{run}`, `/groups/{id}/actions/runs/{run}`, or
@@ -545,8 +549,14 @@ are working examples of every field.
 - **Parameters arrive as top-level Ansible variables** via
   `--extra-vars`. A manifest param with `key: wait_seconds` becomes the
   fact `wait_seconds` in your playbook.
-- **`ansible_check_mode=true`** is set on dry runs — respect it if the
-  action has a dry-run path.
+- **Dry runs are `--check`.** `ansible_check_mode` is true, so modules
+  report instead of changing anything. Mark read-only probes whose output
+  later tasks need `check_mode: false` so they still run in a preview, and
+  guard anything `command`/`shell` would change with
+  `when: not ansible_check_mode`. (Before this was fixed, LabDog passed
+  `ansible_check_mode=True` as an extra-var, which ansible-core ignores, so
+  a "dry run" made real changes. A pack that had worked around that with
+  its own preview parameter can keep it.)
 - **Ansible-normal exit semantics.** A failing task fails the play
   fails the runner fails the action. No custom protocol. If you need
   an explicit assertion:

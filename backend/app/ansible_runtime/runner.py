@@ -58,6 +58,7 @@ def run_ansible(
     envvars: dict | None = None,
     roles_paths: list[Path] | tuple[Path, ...] | None = None,
     event_handler: Callable[[dict[str, Any]], Any] | None = None,
+    check_mode: bool = False,
 ) -> Any:
     """Write playbook + inventory to *private_data_dir* and invoke ansible_runner.
 
@@ -91,6 +92,13 @@ def run_ansible(
             to stream task-by-task output to the live view. Receives the event
             dict (which carries ``stdout``); its return value is ignored here.
             It must not raise — it runs inside ansible-runner's event loop.
+        check_mode: Run with ``ansible-playbook --check``. This is the only
+            way to get check mode: passing ``ansible_check_mode=True`` as an
+            extra-var does nothing, because ansible-core sets that magic var
+            from the play context and the extra-var is overwritten, so the
+            playbook runs for real. A task a pack marks ``check_mode: false``
+            (a read-only probe, say) still runs; everything else reports what
+            it would change without changing it.
 
     Returns:
         The ``ansible_runner.Runner`` object returned by ``ansible_runner.run()``.
@@ -147,5 +155,6 @@ def run_ansible(
         timeout=timeout,
         envvars=merged_env,
         event_handler=event_handler,
+        cmdline="--check" if check_mode else None,
     )
     return runner
