@@ -432,6 +432,13 @@ async def run_verification(
 
     return {
         "passed": overall_passed,
+        # Callers log these, and an empty list passes vacuously, so the
+        # counts go with them: "services_ok=True (0 checked)" reads as the
+        # nothing it is, not as a service that was found running.
+        "services_ok": services_ok,
+        "services_checked": len(service_results),
+        "packages_ok": packages_ok,
+        "packages_checked": len(package_results),
         "hard_checks": hard_checks,
         "ai_result": ai_result,
     }

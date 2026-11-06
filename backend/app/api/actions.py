@@ -16,6 +16,8 @@ from app.actions.validation import DRY_RUN_PARAM, build_param_model
 from app.ai.run_log import FAILURE_WINDOW_SQL, failure_reason
 from app.auth.users import current_active_user
 from app.db import get_db
+from app.grafana.models import GrafanaInstance
+from app.grafana.service import METRICS_DESTINATIONS_PARAM
 from app.models.action_run import ActionHostRun, ActionRun
 from app.models.host import Host
 from app.models.host_group import HostGroup
@@ -192,7 +194,11 @@ async def create_run(
     # "Extra inputs are not permitted". Accepting it from the client here
     # would leave the operator able to set it without asking for a dry run,
     # so it is discarded rather than honoured (BUG-53).
-    submitted = {k: v for k, v in (body.parameters or {}).items() if k != DRY_RUN_PARAM}
+    submitted = {
+        k: v
+        for k, v in (body.parameters or {}).items()
+        if k not in (DRY_RUN_PARAM, METRICS_DESTINATIONS_PARAM)
+    }
     try:
         build_param_model(action).model_validate(submitted)
     except ValidationError as exc:
@@ -201,6 +207,20 @@ async def create_run(
     stored_parameters = dict(submitted)
     if body.dry_run:
         stored_parameters[DRY_RUN_PARAM] = True
+    if body.metrics_destinations:
+        if not action.metrics_backend:
+            raise HTTPException(
+                status_code=422,
+                detail="This action does not ship to a metrics destination.",
+            )
+        for kind, instance_id in body.metrics_destinations.items():
+            inst = await db.get(GrafanaInstance, instance_id)
+            if inst is None or inst.kind != kind:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"No {kind} destination with id {instance_id}.",
+                )
+        stored_parameters[METRICS_DESTINATIONS_PARAM] = dict(body.metrics_destinations)
 
     # Validate that the target host/group actually exists
     if body.host_id is not None:

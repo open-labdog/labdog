@@ -33,7 +33,7 @@ from app.crypto.encryption import decrypt_ssh_key
 from app.crypto.key_management import get_master_key
 from app.grafana.client import PrometheusClient, PrometheusError
 from app.grafana.schemas import derive_query_url
-from app.grafana.service import get_default_instance
+from app.grafana.service import instance_for_query
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +49,24 @@ MAX_SERIES = 25
 DEFAULT_WINDOW_MINUTES = 60
 
 
-async def _client_for(ctx: ToolContext, kind: str) -> PrometheusClient | None:
-    instance = await get_default_instance(ctx.db, kind)
+def _query_host(ctx: ToolContext, args: dict[str, Any]) -> int | None:
+    """The host whose destination a query goes to: the one asked for, else
+    the session's only target, else none (the default instance)."""
+    raw = args.get("host_id")
+    if raw is not None:
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return None
+    if len(ctx.target_host_ids) == 1:
+        return ctx.target_host_ids[0]
+    return None
+
+
+async def _client_for(
+    ctx: ToolContext, kind: str, host_id: int | None = None
+) -> PrometheusClient | None:
+    instance = await instance_for_query(ctx.db, kind, host_id)
     if instance is None:
         return None
     token: str | None = None
@@ -101,6 +117,14 @@ async def _client_for(ctx: ToolContext, kind: str) -> PrometheusClient | None:
                 "type": "integer",
                 "description": f"Maximum log lines to return (capped at {MAX_LINES}).",
             },
+            "host_id": {
+                "type": "integer",
+                "description": (
+                    "LabDog host id whose log destination to query. Hosts can "
+                    "ship to different backends; omit it to use the session's "
+                    "only target host, or else the default instance."
+                ),
+            },
         },
         "required": ["logql"],
         "additionalProperties": False,
@@ -131,10 +155,10 @@ async def _query_loki(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     except (TypeError, ValueError):
         limit = MAX_LINES
 
-    client = await _client_for(ctx, "loki")
+    client = await _client_for(ctx, "loki", _query_host(ctx, args))
     if client is None:
         return ToolResult(
-            "No default Loki instance is registered in LabDog, so logs are "
+            "No Loki instance is registered for this host in LabDog, so logs are "
             "unavailable through this tool. Read them on the host instead, "
             "with a bounded journalctl command.",
             ok=False,

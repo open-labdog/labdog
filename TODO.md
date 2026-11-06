@@ -48,15 +48,24 @@ hold`, otherwise the kubeadm flow is identical.
 ## Grafana metrics — follow-ups
 
 **Context:** 0.4.0 shipped instant CPU/memory/disk on the host page,
-querying the **default** Grafana instance by the `labdog_host_id` label
-that the alloy-install action stamps. A few deliberate deferrals:
+querying by the `labdog_host_id` label that the alloy-install action
+stamps; hosts and groups can now name their own Mimir / Loki
+destinations. A few deliberate deferrals:
 
-- **Per-host metrics backend routing.** Today every host is queried
-  against the single default Grafana instance. Add a nullable
-  `host.metrics_instance_id` FK, set post-run when alloy-install runs
-  against a host with a chosen instance, and query that instead of the
-  default — so different hosts can report to different backends. (Needs
-  a post-run linking hook analogous to `post_run_register`.)
+- **Pass ingest auth and a private CA to the Alloy action.** Per-host
+  destinations pass each host's URL, tenant and TLS-verification flag to
+  alloy-install, but not the instance's bearer token, basic-auth
+  credentials or CA certificate, so a backend that needs any of them for
+  ingest can't be used through the action. Needs: `metrics_backend` vars
+  for auth type / username / secret / CA PEM; the secret passed so it never
+  lands in the run log or the ansible-runner artefacts on disk (extra-vars
+  are written to `env/extravars` in the private data dir, and printed in
+  `-vvv` output), which probably means a file the playbook reads with
+  `no_log` rather than an extra-var; `basic_auth` / `bearer_token` /
+  `tls_config.ca_pem` blocks in the pack's `endpoints.alloy.j2`, with the
+  secret file `0600` owned by the alloy user; and the reachability probe
+  sending the same credentials so a 401 still counts as reachable but a
+  TLS failure against the private CA doesn't.
 - **Loki log surfacing** on the host page (the integration already
   stores the Loki push URL; querying/displaying logs is unbuilt).
 - **More metrics / tuning:** network throughput, per-mount disk, and

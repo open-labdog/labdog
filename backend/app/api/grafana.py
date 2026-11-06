@@ -14,17 +14,27 @@ from app.grafana.client import PrometheusClient, PrometheusError
 from app.grafana.metrics import fetch_fleet_metrics, fetch_host_metrics
 from app.grafana.models import GrafanaInstance
 from app.grafana.schemas import (
+    DestinationAssignment,
+    EffectiveDestination,
     FleetMetrics,
     GrafanaInstanceCreate,
     GrafanaInstanceResponse,
     GrafanaInstanceUpdate,
     GrafanaTestResponse,
+    HostDestinations,
     HostMetrics,
     derive_query_url,
     to_response,
 )
-from app.grafana.service import get_default_instance
+from app.grafana.service import (
+    DESTINATION_KINDS,
+    client_for_instance,
+    instance_in_use,
+    resolve_all_hosts,
+    resolve_host_instance,
+)
 from app.models.host import Host
+from app.models.host_group import HostGroup
 from app.models.user import User
 
 router = APIRouter(prefix="/grafana", tags=["grafana"])
@@ -232,6 +242,19 @@ async def delete_instance(
     inst = await db.get(GrafanaInstance, instance_id)
     if not inst:
         raise HTTPException(status_code=404, detail="Grafana instance not found")
+    users = await instance_in_use(db, instance_id)
+    if users:
+        # Falling back to the default would point the host page at a
+        # backend these hosts aren't shipping to, so make the operator
+        # reassign them first.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{inst.name} is still the metrics destination of "
+                + ", ".join(users)
+                + ". Assign them another destination first."
+            ),
+        )
     was_default = inst.is_default
     kind = inst.kind
     await log_action(
@@ -307,25 +330,13 @@ async def test_draft_instance(
 # ---------------------------------------------------------------------------
 
 
-async def _mimir_client(db: AsyncSession) -> PrometheusClient | str:
-    """A client for the default Mimir instance, or why there is none:
-    ``no_default`` when instances exist but none is marked default,
-    ``no_instance`` when there are none."""
-    inst = await get_default_instance(db, "mimir")
-    if inst is None:
-        registered = await db.scalar(
-            select(func.count()).select_from(GrafanaInstance).where(GrafanaInstance.kind == "mimir")
-        )
-        return "no_default" if registered else "no_instance"
-    return PrometheusClient(
-        query_url=derive_query_url(inst.url, inst.kind),
-        org_id=inst.org_id,
-        token=await _decrypt_token(inst),
-        verify_ssl=inst.verify_ssl,
-        ca_cert_pem=inst.ca_cert_pem,
-        auth_type=inst.auth_type,
-        username=inst.username,
+async def _unconfigured_reason(db: AsyncSession) -> str:
+    """Why there is no Mimir to query: ``no_default`` when instances exist
+    but none is marked default, ``no_instance`` when there are none."""
+    registered = await db.scalar(
+        select(func.count()).select_from(GrafanaInstance).where(GrafanaInstance.kind == "mimir")
     )
+    return "no_default" if registered else "no_instance"
 
 
 @router.get("/fleet/metrics", response_model=FleetMetrics)
@@ -335,18 +346,43 @@ async def get_fleet_metrics(
 ):
     """Instant CPU, memory and root-disk use for every host, in three
     queries — the Overview's resource hot spots."""
-    client = await _mimir_client(db)
-    if isinstance(client, str):
-        return FleetMetrics(configured=False, unconfigured_reason=client)
+    # Each host is read from the Mimir it ships to (see
+    # resolve_host_instance), so hosts on different destinations need one
+    # set of queries per destination. A host's series are only taken from
+    # its own destination: if it once shipped elsewhere, stale data there
+    # must not stand in for it.
     hostnames = dict((await db.execute(select(Host.id, Host.hostname))).tuples().all())
-    try:
-        rows, sampled = await fetch_fleet_metrics(client, hostnames)
-    except PrometheusError as exc:
-        return FleetMetrics(configured=True, error=str(exc))
+    by_host = await resolve_all_hosts(db, "mimir")
+    by_instance: dict[int, dict[int, str]] = {}
+    for host_id, instance_id in by_host.items():
+        if instance_id is not None and host_id in hostnames:
+            by_instance.setdefault(instance_id, {})[host_id] = hostnames[host_id]
+    if not by_instance:
+        return FleetMetrics(configured=False, unconfigured_reason=await _unconfigured_reason(db))
+
+    rows = []
+    stamps: list[float] = []
+    errors: list[str] = []
+    for instance_id, names in sorted(by_instance.items()):
+        inst = await db.get(GrafanaInstance, instance_id)
+        if inst is None:
+            continue
+        try:
+            part, sampled = await fetch_fleet_metrics(client_for_instance(inst), names)
+        except PrometheusError as exc:
+            errors.append(f"{inst.name}: {exc}" if len(by_instance) > 1 else str(exc))
+            continue
+        rows.extend(part)
+        if sampled is not None:
+            stamps.append(sampled)
+    if errors and not rows:
+        return FleetMetrics(configured=True, error="; ".join(errors))
+    rows.sort(key=lambda r: r.hostname)
     return FleetMetrics(
         configured=True,
-        sampled_at=datetime.fromtimestamp(sampled, tz=UTC) if sampled is not None else None,
+        sampled_at=datetime.fromtimestamp(max(stamps), tz=UTC) if stamps else None,
         hosts=rows,
+        error="; ".join(errors) or None,
     )
 
 
@@ -360,10 +396,142 @@ async def get_host_metrics(
     if not host:
         raise HTTPException(status_code=404, detail="Host not found")
 
-    client = await _mimir_client(db)
-    if isinstance(client, str):
-        return HostMetrics(configured=False, unconfigured_reason=client)
+    resolved = await resolve_host_instance(db, host_id, "mimir")
+    if resolved.instance is None:
+        return HostMetrics(configured=False, unconfigured_reason=await _unconfigured_reason(db))
     try:
-        return await fetch_host_metrics(client, host_id)
+        return await fetch_host_metrics(client_for_instance(resolved.instance), host_id)
     except PrometheusError as exc:
         return HostMetrics(configured=True, error=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# Per-host / per-group destinations
+# ---------------------------------------------------------------------------
+
+
+async def _check_assignment(db: AsyncSession, body: DestinationAssignment) -> None:
+    for kind in DESTINATION_KINDS:
+        instance_id = getattr(body, f"{kind}_instance_id")
+        if instance_id is None:
+            continue
+        inst = await db.get(GrafanaInstance, instance_id)
+        if inst is None or inst.kind != kind:
+            raise HTTPException(
+                status_code=422, detail=f"No {kind} destination with id {instance_id}."
+            )
+
+
+async def _host_destinations(db: AsyncSession, host: Host) -> HostDestinations:
+    effective: dict[str, EffectiveDestination] = {}
+    for kind in DESTINATION_KINDS:
+        r = await resolve_host_instance(db, host.id, kind)
+        effective[kind] = EffectiveDestination(
+            instance_id=r.instance.id if r.instance else None,
+            instance_name=r.instance.name if r.instance else None,
+            url=r.instance.url if r.instance else None,
+            source=r.source,
+            group_id=r.group_id,
+            group_name=r.group_name,
+        )
+    return HostDestinations(
+        assigned=DestinationAssignment(
+            mimir_instance_id=host.mimir_instance_id, loki_instance_id=host.loki_instance_id
+        ),
+        effective=effective,
+    )
+
+
+@router.get("/destinations/hosts/{host_id}", response_model=HostDestinations)
+async def get_host_destinations(
+    host_id: int,
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """The Mimir and Loki instances this host names, and where its data
+    actually goes once groups and the default are taken into account."""
+    host = await db.get(Host, host_id)
+    if not host:
+        raise HTTPException(status_code=404, detail="Host not found")
+    return await _host_destinations(db, host)
+
+
+@router.put("/destinations/hosts/{host_id}", response_model=HostDestinations)
+async def set_host_destinations(
+    host_id: int,
+    body: DestinationAssignment,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set (or clear, with null) this host's own destinations. Takes effect
+    on the host page at once, and on the host itself the next time an
+    action that ships metrics (alloy-install) runs on it."""
+    host = await db.get(Host, host_id)
+    if not host:
+        raise HTTPException(status_code=404, detail="Host not found")
+    await _check_assignment(db, body)
+    before = {
+        "mimir_instance_id": host.mimir_instance_id,
+        "loki_instance_id": host.loki_instance_id,
+    }
+    host.mimir_instance_id = body.mimir_instance_id
+    host.loki_instance_id = body.loki_instance_id
+    await log_action(
+        db=db,
+        action="update",
+        entity_type="host_metrics_destinations",
+        entity_id=host.id,
+        user_id=user.id,
+        before_state=before,
+        after_state=body.model_dump(),
+    )
+    await db.commit()
+    await db.refresh(host)
+    return await _host_destinations(db, host)
+
+
+@router.get("/destinations/groups/{group_id}", response_model=DestinationAssignment)
+async def get_group_destinations(
+    group_id: int,
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    group = await db.get(HostGroup, group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    return DestinationAssignment(
+        mimir_instance_id=group.mimir_instance_id, loki_instance_id=group.loki_instance_id
+    )
+
+
+@router.put("/destinations/groups/{group_id}", response_model=DestinationAssignment)
+async def set_group_destinations(
+    group_id: int,
+    body: DestinationAssignment,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set (or clear) the destinations for member hosts that don't name
+    their own. When a host is in several groups that set one, the
+    highest-priority group wins."""
+    group = await db.get(HostGroup, group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    await _check_assignment(db, body)
+    before = {
+        "mimir_instance_id": group.mimir_instance_id,
+        "loki_instance_id": group.loki_instance_id,
+    }
+    group.mimir_instance_id = body.mimir_instance_id
+    group.loki_instance_id = body.loki_instance_id
+    await log_action(
+        db=db,
+        action="update",
+        entity_type="group_metrics_destinations",
+        entity_id=group.id,
+        user_id=user.id,
+        before_state=before,
+        after_state=body.model_dump(),
+    )
+    await db.commit()
+    return body

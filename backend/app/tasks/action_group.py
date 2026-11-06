@@ -295,6 +295,7 @@ async def _run_action_group_async(action_run_id: int) -> None:
     from app.config import settings
     from app.crypto import decrypt_ssh_key, get_master_key
     from app.db import task_session
+    from app.grafana.service import METRICS_DESTINATIONS_PARAM
     from app.models.action_run import ActionHostRun, ActionRun
     from app.models.host import Host, HostGroupMembership
     from app.models.ssh_key import SSHKey
@@ -569,6 +570,10 @@ async def _run_action_group_async(action_run_id: int) -> None:
         )
 
         dry_run = parameters.pop(DRY_RUN_PARAM, False)
+        # Group dispatch doesn't inject metrics destinations (no manifest
+        # that declares ``metrics_backend`` is group-only today), but the
+        # reserved key must not reach the playbook as an extra-var.
+        parameters.pop(METRICS_DESTINATIONS_PARAM, None)
         # Fail closed before these become extra-vars. Ansible evaluates
         # extra-vars on the controller — the LabDog host — not on the
         # target, so a template expression here is code execution here.
@@ -1170,7 +1175,9 @@ async def _verify_all(
                 ctx.step_log.append(
                     f"[verify] passed={ctx.verify_passed} "
                     f"services_ok={verify_result.get('services_ok')} "
-                    f"packages_ok={verify_result.get('packages_ok')}"
+                    f"({verify_result.get('services_checked', 0)} checked) "
+                    f"packages_ok={verify_result.get('packages_ok')} "
+                    f"({verify_result.get('packages_checked', 0)} checked)"
                 )
                 if ai_result := verify_result.get("ai_result"):
                     # Logged apart from `passed` because the two can

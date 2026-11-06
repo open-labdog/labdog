@@ -32,13 +32,16 @@ class ManifestParameter(BaseModel):
 
 
 class MetricsBackendMapping(BaseModel):
-    """Maps LabDog's default Grafana instance onto a pack's playbook vars.
+    """Maps a host's Grafana destinations onto a pack's playbook vars.
 
-    When present, the action-dispatch layer fills these extra-vars from the
-    registered default Grafana instance (unless the operator supplied them),
-    so e.g. labdog-playbooks' alloy-install action ships to the same backend
-    LabDog queries — without the operator re-typing URLs. Keeping the var
-    *names* in the manifest means LabDog core never hardcodes ``alloy_*``.
+    When present, the action-dispatch layer fills these extra-vars per host
+    from the Mimir and Loki instances that host resolves to (its own
+    assignment, else its highest-priority group's, else the default; see
+    ``app.grafana.service.resolve_host_instance``), so e.g.
+    labdog-playbooks' alloy-install action ships to the same backend LabDog
+    queries for that host, without the operator re-typing URLs. Keeping the
+    var *names* in the manifest means LabDog core never hardcodes
+    ``alloy_*``.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -49,6 +52,13 @@ class MetricsBackendMapping(BaseModel):
     loki_push_var: str | None = None
     #: Playbook var to receive the Mimir tenant (X-Scope-OrgID).
     org_id_var: str | None = None
+    #: Playbook var to receive the Loki tenant (X-Scope-OrgID), taken from
+    #: the Loki instance's ``org_id``. Omitted when the instance has none.
+    loki_tenant_var: str | None = None
+    #: Playbook vars to receive ``true`` when the Mimir / Loki instance has
+    #: TLS verification turned off (``verify_ssl = false``), else ``false``.
+    prometheus_tls_skip_verify_var: str | None = None
+    loki_tls_skip_verify_var: str | None = None
 
 
 class ActionManifest(BaseModel):
@@ -141,9 +151,10 @@ class ActionManifest(BaseModel):
     metrics_backend: MetricsBackendMapping | None = Field(
         default=None,
         description=(
-            "Opt-in mapping that lets LabDog inject its registered default "
-            "Grafana instance's URLs into this action's playbook vars at "
-            "dispatch (e.g. labdog-playbooks' alloy-install action). LabDog also "
+            "Opt-in mapping that lets LabDog inject each host's Grafana "
+            "destinations (URLs, tenants, TLS verification) into this action's "
+            "playbook vars at dispatch (e.g. labdog-playbooks' alloy-install "
+            "action). LabDog also "
             "always injects labdog_host_id / labdog_hostname for per-host "
             "runs so shipped metrics are queryable back."
         ),

@@ -195,3 +195,33 @@ class FleetMetrics(BaseModel):
     sampled_at: datetime | None = None
     hosts: list[FleetHostMetrics] = []
     error: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Per-host / per-group destinations
+# ---------------------------------------------------------------------------
+
+
+class DestinationAssignment(BaseModel):
+    """The Mimir and Loki instances a host or group names. ``None`` means
+    "inherit" (a group, then the default)."""
+
+    mimir_instance_id: int | None = None
+    loki_instance_id: int | None = None
+
+
+class EffectiveDestination(BaseModel):
+    """Where a host's data actually goes for one kind, and why."""
+
+    instance_id: int | None = None
+    instance_name: str | None = None
+    url: str | None = None
+    #: ``host``, ``group`` or ``default``.
+    source: str
+    group_id: int | None = None
+    group_name: str | None = None
+
+
+class HostDestinations(BaseModel):
+    assigned: DestinationAssignment
+    effective: dict[Kind, EffectiveDestination]

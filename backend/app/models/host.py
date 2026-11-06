@@ -90,6 +90,16 @@ class Host(Base):
     #: merge maps it to 127.0.1.1 (BUG-115).
     reported_hostname: Mapped[str | None] = mapped_column(String(255), nullable=True)
     ssh_host_key_entry: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    #: Where this host's Alloy ships metrics and logs, when it differs from
+    #: its groups' choice or the default destination. NULL means "inherit":
+    #: the highest-priority group that sets one, else the default instance.
+    #: See ``app.grafana.service.resolve_host_instance``.
+    mimir_instance_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("grafana_instances.id"), nullable=True, default=None
+    )
+    loki_instance_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("grafana_instances.id"), nullable=True, default=None
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),

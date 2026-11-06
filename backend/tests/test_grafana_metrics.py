@@ -90,11 +90,12 @@ async def test_host_metrics_says_why_it_is_not_configured(monkeypatch, registere
     page, exactly like none registered; the endpoint tells them apart so
     the page can ask for the right fix."""
     from app.api import grafana as api
+    from app.grafana.service import ResolvedDestination
 
-    async def _no_default(_db, _kind):
-        return None
+    async def _no_default(_db, _host_id, _kind):
+        return ResolvedDestination(None, "default")
 
-    monkeypatch.setattr(api, "get_default_instance", _no_default)
+    monkeypatch.setattr(api, "resolve_host_instance", _no_default)
     db = _FakeDB(registered)
 
     hm = await api.get_host_metrics(7, object(), db)  # type: ignore[arg-type]
