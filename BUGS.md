@@ -33,7 +33,7 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-124`, `SEC-38`,
+ID counter as of last housekeeping pass: `BUG-125`, `SEC-38`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry.
 
@@ -75,6 +75,46 @@ content policy.
       so it is not re-discovered as new, not because it needs changing.
 
 ---
+
+## Open — 2026-11-07 gitlab-upgrade
+
+Filed 2026-11-07 from the first dry run of the private `gitlab-upgrade`
+pack action on lin-manager (LabDog 1.1.0), action run 376.
+
+### Correctness — Medium
+
+- [ ] **BUG-125** `frontend/components/action-parameter-form.tsx:104-106`,
+      `frontend/components/action-run-dialog.tsx:129` — a parameter field
+      that was typed in and then cleared sends `""` (or `0` for an int)
+      instead of the manifest default
+
+      Symptom: run 376 stored `"gitlab_url": ""` for a parameter whose
+      manifest default is `https://localhost`. The playbook refused the
+      value at its input check. Every other parameter in the run carried
+      its default.
+
+      Root cause: a text or int field shows the default only as its
+      placeholder, so an untouched field and an emptied one look the same.
+      `handleSubmit` substitutes the default only when the key is
+      `undefined` in the form state. Typing in a field sets the key, and
+      clearing it leaves `""`, which is sent as is. An int field is worse:
+      its `onChange` stores `Number("")`, which is `0`, so a cleared
+      `health_timeout` silently runs with 0 instead of failing. The API
+      applies the default only to a missing key too
+      (`backend/app/actions/validation.py` `_annotation_for`), and as an
+      extra-var the value overrides the playbook's own default.
+
+      Fix direction: treat an empty text or int field as unset (delete the
+      key, or map `""` to the default in `handleSubmit`), or prefill the
+      field with the default so what is shown is what runs. Check the
+      schedule and alert-action dialogs, which share
+      `ActionParameterForm`.
+
+      Workaround: type the value in full. Packs can also map an empty
+      value to their default, as `gitlab-upgrade` now does.
+
+      Severity Medium: a run silently goes out with a value nobody chose,
+      and for an int parameter nothing refuses it.
 
 ## Open — 2026-10-29 valheim
 
