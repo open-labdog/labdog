@@ -33,7 +33,7 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-124`, `SEC-38`,
+ID counter as of last housekeeping pass: `BUG-126`, `SEC-38`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry.
 
@@ -75,6 +75,90 @@ content policy.
       so it is not re-discovered as new, not because it needs changing.
 
 ---
+
+## Open — 2026-11-07 gitlab-upgrade
+
+Filed 2026-11-07 from the first dry runs of the private `gitlab-upgrade`
+pack action on lin-manager (LabDog 1.1.0), action runs 376 and 377.
+
+### Correctness — High
+
+- [ ] **BUG-126** `backend/app/main.py:979` (`_substitute_placeholders`) —
+      a run page opened under a host or group swaps the two ids, so it
+      loads the wrong run and stays on "Loading…"
+
+      Symptom: starting `gitlab-upgrade` on host 7 navigated to
+      `/hosts/7/actions/runs/377/`, and the page showed "Loading…" in the
+      title and the log for good. The same run opened from Runs
+      (`/actions/runs/377/`) was fine. The served flight data for the
+      host route has `{"n":"runId","t":"d","k":"7"}` and
+      `{"n":"id","t":"d","k":"377"}`: the page asks for
+      `/api/actions/runs/7`, which does not exist, and the query refetches
+      the 404 every 2 s, so it never leaves "Loading…". Reproduce with
+      `curl -s https://<labdog>/hosts/7/actions/runs/377/index.txt`.
+
+      Root cause: the BUG-76 rewrite recognises a route-param tuple only in
+      the old `["id","placeholder","d",null]` shape. The current Next
+      export writes each dynamic segment as
+      `{"n":"<name>","t":"d","k":"placeholder",…}`, which only the
+      plain path-element pattern matches. That pattern hands out values in
+      the order the occurrences appear in the file, and the segment objects
+      come runId first, so the two values are swapped and the path array,
+      which comes later, keeps both placeholders (no values left). A route
+      with one segment gets the right value by luck. Affected:
+      `hosts/[id]/actions/runs/[runId]` and
+      `groups/[id]/actions/runs/[runId]`, reached from the run dialog's
+      redirect, the host and group overview run lists, the actions tab and
+      the scheduled-run history. `tests/test_spa_fallback.py` passes because
+      its fixtures are hand-written in the old shape, not taken from a real
+      export.
+
+      Fix direction: substitute segment objects by name (`n`), with the
+      names taken from the route's directory names in the source tree or a
+      build-time map, rather than by position, and add the `{"n":…}`
+      shape to the pattern. Test against a real `next build` export of a
+      two-segment route.
+
+      Workaround: open the run from Runs (`/actions/runs/<id>`).
+
+      Severity High: every run started from a host or group page, and
+      every run opened from one, shows nothing, or another run's log
+      when a run with the host's id exists.
+
+### Correctness — Medium
+
+- [ ] **BUG-125** `frontend/components/action-parameter-form.tsx:104-106`,
+      `frontend/components/action-run-dialog.tsx:129` — a parameter field
+      that was typed in and then cleared sends `""` (or `0` for an int)
+      instead of the manifest default
+
+      Symptom: run 376 stored `"gitlab_url": ""` for a parameter whose
+      manifest default is `https://localhost`. The playbook refused the
+      value at its input check. Every other parameter in the run carried
+      its default.
+
+      Root cause: a text or int field shows the default only as its
+      placeholder, so an untouched field and an emptied one look the same.
+      `handleSubmit` substitutes the default only when the key is
+      `undefined` in the form state. Typing in a field sets the key, and
+      clearing it leaves `""`, which is sent as is. An int field is worse:
+      its `onChange` stores `Number("")`, which is `0`, so a cleared
+      `health_timeout` silently runs with 0 instead of failing. The API
+      applies the default only to a missing key too
+      (`backend/app/actions/validation.py` `_annotation_for`), and as an
+      extra-var the value overrides the playbook's own default.
+
+      Fix direction: treat an empty text or int field as unset (delete the
+      key, or map `""` to the default in `handleSubmit`), or prefill the
+      field with the default so what is shown is what runs. Check the
+      schedule and alert-action dialogs, which share
+      `ActionParameterForm`.
+
+      Workaround: type the value in full. Packs can also map an empty
+      value to their default, as `gitlab-upgrade` now does.
+
+      Severity Medium: a run silently goes out with a value nobody chose,
+      and for an int parameter nothing refuses it.
 
 ## Open — 2026-10-29 valheim
 
