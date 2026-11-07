@@ -149,6 +149,16 @@ them. Pressing the button again opens the same session, unless that one
 failed or was stopped. The run's head links to every session started
 from it.
 
+**Re-run…** in a finished run's head opens the run dialog again on the
+same host or group, filled in with that run's parameters and, for a group,
+its parallelism. Change anything before clicking **Run** or **Preview**;
+the new run gets its own screen and the old one is left as it was. When
+the action's manifest has changed since, the dialog says so and leaves out
+any parameter the action no longer takes. The button is disabled for a
+fleet run (run its schedule again from
+[Scheduled actions](#scheduled-actions)), for a run whose host or group
+was deleted, and for an action no pack supplies any more.
+
 A multi-host run survives LabDog restarting in the middle of it — which
 upgrading Docker on LabDog's own host will do. Within about ten minutes
 LabDog notices that nothing is handing out the run's hosts any more and
