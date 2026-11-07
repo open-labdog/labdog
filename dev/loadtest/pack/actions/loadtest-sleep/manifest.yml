@@ -1,0 +1,16 @@
+key: loadtest-sleep
+name: Load test sleep
+description: Gathers facts, sleeps, writes a marker file under /tmp.
+icon: Zap
+playbook: playbook.yml
+version: "1.0"
+estimated_duration: "30 seconds"
+destructive: false
+supports_group: true
+supports_host: true
+parameters:
+  - key: duration
+    label: Sleep seconds
+    type: int
+    required: false
+    default: 30

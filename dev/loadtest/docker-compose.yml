@@ -1,0 +1,85 @@
+# Load-test stack. Never point this at a live install or real hosts.
+# See README.md. LabDog runs the published image of the code under test.
+name: labdog-loadtest
+
+x-fakehost-log: &small-log
+  driver: json-file
+  options: { max-size: "1m", max-file: "1" }
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: labdog
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run ./prepare.sh first}
+      POSTGRES_DB: labdog
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U labdog"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [loadtest]
+
+  redis:
+    image: redis:8-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [loadtest]
+
+  labdog:
+    container_name: labdog-loadtest
+    image: ${LABDOG_IMAGE:-openlabdog/labdog:dev-5cb85d7}
+    environment:
+      LABDOG_DATABASE__URL: postgresql+asyncpg://labdog:${POSTGRES_PASSWORD}@postgres:5432/labdog
+      LABDOG_REDIS__URL: redis://redis:6379/0
+      LABDOG_SECURITY__SECRET_KEY: ${LABDOG_SECURITY__SECRET_KEY:?run ./prepare.sh first}
+      LABDOG_SECURITY__ENCRYPTION_KEY: ${LABDOG_SECURITY__ENCRYPTION_KEY:?run ./prepare.sh first}
+      LABDOG_SECURITY__COOKIE_SECURE: "false"
+      LABDOG_RATE_LIMIT__ENABLED: "false"
+      LABDOG_CELERY__CONCURRENCY: ${CELERY_CONCURRENCY:-4}
+      LABDOG_CELERY__ORCHESTRATOR_CONCURRENCY: ${ORCHESTRATOR_CONCURRENCY:-4}
+    volumes:
+      - ./pack:/srv/loadtest-pack:ro
+      # The image ships no ansible.posix, which linux-user sync needs (see
+      # README). prepare.sh fetches it; LabDog's own code stays untouched.
+      - ./.state/collections:/usr/share/ansible/collections:ro
+    # Loopback only: the stack has throwaway credentials.
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    logging:
+      driver: json-file
+      options: { max-size: "50m", max-file: "2" }
+    networks: [loadtest]
+
+  fakehost:
+    image: labdog-loadtest-fakehost:latest
+    build:
+      context: .
+      dockerfile: fakehost/Dockerfile
+    environment:
+      NETEM_DELAY_MS: ${NETEM_DELAY_MS:-20}
+    mem_limit: ${FAKEHOST_MEM_LIMIT:-128m}
+    # NET_ADMIN for netem. SYS_ADMIN + unconfined AppArmor so the entrypoint
+    # can drop Docker's bind mounts over /etc/hosts and /etc/resolv.conf,
+    # which Ansible's atomic rename cannot replace.
+    cap_add: [NET_ADMIN, SYS_ADMIN]
+    security_opt: ["apparmor=unconfined"]
+    logging: *small-log
+    networks: [loadtest]
+
+networks:
+  loadtest:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16
+
+volumes:
+  postgres_data:

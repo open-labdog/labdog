@@ -1,0 +1,16 @@
+---
+- name: Load test sleep
+  hosts: all
+  become: false
+  gather_facts: true
+  vars:
+    duration: 30
+  tasks:
+    - name: Sleep
+      ansible.builtin.command: "sleep {{ duration }}"
+      changed_when: false
+    - name: Write marker
+      ansible.builtin.copy:
+        content: "{{ ansible_date_time.iso8601 }}\n"
+        dest: /tmp/loadtest-sleep.marker
+        mode: "0644"
