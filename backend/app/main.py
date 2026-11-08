@@ -1119,9 +1119,59 @@ def _rewrite_placeholder(
     if not all(_SAFE_DYNAMIC_SEGMENT.fullmatch(v) for v in dynamic_values):
         return None
     content = Path(file_path).read_text(encoding="utf-8")
+    names = _route_param_names(Path(file_path).parent)
+    if len(names) == len(dynamic_values):
+        by_name = dict(zip(names, dynamic_values, strict=True))
+        content = _substitute_named_segments(content, by_name, '\\"')
+        content = _substitute_named_segments(content, by_name, '"')
     content = _substitute_placeholders(content, dynamic_values, '\\"')
     content = _substitute_placeholders(content, dynamic_values, '"')
     return content
+
+
+#: The segment-data file Next writes next to each exported page, named after
+#: the route with each dynamic segment as ``$d$<param name>``, e.g.
+#: ``__next.!KGRhc2hib2FyZCk.hosts.$d$id.actions.runs.$d$runId.__PAGE__.txt``.
+_PAGE_SEGMENT_FILE = "__next.*.__PAGE__.txt"
+_PARAM_IN_FILENAME = re.compile(r"\$d\$(\w+)")
+
+
+@lru_cache(maxsize=256)
+def _route_param_names(page_dir: Path) -> tuple[str, ...]:
+    """The route's dynamic parameter names, in path order (BUG-126).
+
+    Read from the segment-data file name the export writes next to the page.
+    Empty when there is no such file (an older export), in which case only
+    the positional shapes are rewritten.
+    """
+    for candidate in sorted(page_dir.glob(_PAGE_SEGMENT_FILE)):
+        names = tuple(_PARAM_IN_FILENAME.findall(candidate.name))
+        if names:
+            return names
+    return ()
+
+
+def _substitute_named_segments(content: str, by_name: dict[str, str], quote: str) -> str:
+    """Replace each ``{"n":"<name>","t":"d","k":"placeholder"`` by name.
+
+    BUG-126. Current Next exports describe each dynamic segment as an
+    object carrying its parameter name. Those objects appear innermost
+    first (``runId`` before ``id``), so the positional pass below handed
+    them out in the wrong order: ``/hosts/7/actions/runs/377/`` asked the
+    API for run 7. Keyed by name, the order no longer matters. Runs before
+    :func:`_substitute_placeholders`, whose path-element pattern would
+    otherwise consume these occurrences too.
+    """
+    q = re.escape(quote)
+    pattern = re.compile(rf"({q}n{q}:{q}(\w+){q},{q}t{q}:{q}d{q},{q}k{q}:{q})placeholder({q})")
+
+    def repl(match: re.Match[str]) -> str:
+        value = by_name.get(match.group(2))
+        if value is None:
+            return match.group(0)
+        return f"{match.group(1)}{value}{match.group(3)}"
+
+    return pattern.sub(repl, content)
 
 
 def _resolve_dynamic_route(static_dir: Path, full_path: str) -> tuple[Path, tuple[str, ...]] | None:

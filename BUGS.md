@@ -358,50 +358,6 @@ content policy.
 Filed 2026-11-07 from the first dry runs of the private `gitlab-upgrade`
 pack action on lin-manager (LabDog 1.1.0), action runs 376 and 377.
 
-### Correctness — High
-
-- [ ] **BUG-126** `backend/app/main.py:979` (`_substitute_placeholders`) —
-      a run page opened under a host or group swaps the two ids, so it
-      loads the wrong run and stays on "Loading…"
-
-      Symptom: starting `gitlab-upgrade` on host 7 navigated to
-      `/hosts/7/actions/runs/377/`, and the page showed "Loading…" in the
-      title and the log for good. The same run opened from Runs
-      (`/actions/runs/377/`) was fine. The served flight data for the
-      host route has `{"n":"runId","t":"d","k":"7"}` and
-      `{"n":"id","t":"d","k":"377"}`: the page asks for
-      `/api/actions/runs/7`, which does not exist, and the query refetches
-      the 404 every 2 s, so it never leaves "Loading…". Reproduce with
-      `curl -s https://<labdog>/hosts/7/actions/runs/377/index.txt`.
-
-      Root cause: the BUG-76 rewrite recognises a route-param tuple only in
-      the old `["id","placeholder","d",null]` shape. The current Next
-      export writes each dynamic segment as
-      `{"n":"<name>","t":"d","k":"placeholder",…}`, which only the
-      plain path-element pattern matches. That pattern hands out values in
-      the order the occurrences appear in the file, and the segment objects
-      come runId first, so the two values are swapped and the path array,
-      which comes later, keeps both placeholders (no values left). A route
-      with one segment gets the right value by luck. Affected:
-      `hosts/[id]/actions/runs/[runId]` and
-      `groups/[id]/actions/runs/[runId]`, reached from the run dialog's
-      redirect, the host and group overview run lists, the actions tab and
-      the scheduled-run history. `tests/test_spa_fallback.py` passes because
-      its fixtures are hand-written in the old shape, not taken from a real
-      export.
-
-      Fix direction: substitute segment objects by name (`n`), with the
-      names taken from the route's directory names in the source tree or a
-      build-time map, rather than by position, and add the `{"n":…}`
-      shape to the pattern. Test against a real `next build` export of a
-      two-segment route.
-
-      Workaround: open the run from Runs (`/actions/runs/<id>`).
-
-      Severity High: every run started from a host or group page, and
-      every run opened from one, shows nothing, or another run's log
-      when a run with the host's id exists.
-
 ### Correctness — Medium
 
 - [ ] **BUG-125** `frontend/components/action-parameter-form.tsx:104-106`,

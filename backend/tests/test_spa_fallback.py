@@ -17,6 +17,8 @@ These tests do not need a database — they exercise the pure resolver and
 rewrite helpers directly.
 """
 
+from pathlib import Path
+
 import pytest
 
 from app.main import _resolve_dynamic_route, _rewrite_placeholder
@@ -290,3 +292,35 @@ class TestNestedDynamicRoutes:
         content = _rewrite_placeholder(str(target), target.stat().st_mtime_ns, ("7",))
         assert '\\"a\\",\\"7\\",\\"d\\"' in content
         assert '\\"b\\",\\"placeholder\\",\\"d\\"' in content
+
+
+_REAL_EXPORT = Path(__file__).parent / "fixtures" / "next_export" / "run_under_host.index.txt"
+
+
+@pytest.fixture
+def real_nested_export_dir(tmp_path):
+    """BUG-126: the flight data of a real ``next build`` export of
+    ``hosts/[id]/actions/runs/[runId]``, plus the segment file Next writes
+    beside it, whose name carries the parameter names in path order."""
+    (tmp_path / "index.html").write_text("<html>shell</html>", encoding="utf-8")
+    nested = tmp_path / "hosts" / "placeholder" / "actions" / "runs" / "placeholder"
+    nested.mkdir(parents=True)
+    (nested / "index.txt").write_text(_REAL_EXPORT.read_text(encoding="utf-8"), encoding="utf-8")
+    (nested / "__next.!KGRhc2hib2FyZCk.hosts.$d$id.actions.runs.$d$runId.__PAGE__.txt").write_text(
+        "", encoding="utf-8"
+    )
+    return tmp_path
+
+
+class TestRealExportSegmentObjects:
+    def test_each_segment_object_gets_its_own_value(self, real_nested_export_dir):
+        """The segment objects come ``runId`` first; positional assignment
+        made the page ask for run 7 on ``/hosts/7/actions/runs/377/``."""
+        target, values = _resolve_dynamic_route(
+            real_nested_export_dir, "hosts/7/actions/runs/377/index.txt"
+        )
+        content = _rewrite_placeholder(str(target), target.stat().st_mtime_ns, values)
+        assert '{"n":"runId","t":"d","k":"377"' in content
+        assert '{"n":"id","t":"d","k":"7"' in content
+        assert '"c":["","hosts","7","actions","runs","377",""]' in content
+        assert "placeholder" not in content
