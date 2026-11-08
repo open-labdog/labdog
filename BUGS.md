@@ -51,29 +51,6 @@ the real code (ansible-core 2.21.1 from `uv.lock` where Ansible is
 involved); the rest were traced by reading. Each carries a fix direction
 for the fix thread; none is fixed here.
 
-### Security — High
-
-- [ ] **SEC-42** `backend/app/main.py:247,327` (`_buffered_receive`) — a
-      login body over 8 KiB is not rate limited at all
-
-      Symptom: when the body exceeds `_MAX_LOGIN_BODY`, the limiter is
-      handed an empty body, `login_identity` returns `None`, and
-      `login_rate_limit_keys` returns no buckets, while the full body is
-      still replayed to the login handler. Padding the form with an
-      unused field therefore removes the throttle. *Reproduced*.
-
-      Root cause: the oversize case was treated as "no account named"
-      rather than as a request the limiter could not inspect.
-
-      Fix direction: answer 413 for an oversized body on the login and
-      register paths (a real login form is a few hundred bytes), before
-      replaying it. If that is unwanted, parse the first 8 KiB anyway or
-      fall back to an IP bucket for that case. Add a test that pads a
-      login past the cap and expects 413 or a 429 after the limit.
-
-      Severity High: unlimited online password guessing against any
-      account, which under the flat model is every managed host.
-
 ### Security — Medium
 
 - [ ] **SEC-43** `backend/app/gitops/schema.py:37,54,64,74,84` — GitOps
@@ -193,20 +170,6 @@ for the fix thread; none is fixed here.
       replays.
 
       Severity Low: needs the GitLab token or a captured delivery.
-
-- [ ] **SEC-49** `backend/app/main.py:168-178` (`_get_client_ip`) —
-      `X-Forwarded-For` is honoured from any peer once `trusted_proxies`
-      is set
-
-      Symptom: the chain is walked whenever `trusted_proxies` is non-empty,
-      without checking that `request.client.host` is itself a trusted
-      proxy. A client that reaches LabDog directly picks its own address,
-      which defeats the login limiter's IP key and falsifies audit IPs.
-
-      Fix direction: walk the header only when `request.client.host` is
-      in `trusted_proxies`; otherwise use the peer address.
-
-      Severity Low: needs LabDog reachable around the proxy.
 
 - [ ] **SEC-50** `backend/app/crypto/encryption.py:21,35` — stored secrets
       are encrypted without binding them to their row

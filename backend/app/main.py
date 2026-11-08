@@ -170,7 +170,11 @@ def _get_client_ip(request: Request) -> str:
     trusted = settings.server.trusted_proxies
     forwarded = request.headers.get("x-forwarded-for", "")
     if trusted and request.client:
-        if forwarded:
+        # SEC-49: the header is only as trustworthy as the peer that sent
+        # it. A client reaching LabDog around the proxy could otherwise
+        # name any address it liked, defeating the login limiter's IP key
+        # and falsifying audit IPs.
+        if forwarded and _is_trusted_proxy(request.client.host, trusted):
             # Walk the chain from right to left, skipping trusted proxies
             chain = [ip.strip() for ip in forwarded.split(",")]
             for ip in reversed(chain):
@@ -304,8 +308,8 @@ async def _buffered_receive(receive):
     must reach the app rather than being swallowed here.
 
     Stops at :data:`_MAX_LOGIN_BODY`; anything beyond that is left in the
-    stream for the route to read, and the identity simply comes out as
-    ``None``.
+    stream, and the body comes back as ``None`` so the caller can refuse
+    the request rather than let it through unthrottled (SEC-42).
     """
     messages: list[dict] = []
     total = 0
@@ -324,7 +328,7 @@ async def _buffered_receive(receive):
             return messages.pop(0)
         return await receive()
 
-    return (b"" if total > _MAX_LOGIN_BODY else body), replay
+    return (None if total > _MAX_LOGIN_BODY else body), replay
 
 
 # ---------------------------------------------------------------------------
@@ -661,6 +665,19 @@ def create_app() -> FastAPI:
                 # address, so the body has to be read here — and then
                 # handed back intact, because ASGI bodies are read once.
                 body, receive = await _buffered_receive(receive)
+                if body is None:
+                    # SEC-42: an oversized body used to come back empty,
+                    # which reads as "no account named" and consumed no
+                    # bucket, while the full body still reached the login
+                    # handler. Padding the form removed the throttle. A
+                    # real login is a few hundred bytes, so refuse it.
+                    response = Response(
+                        content='{"detail":"Request body too large."}',
+                        status_code=413,
+                        media_type="application/json",
+                    )
+                    await response(scope, receive, send)
+                    return
                 identity = login_identity(request.headers.get("content-type", ""), body)
                 client_ip = _get_client_ip(request)
                 for key in login_rate_limit_keys(client_ip, identity):

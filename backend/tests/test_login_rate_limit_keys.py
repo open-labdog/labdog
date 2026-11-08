@@ -149,14 +149,14 @@ class TestTheBodyIsHandedBackIntact:
         assert body == b""
         assert (await replay())["type"] == "http.disconnect"
 
-    async def test_an_oversized_body_is_not_buffered_but_still_flows(self):
-        """Refusing to hold arbitrary memory must not break the request;
-        the identity simply comes out unknown."""
+    async def test_an_oversized_body_is_reported_as_none(self):
+        """The middleware refuses it with 413 (SEC-42); before that, an
+        empty body here meant "no account named" and skipped the limiter."""
         big = b"x" * (_MAX_LOGIN_BODY + 1)
         body, replay = await _buffered_receive(
             self._receive_from([{"type": "http.request", "body": big, "more_body": False}])
         )
-        assert body == b""
+        assert body is None
         assert (await replay())["body"] == big
 
 
@@ -182,3 +182,32 @@ class TestTrustedProxyMatching:
 
     def test_nothing_matches_an_empty_list(self):
         assert not _is_trusted_proxy("10.0.0.1", [])
+
+
+class TestForwardedForNeedsATrustedPeer:
+    """SEC-49: ``X-Forwarded-For`` was honoured from any peer once
+    ``trusted_proxies`` was set."""
+
+    def _request(self, peer: str, forwarded: str):
+        from starlette.requests import Request
+
+        scope = {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": [(b"x-forwarded-for", forwarded.encode())],
+            "client": (peer, 1234),
+        }
+        return Request(scope)
+
+    def test_a_direct_client_cannot_pick_its_address(self, monkeypatch):
+        from app import main
+
+        monkeypatch.setattr(main.settings.server, "trusted_proxies", ["10.0.0.1"])
+        assert main._get_client_ip(self._request("203.0.113.9", "1.2.3.4")) == "203.0.113.9"
+
+    def test_the_proxy_still_forwards_the_real_address(self, monkeypatch):
+        from app import main
+
+        monkeypatch.setattr(main.settings.server, "trusted_proxies", ["10.0.0.1"])
+        assert main._get_client_ip(self._request("10.0.0.1", "1.2.3.4")) == "1.2.3.4"
