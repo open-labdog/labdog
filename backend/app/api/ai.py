@@ -1052,7 +1052,12 @@ async def decide_approval(
     quietly returned 200 would leave the operator believing their latest
     click was the one that counted.
     """
-    approval = await db.get(AIApprovalRequest, approval_id)
+    # BUG-138: lock the row, so a second decision arriving at the same time
+    # waits for this one's commit and then sees it, instead of both seeing
+    # "pending" and both dispatching a resume.
+    approval = await db.get(
+        AIApprovalRequest, approval_id, with_for_update=True, populate_existing=True
+    )
     if approval is None:
         raise HTTPException(status_code=404, detail="Approval request not found")
     if approval.status != "pending":

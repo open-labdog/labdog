@@ -87,24 +87,6 @@ for the fix thread; none is fixed here.
 
 ### Correctness — Low
 
-- [ ] **BUG-138** `backend/app/api/ai.py:1055-1110`,
-      `backend/app/tasks/ai_task.py:240-285` — two concurrent decisions on
-      one approval can run the approved command twice
-
-      Symptom (by reading): `decide_approval` checks `status == "pending"`
-      and then writes, with no row lock, so two simultaneous requests both
-      pass and both dispatch `resume_session`. `_resume_session_async`
-      checks `session.status == "waiting_approval"` but does not change it
-      before `execute_approved`, so both tasks run the command. The
-      docstring promises exactly once.
-
-      Fix direction: in the API, `UPDATE … SET status=… WHERE id=:id AND
-      status='pending' RETURNING` and 409 when no row comes back; in the
-      task, claim the session with a conditional update to `running`
-      before executing.
-
-      Severity Low: needs a race, but the command it repeats is a write.
-
 - [ ] **BUG-139** `backend/app/api/actions.py:236-252` — the duplicate-run
       guard only catches requests that arrive at the same instant
 
