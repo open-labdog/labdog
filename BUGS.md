@@ -67,6 +67,14 @@ for the fix thread; none is fixed here.
 
       Severity Low: needs database write access.
 
+      Left open by the 2026-11-08 fix pass (PR #275): the binding needs
+      the row's id at all 67 encrypt/decrypt call sites, several of which
+      pass ciphertext around without its row (`clone_repo`,
+      `ssh_connect_host`), plus a re-encrypting migration and a change to
+      the key-rotation script. That is a refactor of its own, and someone
+      with database write access can already make themselves superuser,
+      so it buys little until the database is otherwise trusted less.
+
 ---
 
 ## Open — 2026-09 whitebox audit
