@@ -3,6 +3,7 @@ import logging
 from typing import Any
 
 import yaml
+from pydantic import ValidationError
 
 from app.gitops.schema import (
     CronJobYAML,
@@ -18,6 +19,7 @@ from app.gitops.schema import (
 )
 from app.resolver.models import ResolverConfig
 from app.rules.model import FirewallRuleSpec
+from app.schemas.rules import RuleCreate
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +128,21 @@ def yaml_rules_to_specs(rules: list[FirewallRuleYAML]) -> list[FirewallRuleSpec]
         # ICMP + port conflict
         if rule.protocol == "icmp" and rule.port is not None:
             raise YAMLParseError("ICMP protocol cannot have a port specified")
+
+        # SEC-43: the same rules as the API (port range, CIDRs, sides).
+        try:
+            RuleCreate(
+                action=rule.action,
+                protocol=rule.protocol,
+                direction=rule.direction,
+                source_cidr=rule.source,
+                destination_cidr=rule.dest,
+                port_start=port_start,
+                port_end=port_end,
+                comment=rule.comment,
+            )
+        except ValidationError as exc:
+            raise YAMLParseError(f"Invalid rule: {exc}") from exc
 
         specs.append(
             FirewallRuleSpec(

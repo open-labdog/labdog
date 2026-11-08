@@ -7,6 +7,7 @@ Handles both ``PackageRule`` (packages) and ``PackageRepository``
 
 import logging
 
+from pydantic import ValidationError
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +23,7 @@ from app.packages.models import (
     PackageState,
     RepoType,
 )
+from app.packages.schemas import PackageRepositoryCreate, PackageRuleCreate
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +169,15 @@ async def import_packages(
                 entry.package_name,
             )
             continue
+        # SEC-43: one rule per field. Round-trip through the API's create
+        # schema, so a value the API refuses cannot arrive through Git instead.
+        try:
+            PackageRuleCreate.model_validate(entry.model_dump())
+        except ValidationError as exc:
+            return ModuleImportResult(
+                module="packages",
+                error_message=f"Invalid package '{entry.package_name}': {exc}",
+            )
         desired_packages.append(entry)
 
     # ------------------------------------------------------------------
@@ -186,6 +197,13 @@ async def import_packages(
         )
 
     for entry in parsed.package_repositories or []:
+        try:
+            PackageRepositoryCreate.model_validate(entry.model_dump())
+        except ValidationError as exc:
+            return ModuleImportResult(
+                module="packages",
+                error_message=f"Invalid repository '{entry.name}': {exc}",
+            )
         if not entry.url.startswith(("https://", "http://")):
             return ModuleImportResult(
                 module="packages",

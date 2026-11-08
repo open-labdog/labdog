@@ -53,29 +53,6 @@ for the fix thread; none is fixed here.
 
 ### Security — Medium
 
-- [ ] **SEC-43** `backend/app/gitops/schema.py:37,54,64,74,84` — GitOps
-      YAML for firewall rules, services, packages, package repositories
-      and hosts entries skips the validation the API applies
-
-      Symptom: `HostsEntryYAML`, `ServiceYAML`, `PackageYAML`,
-      `PackageRepositoryYAML` and `FirewallRuleYAML` declare plain `str`
-      fields, and their importers write them without round-tripping
-      through the matching `*Create` schema (the users, resolver and
-      scheduled-action importers do round-trip). So a GitOps file can
-      carry a hostname or alias with spaces or line breaks into
-      `/etc/hosts`, a `service_name` containing `/` that places the unit
-      outside `/etc/systemd/system` (the generator builds
-      `/etc/systemd/system/{name}.service`), and package names, repo URLs
-      and firewall CIDRs the API would refuse.
-
-      Fix direction: in each importer, validate every entry through the
-      API's `*Create` model (as `users.py:198,229` does) and report a
-      failure as an import error, so there is one rule per field. Add an
-      importer test per module with a value the API rejects.
-
-      Severity Medium: reachable only by a committer to a GitOps repo, but
-      it bypasses SEC-24 and the service-name rules entirely.
-
 - [ ] **SEC-44** `backend/app/api/ssh_terminal.py:38-45,164-176` — an open
       terminal survives logout, password change and deactivation
 
