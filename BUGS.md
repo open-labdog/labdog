@@ -214,33 +214,6 @@ the valheim game-server VM (BUG-115 to BUG-117 and BUG-119, since fixed),
 against lin-manager's `sync_jobs` and audit rows. BUG-120 and BUG-121
 turned up while fixing those, by reading the code.
 
-### Correctness — Medium
-
-- [ ] **BUG-118** `backend/app/hosts_mgmt/merge.py:95`,
-      `backend/app/hosts_mgmt/diff.py:34-35` — hosts entries that share an
-      address collapse into one line, and the lower-priority names are
-      dropped without a word
-
-      Symptom: lin-manager's `add-hosts` group maps both
-      `loki.lan.tyresson.se` (priority 100) and `mimir.lan.tyresson.se`
-      (priority 101) to 10.10.200.3. nextcloud's effective view and its
-      file preview carry only the mimir line, and nothing in the UI says
-      why. Its `/etc/hosts` still has both: the file was last written
-      2026-08-21, five minutes after LabDog's sync, apparently by hand. The
-      next hosts sync there drops loki.
-
-      Root cause: the merge is keyed on the resolved address (`first_wins`
-      with the IP as key), so per address only the highest-priority entry
-      survives and its names replace the others'. An `/etc/hosts` line may
-      carry any number of names, and two lines for one address are valid
-      too. The diff and the collector use the same key, so a host file with
-      two lines for one address is also read as one.
-
-      Workaround: put every name for an address in one entry, as hostname
-      plus aliases.
-
-      Severity Medium: a configured name silently does not resolve.
-
 ### Correctness — Low
 
 - [ ] **BUG-121** `backend/app/ca_certs/actions.py:72-78` — a CA
