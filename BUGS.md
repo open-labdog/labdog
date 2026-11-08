@@ -87,23 +87,6 @@ for the fix thread; none is fixed here.
 
 ### Correctness — Low
 
-- [ ] **BUG-139** `backend/app/api/actions.py:236-252` — the duplicate-run
-      guard only catches requests that arrive at the same instant
-
-      Symptom (by reading): the `pg_try_advisory_xact_lock` is released
-      at the request's commit, so a second request a moment later starts
-      a second run of the same action on the same target while the first
-      is queued or running. The key `host_id or group_id` also makes host
-      5 and group 5 share a lock.
-
-      Fix direction: check for an existing queued or running `ActionRun`
-      for the action and target under the lock in every case, not only
-      when the lock is busy, and put the target kind in the key
-      (`actions.<key>.host.<id>` / `.group.<id>`).
-
-      Severity Low: two runs of one action on one target, serialised by
-      the host queue but not refused.
-
 - [ ] **BUG-140** `backend/app/api/admin_users.py:115-123`,
       `backend/app/main.py:703-706` — the last-superuser guard can be
       sidestepped

@@ -232,29 +232,34 @@ async def create_run(
         if group_exists is None:
             raise HTTPException(status_code=404, detail="Group not found")
 
-    # Advisory lock — prevents duplicate concurrent runs for same action+scope
-    lock_key = f"actions.{body.action_key}.{body.host_id or body.group_id}"
-    lock_result = await db.execute(
-        text("SELECT pg_try_advisory_xact_lock(hashtext(:key))"),
-        {"key": lock_key},
-    )
-    got_lock = lock_result.scalar()
-    if not got_lock:
-        # Find the running/queued run
-        running = await db.scalar(
-            select(ActionRun).where(
-                ActionRun.action_key == body.action_key,
-                ActionRun.host_id == body.host_id
-                if body.host_id is not None
-                else ActionRun.group_id == body.group_id,
-                ActionRun.status.in_(["queued", "running"]),
-            )
+    # BUG-139: one run of an action per target at a time. The advisory
+    # lock only serialises requests (it is released at this request's
+    # commit), so the check for a run already queued, pending or running
+    # happens under it every time, not only when the lock is busy. The key
+    # names the target kind, so host 5 and group 5 do not share it.
+    if body.host_id is not None:
+        lock_key = f"actions.{body.action_key}.host.{body.host_id}"
+        same_target = ActionRun.host_id == body.host_id
+    else:
+        lock_key = f"actions.{body.action_key}.group.{body.group_id}"
+        same_target = ActionRun.group_id == body.group_id
+    await db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": lock_key})
+    running = await db.scalar(
+        select(ActionRun)
+        .where(
+            ActionRun.action_key == body.action_key,
+            same_target,
+            ActionRun.status.in_(["queued", "pending", "running"]),
         )
+        .order_by(ActionRun.id)
+        .limit(1)
+    )
+    if running is not None:
         raise HTTPException(
             status_code=409,
             detail={
                 "detail": "An identical action is already running",
-                "running_run_id": running.id if running else None,
+                "running_run_id": running.id,
             },
         )
 
