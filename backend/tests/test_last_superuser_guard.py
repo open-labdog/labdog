@@ -66,8 +66,12 @@ async def test_the_fastapi_users_id_routes_are_gone(superuser_client, db):
     me = await _me(superuser_client)
 
     got = await superuser_client.get(f"/api/users/{me}")
-    # An unknown GET falls through to the SPA's index.html, not a user.
-    assert not got.headers.get("content-type", "").startswith("application/json")
+    # Not a user: a 404 without the built frontend, the SPA's index.html
+    # with it.
+    if got.headers.get("content-type", "").startswith("application/json"):
+        assert got.status_code == 404
+    else:
+        assert "email" not in got.text
     assert (
         await superuser_client.patch(f"/api/users/{me}", json={"is_active": False})
     ).status_code in (404, 405)
