@@ -189,14 +189,3 @@ content policy.
       follow redirects by default — and a documented homelab decision. Git
       repo URLs *do* block these (`app/schemas/git_repos.py:18-25`). Filed
       so it is not re-discovered as new, not because it needs changing.
-
----
-
-## Open — 2026-10-29 valheim
-
-Filed 2026-10-29 while tracing why a hosts sync rewrote `/etc/hosts` on
-the valheim game-server VM (BUG-115 to BUG-117 and BUG-119, since fixed),
-against lin-manager's `sync_jobs` and audit rows. BUG-120 and BUG-121
-turned up while fixing those, by reading the code.
-
-### Correctness — Low
