@@ -10,6 +10,7 @@ from app.audit.logger import log_action
 from app.auth.ws_auth import check_ws_origin, get_ws_user
 from app.db import AsyncSessionLocal
 from app.models.host import Host
+from app.models.user import User
 from app.ssh_terminal.session_registry import registry
 from app.ssh_terminal.ssh_connect import (
     HostNotFoundError,
@@ -22,6 +23,26 @@ from app.ssh_terminal.transcript import TranscriptWriter
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ssh-terminal", tags=["ssh-terminal"])
+
+
+async def _session_still_valid(user_id: int, generation: int) -> bool:
+    """Whether the user is still active and still on the same session generation."""
+    try:
+        async with AsyncSessionLocal() as db:
+            row = (
+                await db.execute(
+                    select(User.is_active, User.token_version).where(User.id == user_id)
+                )
+            ).first()
+    except Exception:
+        # A database blip must not drop every open terminal; the next check
+        # a minute later decides.
+        logger.warning("ssh terminal: could not re-check user %s", user_id, exc_info=True)
+        return True
+    if row is None:
+        return False
+    is_active, token_version = row
+    return bool(is_active) and (token_version or 0) == generation
 
 
 @router.websocket("/ws/{host_id}")
@@ -99,6 +120,9 @@ async def ssh_terminal_ws(websocket: WebSocket, host_id: int):
         await db.commit()
 
     user_id_for_audit = user.id
+    # SEC-44: the handshake is the only authentication a WebSocket gets, so
+    # remember the session generation it proved and re-check it below.
+    session_generation = user.token_version or 0
 
     async with registry._lock:
         if session_id in registry._sessions:
@@ -161,8 +185,15 @@ async def ssh_terminal_ws(websocket: WebSocket, host_id: int):
             logger.exception("ws_to_ssh error for session %s", session_id)
             disconnect_reason = "error"
 
-    async def idle_checker():
+    async def close_with(reason_key: str, code: int, reason: str) -> None:
         nonlocal disconnect_reason
+        disconnect_reason = reason_key
+        try:
+            await websocket.close(code=code, reason=reason)
+        except Exception:
+            pass
+
+    async def idle_checker():
         while True:
             await asyncio.sleep(60)
             from app.settings_service import get_setting_cached_typed
@@ -170,11 +201,18 @@ async def ssh_terminal_ws(websocket: WebSocket, host_id: int):
             idle_timeout = int(get_setting_cached_typed("ssh.idle_timeout_seconds"))
             idle = registry.get_idle_sessions(idle_timeout)
             if session_id in idle:
-                disconnect_reason = "idle_timeout"
-                try:
-                    await websocket.close(code=4408, reason="Idle timeout")
-                except Exception:
-                    pass
+                await close_with("idle_timeout", 4408, "Idle timeout")
+                return
+            # SEC-44: keystrokes reset the idle timer, so without a cap a
+            # shell could stay open indefinitely.
+            max_age = int(get_setting_cached_typed("ssh.max_session_seconds"))
+            if time.time() - start_time >= max_age:
+                await close_with("max_session_age", 4408, "Session time limit reached")
+                return
+            # SEC-44: deactivation, a password change or "log out
+            # everywhere" (SEC-30) must reach an open terminal too.
+            if not await _session_still_valid(user_id_for_audit, session_generation):
+                await close_with("session_revoked", 4401, "Session no longer valid")
                 return
 
     reader = asyncio.create_task(ssh_to_ws())

@@ -70,6 +70,7 @@ Two of them cover what comes *in* to LabDog:
 | Connect Timeout | `ssh.connect_timeout` | `10` | 1 – 120 sec | How long to wait when opening an SSH connection to a host (used for sync, drift checks, and state collection). Increase if managed hosts are on high-latency links. |
 | Command Timeout | `ssh.command_timeout` | `60` | 5 – 900 sec | The longest a single remote command may take on an already-open session — state collectors and reachability probes, not Ansible playbooks, which have their own timeout. A host that accepts the connection but then hangs on one command fails after this long instead of blocking every host behind it. |
 | Idle Timeout | `ssh.idle_timeout_seconds` | `1800` | 60 – 86400 sec | How long a web terminal session can be idle before it is automatically disconnected. 1800 = 30 minutes. |
+| Session Time Limit | `ssh.max_session_seconds` | `43200` | 300 – 604800 sec | Longest a web terminal session may stay open, active or not. Typing resets the idle timer, so this is the upper bound. 43200 = 12 hours. |
 
 ### Ansible
 

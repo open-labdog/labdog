@@ -90,6 +90,16 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "max": 86400,
         "description": "SSH terminal idle timeout before auto-disconnect (seconds)",
     },
+    "ssh.max_session_seconds": {
+        "type": "int",
+        "default": 43200,
+        "min": 300,
+        "max": 604800,
+        "description": (
+            "Longest an SSH terminal session may stay open, active or not, before "
+            "it is closed (seconds)"
+        ),
+    },
     "logging.audit_retention_days": {
         "type": "int",
         "default": 90,

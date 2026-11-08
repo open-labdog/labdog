@@ -53,24 +53,6 @@ for the fix thread; none is fixed here.
 
 ### Security — Medium
 
-- [ ] **SEC-44** `backend/app/api/ssh_terminal.py:38-45,164-176` — an open
-      terminal survives logout, password change and deactivation
-
-      Symptom: the WebSocket authenticates once at the handshake. Nothing
-      re-checks the user afterwards, so a root shell opened before the
-      account was deactivated, its password changed, or its sessions
-      revoked (SEC-30) stays open. The idle timer is reset by every
-      keystroke, so there is no upper bound either.
-
-      Fix direction: in `idle_checker`, also reload the user every 60 s
-      and close with 4401 when it is inactive or its `token_version` no
-      longer matches the one in the handshake token; add an absolute
-      session lifetime setting (e.g. `ssh.max_session_seconds`). Test with
-      a deactivation during an open session.
-
-      Severity Medium: revocation does not reach the most powerful
-      session type.
-
 - [ ] **SEC-45** `backend/app/ai/safety.py:430`,
       `backend/app/ai/tools/ssh.py:191` — the AI command classifier models
       bash, but commands run in the target user's login shell

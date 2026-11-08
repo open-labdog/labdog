@@ -125,7 +125,7 @@ const CATEGORIES: Record<string, Category> = {
   },
   ssh: {
     label: "SSH",
-    keys: ["ssh.connect_timeout", "ssh.command_timeout", "ssh.idle_timeout_seconds"],
+    keys: ["ssh.connect_timeout", "ssh.command_timeout", "ssh.idle_timeout_seconds", "ssh.max_session_seconds"],
   },
   ansible: {
     label: "Ansible",
