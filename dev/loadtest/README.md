@@ -49,6 +49,8 @@ Configs: `default` = celery 4 / orchestrator 4; `raised` = 16 / 12
 - The image lacks the `ansible.posix` collection; `prepare.sh` installs it
   into `.state/collections` and the compose mounts it. Without it every
   sync with a linux user fails to parse (see results).
+- Postgres `max_connections` is 400 for the raised config (`PG_MAX_CONNECTIONS`);
+  16/12 needs more than the default 100.
 - 10 min warm-up, 60 min window, then up to 15 min drain before measuring.
 - LabDog and all fake hosts share the same machine, so CPU contention
   from the fake hosts is part of the numbers.

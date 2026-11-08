@@ -5,8 +5,8 @@ set -u
 sid=$1; n=$2; cfg=$3; warm=${4:-10}; win=${5:-60}
 cd "$(dirname "$0")"
 out=results/$sid-n$n-$cfg; rm -rf "$out"; mkdir -p "$out"
-if [ "$cfg" = raised ]; then export CELERY_CONCURRENCY=16 ORCHESTRATOR_CONCURRENCY=12
-else export CELERY_CONCURRENCY=4 ORCHESTRATOR_CONCURRENCY=4; fi
+if [ "$cfg" = raised ]; then export CELERY_CONCURRENCY=16 ORCHESTRATOR_CONCURRENCY=12 PG_MAX_CONNECTIONS=${PG_MAX_CONNECTIONS:-400}
+else export CELERY_CONCURRENCY=4 ORCHESTRATOR_CONCURRENCY=4 PG_MAX_CONNECTIONS=${PG_MAX_CONNECTIONS:-100}; fi
 docker compose down -v -t 3 >/dev/null 2>&1
 docker compose up -d --scale fakehost="$n" >"$out/up.log" 2>&1 || { echo "up failed"; exit 1; }
 sleep 5

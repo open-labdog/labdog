@@ -9,6 +9,8 @@ x-fakehost-log: &small-log
 services:
   postgres:
     image: postgres:18-alpine
+    # 100 (the default) is too few for the raised config: run_one.sh sets 400 there.
+    command: ["postgres", "-c", "max_connections=${PG_MAX_CONNECTIONS:-100}"]
     environment:
       POSTGRES_USER: labdog
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run ./prepare.sh first}

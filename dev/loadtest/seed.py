@@ -20,10 +20,18 @@ DRIFT_PATHS = ["hosts-mgmt", "resolver", "linux-users", "cron", "packages"]
 MODULES = ["packages", "hosts-file", "cron", "linux-users", "resolver"]
 
 
-def wait_syncs(api):
+def wait_syncs(api, stall_s=1800):
+    """Wait for all syncs; give up when nothing finishes for ``stall_s``."""
+    last, since = None, time.time()
     while True:
         time.sleep(10)
         jobs = api.get("/api/sync/jobs?limit=1000")
+        done = sum(j["status"] not in ("pending", "running") for j in jobs)
+        if done != last:
+            last, since = done, time.time()
+        elif time.time() - since > stall_s:
+            left = sum(j["status"] in ("pending", "running") for j in jobs)
+            sys.exit(f"sync stalled: {left} pending/running, none finished in {stall_s}s")
         if not any(j["status"] in ("pending", "running") for j in jobs):
             failed = [j for j in jobs if j["status"] == "failed"]
             if failed:
