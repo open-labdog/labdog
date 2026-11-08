@@ -33,7 +33,7 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-124`, `SEC-38`,
+ID counter as of last housekeeping pass: `BUG-127`, `SEC-38`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry.
 
@@ -140,3 +140,46 @@ turned up while fixing those, by reading the code.
 
       Severity Low: a deploy that should start at once can wait; it is no
       longer lost.
+
+## Open — 2026-11-08 k8s-upgrade
+
+Filed 2026-11-08 when the first `k8s-upgrade` run on lin-manager (action
+run 395, LabDog 1.1.0, pack action 1.3) never left `queued`. Confirmed
+against the container log and the 1.1.0 image.
+
+### Correctness — High
+
+- [ ] **BUG-127** `backend/app/tasks/__init__.py:221-260`,
+      `backend/app/tasks/action_orchestrator.py:53` — group-dispatch
+      actions never run: the worker does not register
+      `run_action_group`
+
+      Symptom: run 395 (`k8s-upgrade` on group K8s-cluster, a dry run)
+      stayed `queued`. The orchestrator logged `action_run 395 →
+      group-dispatch (action=k8s-upgrade supports_host=False)`, then the
+      worker logged `Received unregistered task of type
+      'app.tasks.action_group.run_action_group'` with a `KeyError` and
+      dropped the message. Nothing ran on any host and no snapshot was
+      taken. The run carries no `started_at` and no children, so the
+      action sweeper fails it an hour later as an orphan
+      (`QUEUED_ORPHAN_THRESHOLD_SECONDS`). The UI shows `queued` until
+      then, and nothing says why.
+
+      Root cause: the orchestrator dispatches the group task by name
+      (`send_task(_DEFAULT_GROUP_TASK, queue=CHILD_QUEUE)`), but
+      `app.tasks.action_group` is missing from `celery_app.conf.include`,
+      and nothing else a worker imports pulls it in. Every pack action
+      with `supports_host: false` is affected; `_builtin.ai_task_group`
+      is not, because its task lives in `app.tasks.ai_task`.
+      `tests/test_task_routing.py` cannot catch it: it checks the routes
+      of tasks loaded from `conf.include`, so a module missing from that
+      list has no tasks to check.
+
+      Fix direction: add `app.tasks.action_group` to `conf.include` (and a
+      `task_routes` entry for `long_running`, to match `action_host`).
+      Add a test that every task name passed to `send_task`, and every
+      value in the orchestrator's dispatch tables, is registered once
+      `import_default_modules()` has run.
+
+      Severity High: every group-dispatch action is unusable, and the
+      failure is silent.
