@@ -87,21 +87,6 @@ for the fix thread; none is fixed here.
 
 ### Correctness — Low
 
-- [ ] **BUG-137** `backend/app/api/packages.py:238` — an uninstall's
-      package sync is dispatched before its row is committed
-
-      Symptom (by reading): the uninstall branch of the delete endpoint
-      calls `run_package_sync.delay` inside the loop, after `flush` and
-      before the `commit` at line 241 — the BUG-37 pattern, as in BUG-121.
-      A worker that starts first finds no row, claims the idle host and
-      fails in `_seed` with `LookupError`; the row is committed as
-      `pending` and waits for the next operation on that host.
-
-      Fix direction: collect `(job_id, host_id)` and dispatch after
-      `db.commit()`, as `_trigger_group_sync` does.
-
-      Severity Low: an uninstall can wait instead of starting.
-
 - [ ] **BUG-138** `backend/app/api/ai.py:1055-1110`,
       `backend/app/tasks/ai_task.py:240-285` — two concurrent decisions on
       one approval can run the approved command twice
@@ -215,17 +200,3 @@ against lin-manager's `sync_jobs` and audit rows. BUG-120 and BUG-121
 turned up while fixing those, by reading the code.
 
 ### Correctness — Low
-
-- [ ] **BUG-121** `backend/app/ca_certs/actions.py:72-78` — a CA
-      certificate deploy is dispatched before its row is committed
-
-      Symptom (by reading): `enqueue_ca_cert_action_for_host` flushes the
-      `SyncJob` and calls `run_ca_cert_action.delay` at once, leaving the
-      commit to its five callers — the BUG-37 pattern. A worker that picks
-      the task up first cannot see the row. It used to raise and leave the
-      row `pending` for good; since the deploy takes its turn in the host
-      queue (BUG-119) it returns "deferred", and the row waits for the next
-      operation on the host to release it.
-
-      Severity Low: a deploy that should start at once can wait; it is no
-      longer lost.

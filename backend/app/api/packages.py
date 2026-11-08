@@ -8,6 +8,7 @@ from app.api._gitops_lock import check_gitops_lock
 from app.audit.logger import log_action
 from app.auth.users import current_active_user
 from app.db import get_db
+from app.db_after_commit import run_after_commit
 from app.models.host import Host
 from app.models.host_group import HostGroup
 from app.models.user import User
@@ -235,7 +236,14 @@ async def delete_group_package(
             )
             db.add(job)
             await db.flush()
-            run_package_sync.delay(job_id=job.id, host_id=hid)
+            # BUG-137: dispatch after the commit below, or the worker may
+            # start before the row exists.
+            run_after_commit(
+                db,
+                lambda job_id=job.id, host_id=hid: run_package_sync.delay(
+                    job_id=job_id, host_id=host_id
+                ),
+            )
             sync_jobs += 1
 
         await db.commit()
