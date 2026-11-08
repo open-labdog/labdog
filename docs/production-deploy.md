@@ -16,6 +16,7 @@ and env-sourced secrets.
 - [Caddyfile](#caddyfile)
 - [Secrets via .env](#secrets-via-env)
 - [labdog.toml](#labdogtoml)
+- [Sizing Postgres connections](#sizing-postgres-connections)
 - [Bring it up](#bring-it-up)
 - [Upgrading PostgreSQL 16 → 18](#upgrading-postgresql-16--18)
 - [Differences from `dev/docker-compose.yml`](#differences-from-devdocker-composeyml)
@@ -236,6 +237,27 @@ How long the audit log, action runs and drift samples are kept is not a
 `labdog.toml` setting. Set it once LabDog is up, under
 [Settings › System](ui/settings.md#logging-and-retention); a production
 install usually wants the audit log kept longer than the 90-day default.
+
+---
+
+## Sizing Postgres connections
+
+Every Celery task opens its own short-lived database engine (asyncpg
+connections cannot cross a fork), and a host sync, an action step or a
+sweeper may hold a few at once. Budget **about 6 Postgres connections per
+worker slot**, counting both pools — `[celery] concurrency` plus
+`orchestrator_concurrency` — and add the API's pool
+(`[database] pool_size + max_overflow`, 5 + 10 by default) and a margin
+for `psql` and backups.
+
+The defaults (4 + 4 slots) need about 70, which fits stock Postgres
+(`max_connections = 100`). At 16 + 12 slots LabDog measured 90–130
+connections idle and 183 at peak; on a stock server it logged hundreds of
+`TooManyConnectionsError` within minutes, and failed syncs with them. So
+before raising either concurrency, raise `max_connections` to match
+(in the compose file above: `command: postgres -c max_connections=300`),
+or put a pooler such as PgBouncer in transaction mode in front of
+Postgres.
 
 ---
 
