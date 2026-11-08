@@ -185,28 +185,6 @@ for the fix thread; none is fixed here.
 
       Severity Low: needs database write access.
 
-### Correctness — Medium
-
-- [ ] **BUG-136** `backend/app/tasks/scan_run.py:127-128`,
-      `backend/app/tasks/scan_schedule.py:28-39` — a long scan is
-      re-dispatched every minute while it runs
-
-      Symptom: the run sets `last_run_at` and `last_run_status="running"`
-      and only flushes, so other sessions keep seeing the old values until
-      the scan commits at the end. The scheduler, ticking every 60 s,
-      finds the config still due and sends another `scans.run_config`
-      each tick. Each one blocks on `pg_advisory_xact_lock`, holding a
-      worker slot and a database connection, and runs a full scan as
-      soon as the previous one finishes. The UI never shows "running".
-
-      Fix direction: commit the "running" mark in its own short
-      transaction before the scan, and take the lock with
-      `pg_try_advisory_lock` (session-level), returning "skipped" when it
-      is held; re-check `_is_due` after acquiring it.
-
-      Severity Medium: wasted workers and connections, and repeated scans
-      of the network, for every scan longer than a minute.
-
 ### Correctness — Low
 
 - [ ] **BUG-137** `backend/app/api/packages.py:238` — an uninstall's
