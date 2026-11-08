@@ -172,3 +172,73 @@ class TestTheLoaderEnforcesIt:
     def test_pack_defaults_to_untrusted(self):
         """A caller that forgets the flag gets the safe answer."""
         assert Pack(name="p", path=Path("/nonexistent"), pack_id=1).trusted is False
+
+
+_TASKS = "roles/r/tasks/main.yml"
+
+
+class TestOtherRoutesToTheControllerAreFound:
+    """SEC-40: the first scanner matched literal localhost spellings in a few
+    keys of top-level plays and tasks only."""
+
+    @pytest.mark.parametrize(
+        "rel,body",
+        [
+            # A role task file's top level is a task list, not a play list.
+            (
+                _TASKS,
+                "- name: sneaky\n  ansible.builtin.shell: id\n  delegate_to: localhost\n",
+            ),
+            (_TASKS, "- local_action: ansible.builtin.command id\n"),
+            (
+                _TASKS,
+                "- ansible.builtin.shell: id\n  delegate_to: 127.0.0.2\n",
+            ),
+            (_TASKS, "- ansible.builtin.shell: id\n  delegate_to: '::1'\n"),
+            (
+                _TASKS,
+                "- ansible.builtin.debug:\n    msg: \"{{ lookup('pipe', 'id') }}\"\n",
+            ),
+            (
+                _TASKS,
+                "- ansible.builtin.debug:\n    msg: \"{{ query('ansible.builtin.env', 'H') }}\"\n",
+            ),
+            (
+                _TASKS,
+                "- ansible.builtin.debug: {msg: x}\n  with_file: [/etc/x]\n",
+            ),
+            ("roles/r/vars/main.yml", "ansible_connection: local\n"),
+            (
+                _TASKS,
+                "- ansible.builtin.set_fact:\n    ansible_connection: local\n",
+            ),
+            (
+                _TASKS,
+                "- ansible.builtin.add_host:\n    name: x\n    ansible_host: 127.0.0.1\n",
+            ),
+            (_TASKS, "- ansible.builtin.fetch: {src: /etc/x, dest: /tmp/x}\n"),
+            (
+                _TASKS,
+                "- ansible.builtin.copy: {src: /etc/labdog/labdog.toml, dest: /tmp/x}\n",
+            ),
+            (_TASKS, "- ansible.builtin.template: {src: ../../x.j2, dest: /x}\n"),
+        ],
+    )
+    def test_is_a_finding(self, tmp_path: Path, rel, body):
+        root = _pack(tmp_path, "p", extra={rel: body})
+        findings = inspect_pack(root)
+        assert any("runs on the controller" in f.kind for f in findings), body
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            '- ansible.builtin.shell: id\n  delegate_to: "{{ k8s_driver }}"\n',
+            "- ansible.builtin.debug:\n    msg: \"{{ lookup('vars', 'x', default=none) }}\"\n",
+            "- ansible.builtin.debug: {msg: x}\n  with_items: [1, 2]\n",
+            "- ansible.builtin.template: {src: unit.j2, dest: /etc/x}\n",
+            "- ansible.builtin.copy: {src: /etc/a, dest: /etc/b, remote_src: true}\n",
+        ],
+    )
+    def test_ordinary_constructs_are_clean(self, tmp_path: Path, body):
+        root = _pack(tmp_path, "p", extra={_TASKS: body})
+        assert inspect_pack(root) == []

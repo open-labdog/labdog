@@ -53,39 +53,6 @@ for the fix thread; none is fixed here.
 
 ### Security — High
 
-- [ ] **SEC-40** `backend/app/actions/pack_policy.py:135-167`
-      (`_scan_playbook`) — the pack content policy (SEC-21) recognises
-      only some of the ways a task can run on the controller
-
-      Symptom: `inspect_pack()` returns no findings for a pack whose
-      playbook reaches the controller through constructs other than the
-      three it matches. *Reproduced* (empty finding list) for: a
-      `delegate_to: localhost` inside a role's task file (only the
-      playbook's top-level tasks are walked), `local_action:`, a
-      `delegate_to:` naming another loopback address, a lookup plugin
-      that runs a command, and a play that switches its connection to
-      local through vars or `add_host`. Lookups that read files or
-      environment variables run on the controller too.
-
-      Root cause: the scanner matches literal localhost spellings in a
-      few keys of top-level plays and tasks; it does not recurse into
-      roles, blocks inside roles, or `include_tasks` targets, and does
-      not consider lookups or connection vars.
-
-      Fix direction: walk every YAML file under the pack (roles
-      included), recursively through `block`/`rescue`/`always`; refuse
-      `local_action`, any `delegate_to` or `hosts` that resolves to a
-      loopback address or `localhost` alias, `connection`/
-      `ansible_connection` set to `local` anywhere (play, vars,
-      `add_host`, `set_fact`), and lookups other than an allowlist that
-      does not touch the controller. Alternatively run untrusted packs
-      with `ANSIBLE_LOOKUP_PLUGINS`/connection plugins restricted via an
-      ansible.cfg in the run directory. Add the cases above to the policy
-      tests.
-
-      Severity High: a malicious or compromised pack source runs code on
-      the controller, the exact case SEC-21 was meant to stop.
-
 - [ ] **SEC-41** `backend/app/hosts_mgmt/schemas.py:8`,
       `backend/app/schemas/_shared.py:7`, `backend/app/cron/schemas.py:10`,
       `backend/app/gitops/schema.py:34`, `backend/app/packages/schemas.py:8`,
