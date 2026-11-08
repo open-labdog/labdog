@@ -53,35 +53,6 @@ for the fix thread; none is fixed here.
 
 ### Security — High
 
-- [ ] **SEC-41** `backend/app/hosts_mgmt/schemas.py:8`,
-      `backend/app/schemas/_shared.py:7`, `backend/app/cron/schemas.py:10`,
-      `backend/app/gitops/schema.py:34`, `backend/app/packages/schemas.py:8`,
-      `backend/app/resolver/schemas.py:8`, `backend/app/schemas/git_repos.py:33`
-      — `$`-anchored validators accept a trailing newline, which reopens
-      SEC-24
-
-      Symptom: `re.match(r"^…$", value)` lets `value` end in `\n`,
-      because `$` matches before a final newline. A hosts-entry alias
-      ending in a newline passes `HOSTNAME_RE`, and
-      `render_hosts_file` (`backend/app/hosts_mgmt/merge.py:209`) joins
-      the aliases with spaces, so the following aliases become a new
-      `/etc/hosts` line. *Reproduced*: three aliases produced a separate
-      line mapping a package-mirror name to an arbitrary address,
-      invisible in the UI, which shows the aliases as a list.
-
-      Root cause: `$` instead of `\Z` (or `fullmatch`), and the SEC-24
-      render-time guard strips line breaks from the comment only.
-
-      Fix direction: use `re.fullmatch` (or `\Z`) in every validator
-      listed, and grep for other `re.match(r"^…$"` validators. In
-      `render_hosts_file`, refuse or strip `\r`/`\n`/NUL in the address,
-      hostname and every alias, not only the comment, so rows already
-      in the database cannot inject either. Test each validator with a
-      trailing `\n`.
-
-      Severity High: the same impact SEC-24 was filed for — a
-      package-mirror redirect written to every host in a group.
-
 - [ ] **SEC-42** `backend/app/main.py:247,327` (`_buffered_receive`) — a
       login body over 8 KiB is not rate limited at all
 

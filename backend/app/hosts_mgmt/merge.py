@@ -1,3 +1,4 @@
+import logging
 import re
 
 from sqlalchemy import select
@@ -28,6 +29,12 @@ async def _build_host_ref_lookup(
 
 #: Anything that would end the /etc/hosts line a comment sits on.
 _SAFE_COMMENT = re.compile(r"[\r\n\x00]")
+
+#: Anything that would end an ``/etc/hosts`` field or line: whitespace
+#: (including line breaks), NUL, and ``#``, which starts a comment.
+_UNSAFE_FIELD = re.compile(r"[\s\x00#]")
+
+logger = logging.getLogger(__name__)
 
 
 def _resolve_entry(entry: HostsEntry, ref_lookup: dict[int, tuple[str, str]]) -> tuple[str, str]:
@@ -206,6 +213,18 @@ def render_hosts_file(entries: list[EffectiveHostsEntryResponse]) -> str:
         parts = [entry.ip_address, entry.hostname]
         if entry.aliases:
             parts.extend(entry.aliases)
+        # SEC-41: the address and every name must stay one field. A line
+        # break in any of them used to start a new /etc/hosts line (an alias
+        # ending in "\n" passed the `$`-anchored validator). The schemas now
+        # refuse such values, but GitOps imports and older rows reach here
+        # too, so drop the entry rather than write a line nobody configured.
+        if any(not part or _UNSAFE_FIELD.search(part) for part in parts):
+            logger.warning(
+                "hosts entry %r skipped: address or a name contains whitespace, "
+                "a line break or '#'",
+                entry.hostname,
+            )
+            continue
         line = " ".join(parts)
         if entry.comment:
             # Second line of defence. The schema rejects newlines in a

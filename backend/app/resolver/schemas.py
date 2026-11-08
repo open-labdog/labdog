@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, field_validator, model_validator
 
 ALLOWED_OPTIONS = {"ndots", "timeout", "attempts", "rotate", "edns0"}
-_DNS_LABEL_RE = re.compile(r"^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$")
+_DNS_LABEL_RE = re.compile(r"^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\Z")
 
 
 def _validate_ip(v: str) -> str:

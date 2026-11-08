@@ -30,7 +30,7 @@ _SCP_HOST_RE = re.compile(r"^git@([^:]+):")
 # Allowed characters in a git branch / ref. Conservative allow-list so the
 # value is safe to pass as a `--branch <ref>` CLI argument and to interpolate
 # into `refs/heads/<branch>` webhook comparisons.
-_BRANCH_RE = re.compile(r"^[\w./-]+$")
+_BRANCH_RE = re.compile(r"^[\w./-]+\Z")
 
 
 def extract_hostname(url: str) -> str | None:

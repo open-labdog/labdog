@@ -31,7 +31,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.resolver.schemas import ALLOWED_OPTIONS, _validate_dns_name, _validate_ip
 
-_USER_RE = re.compile(r"^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$")
+_USER_RE = re.compile(r"^[a-zA-Z0-9_][a-zA-Z0-9_.-]*\Z")
 
 
 class FirewallRuleYAML(BaseModel):

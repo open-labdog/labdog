@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.packages.constants import is_protected
 
-_PKG_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._+:\-]*$")
+_PKG_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._+:\-]*\Z")
 
 
 class PackageRuleCreate(BaseModel):
