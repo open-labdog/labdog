@@ -33,7 +33,7 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-132`, `SEC-38`,
+ID counter as of last housekeeping pass: `BUG-133`, `SEC-38`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry.
 
@@ -183,6 +183,33 @@ against the container log and the 1.1.0 image.
 
       Severity High: every group-dispatch action is unusable, and the
       failure is silent.
+
+### Correctness — Low
+
+- [ ] **BUG-133** `frontend/components/sync-tray.tsx:132-141` — the
+      activity card keeps a finished run's hosts `running`
+
+      Symptom: after `k8s-upgrade` run 396 finished (run and all five host
+      runs `succeeded` at 2026-11-08 20:27:26 UTC), the activity card's
+      header said "1 finished" and its bar showed 5/5 hosts done, but every
+      host row under it still said `running`. The run page showed them all
+      `succeeded`.
+
+      Root cause: `RunHosts` polls `/api/actions/runs/{id}` for the host
+      rows every 4 s only while `runActive(run)`, and `run` comes from the
+      separate list query that drives the header. When the list sees the
+      run finish, `refetchInterval` drops to `false` with no final fetch,
+      so the rows keep whatever the last poll saw. A group-dispatch run
+      always hits this: its host runs finish together, within a few
+      hundredths of a second of the run itself, so the last poll before
+      the switch sees them all running. Per-host runs usually finish
+      hosts earlier, which hides it.
+
+      Fix direction: refetch the run once when `active` turns false (or
+      invalidate the `["action-run", id, "tray"]` query when the list
+      reports the run finished).
+
+      Severity Low: display only; the run page and the database are right.
 
 ## Open — 2026-11-08 load test (PR #270)
 
