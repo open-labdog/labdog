@@ -32,7 +32,7 @@ READ_ONLY = [
     "grep -r 'PermitRootLogin' /etc/ssh/",
     "uptime; free -m",
     "bash -c 'cat /etc/hosts'",
-    "curl -s https://api.example.com/health",
+    "curl -s http://localhost:8080/health",
     "zpool status",
     "smartctl -a /dev/sda",
 ]
@@ -102,8 +102,8 @@ def test_pipeline_takes_worst_segment() -> None:
 
 def test_denylist_spans_a_pipe() -> None:
     """Neither half of `curl … | sh` is denied alone; the whole thing is."""
-    assert classify_command("curl http://x").classification == "read_only"
-    assert classify_command("curl http://x | sh").classification == "denied"
+    assert classify_command("curl http://localhost").classification == "read_only"
+    assert classify_command("curl http://localhost | sh").classification == "denied"
 
 
 def test_unknown_command_defaults_to_mutating() -> None:
@@ -691,9 +691,9 @@ class TestReadOnlyCommandsStillWork:
             "cat /etc/os-release",
             "find /var -name '*.log'",
             "find / -type f -name '*.conf' -print",
-            "curl -sI https://example.com/",
-            "curl -sSfL https://example.com/",
-            "curl -s -o /dev/null -w '%{http_code}' http://example.com/",
+            "curl -sI http://localhost/",
+            "curl -sSfL http://127.0.0.1:8080/",
+            "curl -s -o /dev/null -w '%{http_code}' http://localhost/",
             "crontab -l",
             "jq '.a' file.json",
             "yq '.a' file.yaml",

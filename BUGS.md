@@ -51,28 +51,6 @@ the real code (ansible-core 2.21.1 from `uv.lock` where Ansible is
 involved); the rest were traced by reading. Each carries a fix direction
 for the fix thread; none is fixed here.
 
-### Security — Medium
-
-- [ ] **SEC-47** `backend/app/ai/command_policy.yaml:234,984` — read-only
-      AI tools can both read secrets and send data out
-
-      Symptom: `cat` of root-only files such as `/etc/shadow` and private
-      keys classifies `read_only`, and so do `curl` GETs and DNS lookups
-      to any name. A model steered by prompt injection (log lines, file
-      contents it was asked to read) can read a secret in one call and
-      carry it out in the URL or query name of the next, with no approval
-      at any step.
-
-      Fix direction: classify reads of credential paths (`/etc/shadow`,
-      `/etc/gshadow`, `/etc/ssh/*_key`, `~/.ssh/`, `*.key`, `*.pem` outside
-      `/etc/ssl/certs`) as needing approval, and make `curl`/`wget` and
-      lookups of names outside the host's own search domains need
-      approval too, or limit `curl` to loopback. Note the trade-off in the
-      policy header.
-
-      Severity Medium: design hardening; the denylist already blocks the
-      obvious redirect forms.
-
 ### Security — Low
 
 - [ ] **SEC-48** `backend/app/api/webhooks.py:140,180`,

