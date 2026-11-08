@@ -15,9 +15,8 @@ import copy
 from dataclasses import dataclass
 from typing import Any
 
-import yaml
-
 from app.ansible_runtime.generator import generate_playbook as generate_firewall_playbook
+from app.ansible_runtime.playbook_yaml import dump_playbook, load_playbook
 from app.cron.generator import generate_cron_playbook
 from app.hosts_mgmt.generator import generate_hosts_file_playbook
 from app.packages.generator import generate_package_playbook
@@ -173,7 +172,7 @@ def compose_playbook(
                 play["hosts"] = hosts_alias
         composed.extend(plays)
 
-    return yaml.dump(composed, default_flow_style=False, sort_keys=False)
+    return dump_playbook(composed)
 
 
 # ---------------------------------------------------------------------------
@@ -246,7 +245,7 @@ def fragment_hosts_file(rendered_content: str, ssh_port: int = 22) -> PlaybookFr
         rendered_content=rendered_content,
         ssh_key_path=_UNUSED_KEY_PATH,
     )
-    return _finalize(yaml.safe_load(playbook_yaml), "hosts-file")
+    return _finalize(load_playbook(playbook_yaml), "hosts-file")
 
 
 def fragment_firewall(
@@ -269,7 +268,7 @@ def fragment_firewall(
         ssh_key_path=_UNUSED_KEY_PATH,
         policies=policies,
     )
-    return _finalize(yaml.safe_load(playbook_yaml), "firewall")
+    return _finalize(load_playbook(playbook_yaml), "firewall")
 
 
 def fragment_services(services: list[dict], ssh_port: int = 22) -> PlaybookFragment:
@@ -287,7 +286,7 @@ def fragment_services(services: list[dict], ssh_port: int = 22) -> PlaybookFragm
         services=services,
         ssh_key_path=_UNUSED_KEY_PATH,
     )
-    return _finalize(yaml.safe_load(playbook_yaml), "services")
+    return _finalize(load_playbook(playbook_yaml), "services")
 
 
 def fragment_resolver(resolver_type: str, rendered_content: str) -> PlaybookFragment:

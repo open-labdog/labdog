@@ -76,10 +76,10 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
         if not claimed:
             return {"job_id": job_id, "status": "deferred"}
 
-        import yaml
         from sqlalchemy import select
 
         from app.ansible_runtime.known_hosts import write_known_hosts
+        from app.ansible_runtime.playbook_yaml import dump_playbook
         from app.ca_certs.generator import generate_ca_cert_playbook
         from app.ca_certs.merge import get_effective_ca_certs
         from app.crypto import decrypt_ssh_key, get_master_key
@@ -125,7 +125,7 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
                 os.makedirs(f"{private_data_dir}/inventory", exist_ok=True)
 
                 with open(f"{private_data_dir}/project/playbook.yml", "w") as f:
-                    yaml.dump(result["playbook"], f, default_flow_style=False)
+                    f.write(dump_playbook(result["playbook"]))
 
                 with open(f"{private_data_dir}/inventory/hosts", "w") as f:
                     f.write(result["inventory"])

@@ -51,46 +51,6 @@ the real code (ansible-core 2.21.1 from `uv.lock` where Ansible is
 involved); the rest were traced by reading. Each carries a fix direction
 for the fix thread; none is fixed here.
 
-### Security — Critical
-
-- [ ] **SEC-39** `backend/app/cron/generator.py:60`,
-      `backend/app/ansible_runtime/generator.py:200,297,307`,
-      `backend/app/hosts_mgmt/generator.py:25`,
-      `backend/app/services/generator.py:171,203`,
-      `backend/app/user_mgmt/generator.py:44` — operator-supplied module
-      configuration is templated by Ansible on the LabDog host
-
-      Symptom: the generators place operator strings (cron commands and
-      environment values, firewall rule comments inside the rendered
-      ruleset, the rendered `/etc/hosts`, service unit content, user
-      shell) into playbook task arguments as plain YAML scalars.
-      ansible-core templates task arguments on the controller before
-      sending them to the target, so a value containing Jinja delimiters
-      is evaluated on the LabDog host, as the LabDog service user, during
-      the next sync or plan. *Reproduced* for cron with the real generator
-      and ansible-core 2.21.1. The same values arrive through the GitOps
-      importer, so a committer to a GitOps repo reaches it too. The
-      correctness side: a legitimate value containing `{{` (a `docker ps
-      --format` in a cron job, say) makes the sync fail.
-
-      Root cause: SEC-20 closed this class for action parameters only.
-      Module configuration never went through an equivalent boundary.
-
-      Fix direction: mark every operator-supplied string unsafe where the
-      playbook is serialised (`yaml.dump` in `composer.py:176` and
-      `generator.py:242,401`): wrap the values in a marker type at the
-      generator and register a representer that emits them with the
-      `!unsafe` tag. Unlike extra-vars (the reason SEC-20 rejected
-      instead), the tag is part of the playbook text, so it survives
-      ansible-runner; verified that a tagged scalar reaches the target
-      verbatim. Keep templating only for LabDog's own expressions. Add a
-      test that renders each generator with a delimiter in every string
-      field and asserts the tag on the output.
-
-      Severity Critical: code execution on the controller, which holds
-      the master encryption key, every host's SSH private key and the
-      database, reachable by any authenticated account.
-
 ### Security — High
 
 - [ ] **SEC-40** `backend/app/actions/pack_policy.py:135-167`
