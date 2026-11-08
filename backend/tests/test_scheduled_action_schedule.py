@@ -426,3 +426,37 @@ async def test_the_expression_is_read_in_the_scheduling_timezone(db, kolkata):
 
     result = await _check_due_async()
     assert result["dispatched"] == 1
+
+
+async def test_a_failing_schedule_does_not_stop_the_ones_after_it(db):
+    """BUG-134: the per-row rollback expired every loaded row, so the
+    handler's own log call (and the next row) raised MissingGreenlet and
+    the tick ended at the first failure, every tick."""
+    from app.actions import run_target as mod
+
+    hosts = [await create_host(db) for _ in range(3)]
+    for host in hosts:
+        db.add(
+            ScheduledAction(
+                target_kind="host",
+                target_id=host.id,
+                action_key="_builtin.collect_state",
+                schedule_cron="* * * * *",
+                enabled=True,
+                last_dispatched_at=datetime.now(UTC) - timedelta(minutes=2),
+            )
+        )
+    await db.commit()
+
+    real = mod.describe_target
+    bad_host = hosts[1].id
+
+    async def flaky(session, *, host_id=None, group_id=None):
+        if host_id == bad_host:
+            raise RuntimeError("boom")
+        return await real(session, host_id=host_id, group_id=group_id)
+
+    with patch.object(mod, "describe_target", new=flaky):
+        result = await _check_due_async()
+
+    assert result["dispatched"] == 2

@@ -185,30 +185,6 @@ for the fix thread; none is fixed here.
 
       Severity Low: needs database write access.
 
-### Correctness — High
-
-- [ ] **BUG-134** `backend/app/tasks/scheduled_action_schedule.py:191-192`
-      — one failing schedule stops every schedule after it, on every tick
-
-      Symptom: the per-row `except` calls `db.rollback()`, which expires
-      every ORM object in the session, then logs `sa.id`. Reading the
-      expired attribute needs a lazy load, which raises `MissingGreenlet`
-      under asyncio inside the handler, so the exception leaves the loop
-      and the tick ends. The next rows' objects are expired too. A
-      schedule whose target host was deleted (the FK case the comment
-      describes) therefore silences every later schedule, indefinitely.
-      *Reproduced* with an async SQLite session. This is the failure the
-      comment says the rollback prevents.
-
-      Fix direction: read the ids first (`select(ScheduledAction.id)`)
-      and load each row inside the loop (`await db.get(...)`), keep the id
-      in a local for logging, or run each row in `db.begin_nested()` so a
-      failure rolls back only its savepoint. Add a test with a failing
-      row in the middle and assert later rows dispatch.
-
-      Severity High: scheduled actions, syncs and drift checks silently
-      stop until someone fixes or deletes the bad row.
-
 ### Correctness — Medium
 
 - [ ] **BUG-135** `backend/app/tasks/gitops.py:201-248`

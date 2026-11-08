@@ -65,21 +65,32 @@ async def _check_due_async() -> dict:
         # as unknown until a tick happened to land elsewhere (BUG-105).
         await ensure_registry_current(db)
         tz = await get_schedule_timezone(db)
-        rows = (
+        # Ids only, and each row loaded inside the loop (BUG-134). The
+        # per-row rollback below expires every ORM object in the session;
+        # walking a list of loaded rows meant the next row's attributes,
+        # and this row's ``sa.id`` in the log call, needed a lazy load,
+        # which raises MissingGreenlet under asyncio inside the handler,
+        # so one failing schedule ended the tick for every row after it.
+        schedule_ids = (
             (
                 await db.execute(
-                    select(ScheduledAction).where(
+                    select(ScheduledAction.id)
+                    .where(
                         ScheduledAction.enabled.is_(True),
                         ScheduledAction.schedule_cron.isnot(None),
                     )
+                    .order_by(ScheduledAction.id)
                 )
             )
             .scalars()
             .all()
         )
 
-        for sa in rows:
+        for sa_id in schedule_ids:
             try:
+                sa = await db.get(ScheduledAction, sa_id, populate_existing=True)
+                if sa is None or not sa.enabled or sa.schedule_cron is None:
+                    continue
                 next_run_at = next_fire_time(sa.schedule_cron, sa.walk_start(), tz)
                 if now < next_run_at:
                     continue
@@ -189,7 +200,7 @@ async def _check_due_async() -> dict:
                 # so one broken row silently skipped every schedule ordered
                 # after it, on every tick, indefinitely.
                 await db.rollback()
-                logger.exception("scheduler: failed to evaluate scheduled_action %d", sa.id)
+                logger.exception("scheduler: failed to evaluate scheduled_action %d", sa_id)
 
     return {
         "dispatched": dispatched,
