@@ -87,24 +87,6 @@ for the fix thread; none is fixed here.
 
 ### Correctness — Low
 
-- [ ] **BUG-140** `backend/app/api/admin_users.py:115-123`,
-      `backend/app/main.py:703-706` — the last-superuser guard can be
-      sidestepped
-
-      Symptom (by reading): `update_user` refuses demoting the last
-      superuser but not deactivating them (`is_active: false`), and it
-      counts inactive superusers as "others". The fastapi-users router
-      mounted at `/api/users` also offers `PATCH` and `DELETE
-      /api/users/{id}` to superusers, with neither the last-superuser nor
-      the "cannot delete yourself" check.
-
-      Fix direction: count only active superusers, apply the guard to
-      `is_active=False` as well, and mount the users router without the
-      `{id}` routes (or override them) so `admin_users` is the only path.
-
-      Severity Low: a superuser can lock everyone out of user
-      administration, recoverable from the database.
-
 - [ ] **BUG-141** `backend/app/api/webhooks.py:56-67`
       (`_find_repo_by_url`) — two repositories with the same URL break
       every webhook for it

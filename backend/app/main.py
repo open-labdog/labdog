@@ -717,11 +717,15 @@ def create_app() -> FastAPI:
 
     app.include_router(auth_setup_router)
 
-    app.include_router(
-        fastapi_users.get_users_router(UserRead, UserUpdate),
-        prefix="/api/users",
-        tags=["users"],
-    )
+    # BUG-140: only the /me routes. The router's GET/PATCH/DELETE /{id}
+    # let a superuser deactivate or delete the last superuser, or delete
+    # themselves, past the guards in app/api/admin_users.py, which is the
+    # one path for administering other users.
+    users_router = fastapi_users.get_users_router(UserRead, UserUpdate)
+    users_router.routes = [
+        route for route in users_router.routes if getattr(route, "path", "").startswith("/me")
+    ]
+    app.include_router(users_router, prefix="/api/users", tags=["users"])
 
     app.include_router(actions_router, prefix="/api")
     app.include_router(action_packs_router, prefix="/api")
