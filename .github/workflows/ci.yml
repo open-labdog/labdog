@@ -402,7 +402,7 @@ jobs:
   #                   (tag-release-image, after the release job, adds
   #                   :X.Y.Z, :X.Y and :X to that same image)
   # build-dev-image — push to dev           → :dev-latest + :dev-<short_sha>
-  # build-test-image — PRs + workflow_dispatch (non-main) → :test + :test-<short_sha>
+  # build-test-image — PRs (unless labelled no-test-image) + workflow_dispatch (non-main) → :test + :test-<short_sha>
   # All three log into Docker Hub using DOCKER_HUB_PAT.
   # The username is extracted from the first segment of DOCKER_HUB_REPO.
 
@@ -443,9 +443,14 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # A PR labelled `no-test-image` builds no image. :test floats, and an
+  # install that follows it would pick up a work-in-progress branch (a
+  # plan, an experiment) at its next pull. Add the label *before* pushing;
+  # the lint and test jobs still run.
   build-test-image:
     if: >-
-      github.event_name == 'pull_request' ||
+      (github.event_name == 'pull_request'
+       && !contains(github.event.pull_request.labels.*.name, 'no-test-image')) ||
       (github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
       (github.event_name == 'workflow_dispatch'
        && github.ref != 'refs/heads/main'
