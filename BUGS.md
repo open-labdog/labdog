@@ -33,7 +33,7 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-127`, `SEC-38`,
+ID counter as of last housekeeping pass: `BUG-132`, `SEC-38`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry.
 
@@ -183,3 +183,110 @@ against the container log and the 1.1.0 image.
 
       Severity High: every group-dispatch action is unusable, and the
       failure is silent.
+
+## Open — 2026-11-08 load test (PR #270)
+
+Filed 2026-11-08 from the plan step 2 load test (300 fake Debian hosts,
+image `openlabdog/labdog:dev-5cb85d7`, results in
+`plans/scaling/results/02-baseline.md`). Each was reproduced in every
+scenario it could appear in.
+
+### Correctness — High
+
+- [ ] **BUG-128** `backend/app/user_mgmt/generator.py:84,96` — the image
+      ships without the `ansible.posix` collection, so every sync that
+      includes linux users fails
+
+      Symptom: any host sync whose plan includes the `users` module fails
+      at playbook parse with `couldn't resolve module/action
+      'ansible.posix.authorized_key'`. The generator emits that task for
+      every present user, with or without keys, so no users sync can
+      succeed. Seen on 1.1.0 (`dev-5cb85d7`); a 1.0.0 image has the same
+      gap.
+
+      Root cause: `backend/pyproject.toml` depends on `ansible-core`,
+      which carries only `ansible.builtin`; nothing installs
+      `ansible.posix` (no `requirements.yml`, no `ansible-galaxy` step in
+      the Dockerfile). Fix: install the collection in the image, or use
+      a builtin equivalent.
+
+      Severity High: user management cannot be applied at all. Masked by
+      BUG-129, so the UI shows the hosts as in sync.
+
+- [ ] **BUG-129** `backend/app/ansible_runtime/outcomes.py:79`,
+      `backend/app/tasks/host_sync_orchestrator.py:540-542` — a playbook
+      that fails to parse is reported as a successful sync
+
+      Symptom: with BUG-128's parse error, ansible-runner exits non-zero
+      before any task runs and emits no host events. Every module in the
+      plan is classed `no_tasks`, which collapses to `in_sync`; the job
+      ends `success` and the host is marked in sync although nothing was
+      applied.
+
+      Root cause: `no_tasks` ("zero events carry this module's tag")
+      cannot tell "desired state already matched" from "the play never
+      ran". The runner's return code and status are not consulted before
+      the outcomes are trusted. Fix: treat a failed runner status with
+      zero task events as `error` for every module in the plan.
+
+      Severity High: any playbook-level failure (missing collection, bad
+      template, syntax error) is silent and reported as success.
+
+### Correctness — Medium
+
+- [ ] **BUG-130** `backend/app/cron/collector.py:58` — cron drift is
+      always `out_of_sync` when the SSH user isn't root
+
+      Symptom: 300 of 300 cron drift checks were `out_of_sync` in every
+      scenario, on hosts the preceding sync had converged. On a fake
+      host, `crontab -l -u root` as root lists the `#Ansible:` entries;
+      as the `labdog` SSH user it fails with "must be privileged to use
+      -u"; with `sudo -n` it works.
+
+      Root cause: the collector runs `crontab -l -u {user}` without sudo
+      and with `check=False`, and reads the non-zero exit as an empty
+      crontab, so every managed entry looks missing. Fix: run it through
+      `sudo -n` as the firewall collector does with `sudo`, and treat a non-zero exit
+      other than "no crontab for user" as a collection error, not empty.
+
+      Severity Medium: cron drift is useless for non-root SSH users, and
+      the constant drift can trigger needless syncs and alerts.
+
+- [ ] **BUG-131** `backend/app/tasks/sync_sweeper.py:67`,
+      `backend/app/tasks/host_sync_orchestrator.py:362` — a sync job whose
+      task dies before it claims the host stays `pending` forever
+
+      Symptom: in the first raised-concurrency run, Postgres connection
+      errors killed tasks before they claimed their host. 82 of 300
+      initial sync jobs then sat `pending` for 2.5 h, with an empty queue
+      and idle workers, until the run was stopped. The UI showed them
+      waiting, and a later sync for those hosts could not start because
+      of `uq_sync_job_active`.
+
+      Root cause: `sync_sweeper` only recovers rows in `running`. The
+      next pending job for a host is dispatched only when an in-flight
+      job on that host finishes (`_dispatch_next_pending_for_host`), so
+      a pending row whose message was lost, with nothing running on its
+      host, is never picked up again. Fix: have the sweeper re-dispatch
+      (or fail) `pending` rows older than a threshold when no job is
+      running on the host.
+
+      Severity Medium: needs a task failure to trigger, but then blocks
+      the host's syncs until someone clears the row by hand.
+
+### Documentation — Low
+
+- [ ] **BUG-132** `docs/` (deployment) — the docs don't say how many
+      Postgres connections a given worker concurrency needs
+
+      Symptom: at 16 worker / 12 orchestrator slots on stock Postgres
+      (`max_connections` 100), LabDog logged 499
+      `TooManyConnectionsError` within 4 minutes (96 in
+      `run_host_sync`, the rest in beat tasks: sweepers, notifications,
+      alert handling), which also triggered BUG-131. Measured at 16/12:
+      ~90–130 connections idle, 183 at peak.
+
+      Fix: document the connections needed per slot (roughly 6) and that
+      raising concurrency needs a higher `max_connections` or a pooler.
+
+      Severity Low: a sizing gap, but the failure it causes is severe.

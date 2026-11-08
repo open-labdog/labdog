@@ -124,27 +124,29 @@ connection pool and Postgres `max_connections` with it.
 
 ## Bugs found
 
-- **`ansible.posix` is missing from the image** (1.1.0 here; a 1.0.0
+Filed in `BUGS.md` as BUG-128 to BUG-132.
+
+- **BUG-128: `ansible.posix` is missing from the image** (1.1.0 here; a 1.0.0
   install has the same gap). Any sync that includes a linux user fails at
   playbook parse (`ansible.posix.authorized_key`).
-- **A playbook parse failure is reported as success.** ansible-runner
+- **BUG-129: A playbook parse failure is reported as success.** ansible-runner
   emits no host events, every module is classed `no_tasks`, the job
   ends `success` and the host is marked `in_sync`, though nothing was
   applied.
-- **Cron drift is always `out_of_sync` when the SSH user isn't root.**
+- **BUG-130: Cron drift is always `out_of_sync` when the SSH user isn't root.**
   `backend/app/cron/collector.py:58` runs `crontab -l -u root` without
   sudo; Debian answers "must be privileged to use -u", the non-zero exit
   is read as an empty crontab, and every managed entry looks missing.
   Confirmed on a converged fake host: as root the `#Ansible:` entries
   are there, as `labdog` the command fails, with `sudo -n` it works.
   300 of 300 cron checks were `out_of_sync` in every scenario.
-- **At 16/12 LabDog needs more than Postgres's default 100
+- **BUG-132: At 16/12 LabDog needs more than Postgres's default 100
   connections.** The first raised run (on stock `max_connections` 100)
   logged 499 `TooManyConnectionsError` within 4 minutes, 96 of them in
   `run_host_sync`, plus beat tasks (sweepers, notifications, alert
   handling). The deployment docs should say how many connections a given
   concurrency needs (measured: ~90–130 idle, 183 peak at 16/12).
-- **A sync job whose task dies before claiming the host stays `pending`
+- **BUG-131: A sync job whose task dies before claiming the host stays `pending`
   forever.** After the connection errors, 82 of 300 initial sync jobs sat
   `pending` with an empty queue and idle workers for 2.5 h until the run
   was stopped. `sync_sweeper` only recovers rows stuck in `running`, and
