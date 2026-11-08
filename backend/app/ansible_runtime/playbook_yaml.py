@@ -91,4 +91,4 @@ def dump_playbook(playbook: Any) -> str:
 
 def load_playbook(text: str) -> Any:
     """Inverse of :func:`dump_playbook`, preserving which strings are templates."""
-    return yaml.load(text, Loader=_PlaybookLoader)  # noqa: S506 - SafeLoader subclass
+    return yaml.load(text, Loader=_PlaybookLoader)  # noqa: S506  # nosec B506 - SafeLoader subclass

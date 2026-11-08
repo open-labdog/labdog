@@ -98,7 +98,7 @@ def _authorized_key_tasks(users: list) -> list[dict]:
         # Operator data stays out of the Jinja expressions: the username
         # reaches them only as a task variable.
         task_vars = {"labdog_key_user": username}
-        passwd = "ansible_facts.getent_passwd[labdog_key_user]"
+        passwd = "ansible_facts.getent_passwd[labdog_key_user]"  # nosec B105 - a fact path
         home = Template("{{ " + passwd + "[4] }}")
         exists = f"{passwd} is not none"
         tasks.extend(
