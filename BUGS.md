@@ -53,24 +53,6 @@ for the fix thread; none is fixed here.
 
 ### Security — Medium
 
-- [ ] **SEC-46** `backend/app/ansible_runtime/runner.py:144-156` — Ansible
-      runs inherit LabDog's whole environment, secrets included
-
-      Symptom: ansible-runner starts from `os.environ.copy()`, and
-      `merged_env` adds to it without removing anything, so every
-      ansible-playbook process sees `LABDOG_SECURITY__SECRET_KEY`,
-      `LABDOG_SECURITY__ENCRYPTION_KEY` and the database URL. Any
-      controller-side evaluation (SEC-39, SEC-40) reads them directly.
-
-      Fix direction: build the child environment from an allowlist
-      (`PATH`, `HOME`, `LANG`, `ANSIBLE_*`, the proxy variables) instead of
-      copying, or at least drop every `LABDOG_` variable, and pass it via
-      ansible-runner's `envvars` with the inherited environment cleared.
-      Test that no `LABDOG_SECURITY__` key reaches the runner.
-
-      Severity Medium: hardening; it turns any controller-side bug into
-      a full key compromise.
-
 - [ ] **SEC-47** `backend/app/ai/command_policy.yaml:234,984` — read-only
       AI tools can both read secrets and send data out
 

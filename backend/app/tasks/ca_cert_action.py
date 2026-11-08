@@ -135,11 +135,16 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
         from app.settings_service import get_setting_cached_typed
 
         playbook_timeout = int(get_setting_cached_typed("ansible.playbook_timeout"))
-        runner = ansible_runner.run(
+        from app.ansible_runtime.runner import scrub_child_env
+
+        runner = ansible_runner.interface.init_runner(
             private_data_dir=private_data_dir,
             playbook="playbook.yml",
             timeout=playbook_timeout,
         )
+        # SEC-46: no LabDog secrets in the ansible-playbook environment.
+        runner.config.env = scrub_child_env(runner.config.env)
+        runner.run()
 
         async def _record_result():
             async with task_session() as db:
