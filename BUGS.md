@@ -353,11 +353,6 @@ content policy.
 
 ---
 
-## Open — 2026-11-07 gitlab-upgrade
-
-Filed 2026-11-07 from the first dry runs of the private `gitlab-upgrade`
-pack action on lin-manager (LabDog 1.1.0), action runs 376 and 377.
-
 ## Open — 2026-10-29 valheim
 
 Filed 2026-10-29 while tracing why a hosts sync rewrote `/etc/hosts` on
