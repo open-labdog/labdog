@@ -187,30 +187,6 @@ for the fix thread; none is fixed here.
 
 ### Correctness — Medium
 
-- [ ] **BUG-135** `backend/app/tasks/gitops.py:201-248`
-      (`_trigger_group_sync`) — a GitOps push applies only the firewall,
-      and skips busy hosts for good
-
-      Symptom: the staged `SyncJob` has no `module_type` (server default
-      `firewall`) and no `module_filter`, and it is dispatched to
-      `run_sync_playbook`, which syncs the firewall only. A push that
-      changes users, packages, services, cron, hosts or resolver is
-      imported and reported as synced but not applied. A host with any
-      pending or running job is skipped and never queued, so it misses
-      the change entirely. When a host has two active jobs (different
-      modules), `scalar_one_or_none()` raises; the group is marked in
-      error but the rows already flushed for its other hosts are
-      committed as `pending` without a dispatch. Same family as BUG-120.
-
-      Fix direction: create `SyncJob(module_type="bulk",
-      module_filter=<modules the import changed>)` (`ImportResult.modules`
-      has `changed` per module) and dispatch `run_host_sync` with that
-      filter, as `POST /api/sync/hosts/{id}/bulk` does; for a busy host
-      insert the row as pending and let the host queue run it; replace
-      `scalar_one_or_none()` with an `exists()` query.
-
-      Severity Medium: GitOps silently does less than it reports.
-
 - [ ] **BUG-136** `backend/app/tasks/scan_run.py:127-128`,
       `backend/app/tasks/scan_schedule.py:28-39` — a long scan is
       re-dispatched every minute while it runs
@@ -386,21 +362,6 @@ turned up while fixing those, by reading the code.
       plus aliases.
 
       Severity Medium: a configured name silently does not resolve.
-
-- [ ] **BUG-120** `backend/app/tasks/builtin_dispatchers.py:565-569` — a
-      `_builtin.sync` row records neither its module type nor its modules
-
-      Symptom (by reading): `_sync_async` creates its `SyncJob` with no
-      `module_type`, so the column takes its server default `firewall`, and
-      no `module_filter`. The modules are passed to the inner run only. If
-      the host is busy the job defers, and the queue later re-dispatches it
-      from the row: `module_filter_for` reads `firewall`, so a scheduled
-      sync of every module applies the firewall alone and reports success.
-      The same default makes the insert collide with an operator's pending
-      firewall sync on `uq_sync_job_active`, and the run fails with a
-      duplicate-key error.
-
-      Severity Medium: a scheduled sync silently does less than it says.
 
 ### Correctness — Low
 

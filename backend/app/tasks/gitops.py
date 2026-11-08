@@ -133,7 +133,7 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
             # dispatch. Per-group _trigger_group_sync stages SyncJob rows but
             # does NOT call .delay(); the caller drains this list after the
             # commit on line below.
-            pending_dispatches: list[tuple[int, int]] = []
+            pending_dispatches: list[tuple[int, int, list[str] | None]] = []
 
             for group in groups:
                 try:
@@ -168,7 +168,11 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
                         continue
 
                     if import_result.any_changes():
-                        pending_dispatches.extend(await _trigger_group_sync(group.id, db))
+                        pending_dispatches.extend(
+                            await _trigger_group_sync(
+                                group.id, db, changed_sync_modules(import_result)
+                            )
+                        )
 
                 except Exception as e:
                     logger.error("GitOps: error processing group %s: %s", group.name, e)
@@ -180,10 +184,10 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
             repo.last_sync_at = datetime.now(UTC)
             await db.commit()
 
-            from app.tasks.sync import run_sync_playbook  # noqa: PLC0415
+            from app.tasks.host_sync_orchestrator import run_host_sync  # noqa: PLC0415
 
-            for job_id, host_id in pending_dispatches:
-                run_sync_playbook.delay(job_id=job_id, host_id=host_id)
+            for job_id, host_id, module_filter in pending_dispatches:
+                run_host_sync.delay(job_id=job_id, host_id=host_id, module_filter=module_filter)
                 logger.info("GitOps: dispatched sync job %d for host %d", job_id, host_id)
 
             logger.info(
@@ -198,19 +202,66 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
             cleanup_repo(repo_dir)
 
 
-async def _trigger_group_sync(group_id: int, db) -> list[tuple[int, int]]:
-    """Stage SyncJob rows for every eligible host in *group_id*.
+#: GitOps importer module name → orchestrator module (CANONICAL_ORDER).
+#: Modules that configure LabDog itself (drift, discovery, schedules) have
+#: nothing to apply to a host.
+_IMPORT_MODULE_TO_SYNC = {
+    "firewall": "firewall",
+    "services": "services",
+    "packages": "packages",
+    "hosts_entries": "hosts-file",
+    "cron_jobs": "cron",
+    "users": "linux-users",
+    "resolver": "resolver",
+}
 
-    Returns a list of `(job_id, host_id)` tuples for the caller to dispatch
-    AFTER `db.commit()`. BUG-37: dispatching `.delay()` before the commit
-    races with the Celery worker — the row is invisible to the worker's
-    connection until commit lands. The caller in `_process_webhook_async`
-    drains this list once per webhook delivery, after the outer commit.
+
+def changed_sync_modules(import_result) -> list[str]:
+    """The orchestrator modules an import changed, in canonical order."""
+    from app.ansible_runtime.composer import CANONICAL_ORDER
+
+    changed = {
+        _IMPORT_MODULE_TO_SYNC[m.module]
+        for m in import_result.modules
+        if m.changed and m.module in _IMPORT_MODULE_TO_SYNC
+    }
+    return [m for m in CANONICAL_ORDER if m in changed]
+
+
+async def _trigger_group_sync(
+    group_id: int, db, modules: list[str]
+) -> list[tuple[int, int, list[str] | None]]:
+    """Stage a multi-module SyncJob for every host in *group_id*.
+
+    Returns ``(job_id, host_id, module_filter)`` tuples for the caller to
+    dispatch AFTER ``db.commit()``. BUG-37: dispatching ``.delay()`` before
+    the commit races with the Celery worker — the row is invisible to the
+    worker's connection until commit lands.
+
+    BUG-135. This used to stage a row with no ``module_type`` (server
+    default ``firewall``) and dispatch ``run_sync_playbook``, so a push
+    that changed users, packages or cron was imported, reported as
+    synced, and never applied. It also skipped any host with a job in
+    flight, for good, and raised when a host had two. Now:
+
+    * the row is ``module_type="bulk"`` with the changed modules as its
+      filter, dispatched to ``run_host_sync`` like the bulk endpoint;
+    * a busy host gets its row anyway: ``run_host_sync`` defers behind
+      whatever is running and the host queue runs it afterwards;
+    * when a bulk job is already queued for the host (``uq_sync_job_active``
+      allows one), its filter is widened to include these modules instead.
+      A bulk job already *running* may have read the configuration before
+      this import, so it is followed by one per-module job per module.
     """
     from sqlalchemy import select
+    from sqlalchemy.exc import IntegrityError
 
     from app.models.host import HostGroupMembership
-    from app.models.sync_job import SyncJob
+    from app.models.sync_job import JobStatus, SyncJob
+    from app.tasks.host_sync_orchestrator import _DB_TO_CANONICAL
+
+    if not modules:
+        return []
 
     host_result = await db.execute(
         select(HostGroupMembership.c.host_id).where(HostGroupMembership.c.group_id == group_id)
@@ -221,28 +272,66 @@ async def _trigger_group_sync(group_id: int, db) -> list[tuple[int, int]]:
         logger.info("GitOps: no hosts in group %d, skipping sync", group_id)
         return []
 
-    pending: list[tuple[int, int]] = []
-    for host_id in host_ids:
-        running = await db.execute(
-            select(SyncJob).where(
-                SyncJob.host_id == host_id,
-                SyncJob.status.in_(["pending", "running"]),
-            )
-        )
-        if running.scalar_one_or_none():
-            logger.info("GitOps: skipping host %d (sync already in progress)", host_id)
-            continue
+    canonical_to_db = {canonical: db_name for db_name, canonical in _DB_TO_CANONICAL.items()}
 
-        # triggered_by_user_id=None distinguishes gitops-triggered from user-triggered
+    async def _stage(host_id: int, module_type: str, module_filter: list[str] | None):
+        """Insert one pending row; ``None`` when an active one of that type exists."""
         job = SyncJob(
             host_id=host_id,
             group_id=group_id,
-            status="pending",
+            status=JobStatus.pending,
+            module_type=module_type,
+            module_filter=module_filter,
+            # None distinguishes gitops-triggered from user-triggered.
             triggered_by_user_id=None,
         )
-        db.add(job)
-        await db.flush()
-        pending.append((job.id, host_id))
+        try:
+            async with db.begin_nested():
+                db.add(job)
+                await db.flush()
+        except IntegrityError:
+            return None
+        return job.id
 
-    logger.info("GitOps: staged %d sync tasks for group %d", len(pending), group_id)
+    pending: list[tuple[int, int, list[str] | None]] = []
+    for host_id in host_ids:
+        job_id = await _stage(host_id, "bulk", modules)
+        if job_id is not None:
+            pending.append((job_id, host_id, modules))
+            continue
+
+        existing = (
+            await db.execute(
+                select(SyncJob).where(
+                    SyncJob.host_id == host_id,
+                    SyncJob.module_type == "bulk",
+                    SyncJob.status.in_([JobStatus.pending, JobStatus.running]),
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is not None and existing.status == JobStatus.pending:
+            if existing.module_filter:
+                wanted = set(existing.module_filter) | set(modules)
+                from app.ansible_runtime.composer import CANONICAL_ORDER
+
+                existing.module_filter = [m for m in CANONICAL_ORDER if m in wanted]
+            logger.info(
+                "GitOps: host %d already has queued sync job %d; widened it to %s",
+                host_id,
+                existing.id,
+                existing.module_filter or "every module",
+            )
+            continue
+
+        # A bulk job is running and may predate this import.
+        for module in modules:
+            module_type = canonical_to_db.get(module)
+            if module_type is None:
+                continue
+            job_id = await _stage(host_id, module_type, [module])
+            if job_id is not None:
+                pending.append((job_id, host_id, [module]))
+
+    await db.flush()
+    logger.info("GitOps: staged %d sync jobs for group %d", len(pending), group_id)
     return pending

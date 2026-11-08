@@ -534,6 +534,7 @@ async def close_origin_host_run(job_id: int, payload: dict | None) -> None:
 
 async def _sync_async(action_run_id: int, host_run_id: int) -> None:
     from sqlalchemy import select
+    from sqlalchemy.exc import IntegrityError
 
     from app.db import task_session
     from app.models.sync_job import JobStatus, SyncJob
@@ -561,14 +562,28 @@ async def _sync_async(action_run_id: int, host_run_id: int) -> None:
         # pointer back to this run's per-host row: if the sync defers, the
         # queue re-dispatches the job later and whoever runs it then has to
         # close the row this task deliberately leaves open (BUG-81).
+        #
+        # BUG-120: it records what it will do. Without ``module_type`` the
+        # column took its server default ``firewall``, and without
+        # ``module_filter`` a deferred job was re-dispatched from the row as
+        # a firewall-only sync, and the insert collided with an operator's
+        # pending firewall sync on ``uq_sync_job_active``.
         async with task_session() as db:
             job = SyncJob(
                 host_id=host_id,
                 status=JobStatus.pending,
+                module_type="bulk",
+                module_filter=module_filter,
                 origin_action_host_run_id=host_run_id,
             )
             db.add(job)
-            await db.flush()
+            try:
+                await db.flush()
+            except IntegrityError:
+                raise RuntimeError(
+                    "a multi-module sync is already queued or running for this host; "
+                    "it applies the current configuration when it runs"
+                ) from None
             job_id = job.id
             await db.commit()
 
