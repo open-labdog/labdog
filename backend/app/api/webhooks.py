@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import logging
+from collections.abc import Callable
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
@@ -53,18 +54,44 @@ def _verify_gitlab_token(secret: str, token_header: str | None) -> bool:
     return hmac.compare_digest(secret, token_header)
 
 
-async def _find_repo_by_url(url: str, db: AsyncSession) -> GitRepository | None:
-    """Try matching clone_url, ssh_url, or html_url variants."""
-    result = await db.execute(select(GitRepository).where(GitRepository.url == url))
-    repo = result.scalar_one_or_none()
-    if repo:
-        return repo
-    # Try stripping .git suffix or adding it
+async def _find_repos_by_url(url: str, db: AsyncSession) -> list[GitRepository]:
+    """Every repository row for *url*, with or without a ``.git`` suffix.
+
+    BUG-141: two rows for one URL (two branches of one repository is a
+    normal setup) made ``scalar_one_or_none`` raise, and every delivery for
+    that repository answered 500. Callers pick the row by branch.
+    """
+    if not url:
+        return []
     alt_url = url.removesuffix(".git") if url.endswith(".git") else url + ".git"
     result = await db.execute(
-        select(GitRepository).where(GitRepository.url == alt_url),
+        select(GitRepository)
+        .where(GitRepository.url.in_([url, alt_url]))
+        .order_by(GitRepository.id)
     )
-    return result.scalar_one_or_none()
+    return list(result.scalars().all())
+
+
+def _authenticated(
+    repos: list[GitRepository], check: Callable[[str], bool], *, what: str
+) -> list[GitRepository]:
+    """The rows whose own webhook secret verifies this request.
+
+    Each row has its own secret, so each is checked; 401 when none does.
+    """
+    # SEC-28: ciphertext on the row; decrypted only to compare against
+    # the signature on this request and never returned anywhere.
+    secrets = [(repo, get_webhook_secret(repo)) for repo in repos]
+    if not any(secret for _, secret in secrets):
+        raise HTTPException(status_code=401, detail="Webhook secret not configured")
+    verified = [repo for repo, secret in secrets if secret and check(secret)]
+    if not verified:
+        raise HTTPException(status_code=401, detail=f"Invalid {what}")
+    return verified
+
+
+def _on_branch(repos: list[GitRepository], ref: str) -> list[GitRepository]:
+    return [repo for repo in repos if ref == f"refs/heads/{repo.branch}"]
 
 
 async def _dispatch_webhook(
@@ -72,7 +99,12 @@ async def _dispatch_webhook(
     commit_sha: str,
     db: AsyncSession,
 ) -> None:
-    """Find all groups linked to this repo with gitops enabled and dispatch."""
+    """Find all groups linked to this repo with gitops enabled and dispatch.
+
+    SEC-48: *commit_sha* is only logged and passed along as a hint. The
+    task imports the tip of the branch it fetches, so a replayed delivery
+    cannot roll the groups back to the older commit it names.
+    """
     result = await db.execute(
         select(HostGroup).where(
             HostGroup.git_repository_id == repo.id,
@@ -93,6 +125,11 @@ async def _dispatch_webhook(
     )
 
 
+async def _dispatch_all(repos: list[GitRepository], commit_sha: str, db: AsyncSession) -> None:
+    for repo in repos:
+        await _dispatch_webhook(repo, commit_sha, db)
+
+
 @router.post("/github")
 async def github_webhook(
     request: Request,
@@ -106,19 +143,14 @@ async def github_webhook(
         "repository",
         {},
     ).get("ssh_url", "")
-    repo = await _find_repo_by_url(repo_url, db)
-    if not repo:
+    repos = await _find_repos_by_url(repo_url, db)
+    if not repos:
         return {"status": "ignored", "reason": "unknown repository"}
 
-    # Verify signature
-    # SEC-28: ciphertext on the row; decrypted only to compare against
-    # the signature on this request and never returned anywhere.
-    secret = get_webhook_secret(repo)
-    if not secret:
-        raise HTTPException(status_code=401, detail="Webhook secret not configured")
     sig = request.headers.get("X-Hub-Signature-256")
-    if not _verify_github_signature(body, secret, sig):
-        raise HTTPException(status_code=401, detail="Invalid signature")
+    repos = _authenticated(
+        repos, lambda secret: _verify_github_signature(body, secret, sig), what="signature"
+    )
 
     # Check event type
     event = request.headers.get("X-GitHub-Event", "")
@@ -133,11 +165,11 @@ async def github_webhook(
         return {"status": "ignored", "reason": "branch deletion"}
 
     # Check branch matches
-    expected_ref = f"refs/heads/{repo.branch}"
-    if ref != expected_ref:
+    matching = _on_branch(repos, ref)
+    if not matching:
         return {"status": "ignored", "reason": f"branch mismatch: {ref}"}
 
-    await _dispatch_webhook(repo, after, db)
+    await _dispatch_all(matching, after, db)
     return {"status": "accepted"}
 
 
@@ -152,19 +184,12 @@ async def gitlab_webhook(
         "git_http_url",
         "",
     ) or payload.get("project", {}).get("git_ssh_url", "")
-    repo = await _find_repo_by_url(repo_url, db)
-    if not repo:
+    repos = await _find_repos_by_url(repo_url, db)
+    if not repos:
         return {"status": "ignored", "reason": "unknown repository"}
 
-    # Verify token
-    # SEC-28: ciphertext on the row; decrypted only to compare against
-    # the signature on this request and never returned anywhere.
-    secret = get_webhook_secret(repo)
-    if not secret:
-        raise HTTPException(status_code=401, detail="Webhook secret not configured")
     token = request.headers.get("X-Gitlab-Token")
-    if not _verify_gitlab_token(secret, token):
-        raise HTTPException(status_code=401, detail="Invalid token")
+    repos = _authenticated(repos, lambda secret: _verify_gitlab_token(secret, token), what="token")
 
     # Check for branch deletion
     after = payload.get("checkout_sha") or payload.get("after", "")
@@ -172,11 +197,11 @@ async def gitlab_webhook(
         return {"status": "ignored", "reason": "branch deletion"}
 
     ref = payload.get("ref", "")
-    expected_ref = f"refs/heads/{repo.branch}"
-    if ref != expected_ref:
+    matching = _on_branch(repos, ref)
+    if not matching:
         return {"status": "ignored", "reason": f"branch mismatch: {ref}"}
 
-    await _dispatch_webhook(repo, after, db)
+    await _dispatch_all(matching, after, db)
     return {"status": "accepted"}
 
 
@@ -192,29 +217,25 @@ async def gitea_webhook(
         "repository",
         {},
     ).get("ssh_url", "")
-    repo = await _find_repo_by_url(repo_url, db)
-    if not repo:
+    repos = await _find_repos_by_url(repo_url, db)
+    if not repos:
         return {"status": "ignored", "reason": "unknown repository"}
 
-    # SEC-28: ciphertext on the row; decrypted only to compare against
-    # the signature on this request and never returned anywhere.
-    secret = get_webhook_secret(repo)
-    if not secret:
-        raise HTTPException(status_code=401, detail="Webhook secret not configured")
     sig = request.headers.get("X-Gitea-Signature")
-    if not _verify_gitea_signature(body, secret, sig):
-        raise HTTPException(status_code=401, detail="Invalid signature")
+    repos = _authenticated(
+        repos, lambda secret: _verify_gitea_signature(body, secret, sig), what="signature"
+    )
 
     ref = payload.get("ref", "")
     after = payload.get("after", "")
     if after == "0" * 40:
         return {"status": "ignored", "reason": "branch deletion"}
 
-    expected_ref = f"refs/heads/{repo.branch}"
-    if ref != expected_ref:
+    matching = _on_branch(repos, ref)
+    if not matching:
         return {"status": "ignored", "reason": f"branch mismatch: {ref}"}
 
-    await _dispatch_webhook(repo, after, db)
+    await _dispatch_all(matching, after, db)
     return {"status": "accepted"}
 
 

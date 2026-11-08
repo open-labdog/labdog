@@ -72,6 +72,29 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
                 logger.error("GitOps: failed to clone repo %s: %s", repo.name, e)
                 raise task.retry(exc=e)
 
+            # SEC-48: the webhook is a trigger, not an instruction. Import the
+            # tip of the branch just fetched, whatever SHA the payload named:
+            # a replayed delivery (GitHub's signature covers only the body)
+            # or anyone holding the static GitLab token could otherwise roll
+            # the groups back to an older commit on the branch.
+            tip = _git_repo.head.commit.hexsha
+            if commit_sha != tip:
+                logger.info(
+                    "GitOps: webhook for repo %s named %s; importing the branch tip %s",
+                    repo.name,
+                    (commit_sha or "")[:8],
+                    tip[:8],
+                )
+            commit_sha = tip
+            if repo.last_commit_sha == commit_sha:
+                logger.info(
+                    "GitOps: branch tip %s already processed for repo %s, skipping",
+                    commit_sha[:8],
+                    repo.name,
+                )
+                await db.commit()  # keep a pinned SSH host key (SEC-27)
+                return
+
             # SEC-27: an SSH clone records the server's host key on first
             # contact. Commit it now rather than riding on the import's
             # commit, so a failed import doesn't discard the pinning and

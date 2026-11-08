@@ -53,24 +53,6 @@ for the fix thread; none is fixed here.
 
 ### Security — Low
 
-- [ ] **SEC-48** `backend/app/api/webhooks.py:140,180`,
-      `backend/app/tasks/gitops.py:54,86` — a webhook deploys whatever
-      commit its payload names
-
-      Symptom: the importer reads files at the payload's `after` /
-      `checkout_sha` and only skips a SHA equal to the last one. A
-      replayed genuine GitHub delivery (the signature covers the body, and
-      there is no delivery-id or age check), or any request carrying the
-      static GitLab token, rolls the groups back to an older commit on the
-      branch, such as one before a firewall rule was tightened.
-
-      Fix direction: treat the webhook as a trigger only: fetch the branch
-      and import its tip, ignoring the payload SHA, or require the SHA to
-      equal the fetched tip. Record `X-GitHub-Delivery` ids to refuse
-      replays.
-
-      Severity Low: needs the GitLab token or a captured delivery.
-
 - [ ] **SEC-50** `backend/app/crypto/encryption.py:21,35` — stored secrets
       are encrypted without binding them to their row
 
@@ -84,21 +66,6 @@ for the fix thread; none is fixed here.
       (try with context, fall back to none, rewrite).
 
       Severity Low: needs database write access.
-
-### Correctness — Low
-
-- [ ] **BUG-141** `backend/app/api/webhooks.py:56-67`
-      (`_find_repo_by_url`) — two repositories with the same URL break
-      every webhook for it
-
-      Symptom (by reading): two `GitRepository` rows for one URL (two
-      branches of one repo is a normal setup) make `scalar_one_or_none()`
-      raise `MultipleResultsFound`, so every delivery answers 500.
-
-      Fix direction: select all rows for the URL and keep those whose
-      `branch` matches the push's ref, verifying the signature per row.
-
-      Severity Low: webhooks stop for that repository; manual sync works.
 
 ---
 

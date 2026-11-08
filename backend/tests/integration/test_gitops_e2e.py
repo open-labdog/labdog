@@ -811,3 +811,58 @@ class TestWebhookReceiver:
             for d in [bare_dir, clone_dir]:
                 if d.exists():
                     shutil.rmtree(str(d))
+
+
+class TestAWebhookImportsTheBranchTip:
+    """SEC-48: the payload's SHA is a hint. A replayed delivery naming an
+    older commit used to roll the group back to it; the task now imports
+    whatever the branch points at when it fetches."""
+
+    async def test_an_older_sha_in_the_payload_imports_the_tip(self, db):
+        bare_dir, clone_dir = _setup_bare_repo()
+        try:
+            old_sha = _push_files(
+                clone_dir,
+                {"groups/tip.yaml": MULTI_MODULE_YAML.replace("group: e2e-multi", "group: tip")},
+                "v1",
+            )
+            tip_sha = _push_files(
+                clone_dir,
+                {"groups/tip.yaml": MULTI_MODULE_YAML_V2.replace("group: e2e-multi", "group: tip")},
+                "v2",
+            )
+            assert old_sha != tip_sha
+
+            repo = _make_file_url_repo(db, f"e2e-tip-{uuid.uuid4().hex[:6]}", bare_dir, "s")
+            await db.flush()
+            group = await create_group(
+                db,
+                name=f"e2e-tip-{uuid.uuid4().hex[:6]}",
+                priority=300 + int(uuid.uuid4().int % 600) + 1,
+            )
+            group.gitops_enabled = True
+            group.git_repository_id = repo.id
+            group.gitops_file_path = "groups/tip.yaml"
+            group.gitops_status = GitOpsStatus.disconnected
+            await db.flush()
+            await db.commit()
+
+            from app.tasks.gitops import _process_webhook_async
+
+            class _FakeTask:
+                def retry(self, exc):
+                    raise exc
+
+            with (
+                _patch_clone_for_file_url(),
+                _patch_task_session_to_use(db),
+                patch("app.tasks.sync.run_sync_playbook.delay"),
+                patch("app.tasks.host_sync_orchestrator.run_host_sync.delay"),
+            ):
+                await _process_webhook_async(_FakeTask(), repo.id, old_sha)
+
+            await db.refresh(repo)
+            assert repo.last_commit_sha == tip_sha
+        finally:
+            for d in (bare_dir, clone_dir):
+                shutil.rmtree(str(d), ignore_errors=True)
