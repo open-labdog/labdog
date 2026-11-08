@@ -101,3 +101,27 @@ def test_previously_stranded_tasks_are_registered_and_routed(task_name):
     """
     assert task_name in celery_app.tasks, f"{task_name} is not registered on the worker"
     assert _queue_for(task_name) in CeleryManager.QUEUES
+
+
+def _dispatched_by_name() -> set[str]:
+    """Task names the orchestrator hands to ``send_task`` from its tables."""
+    from app.tasks import action_orchestrator as orch
+
+    return {
+        orch._DEFAULT_PER_HOST_TASK,
+        orch._DEFAULT_GROUP_TASK,
+        *orch.PER_HOST_TASK_FOR_BUILTIN.values(),
+        *orch.GROUP_TASK_FOR_BUILTIN.values(),
+        "app.tasks.action_orchestrator.run_action",
+    }
+
+
+@pytest.mark.parametrize("task_name", sorted(_dispatched_by_name()))
+def test_every_task_dispatched_by_name_is_registered(task_name):
+    """BUG-127: ``run_action_group`` was dispatched by name but its module
+    was missing from ``conf.include``, so workers dropped every
+    group-dispatch run as an unregistered task. The routing sweep above
+    cannot see a module that is not imported, so check the names the
+    orchestrator actually sends."""
+    assert task_name in celery_app.tasks, f"{task_name} is not registered on the worker"
+    assert _queue_for(task_name) in CeleryManager.QUEUES
