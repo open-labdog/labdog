@@ -42,6 +42,12 @@ MAX_OUTPUT_CHARS = 12_000
 # as a whole; this stops one hung command eating all of it.
 COMMAND_TIMEOUT_SECONDS = 120
 
+#: The shell commands run under, which is the one the classifier models.
+BASH_PATH = "/bin/bash"
+#: What the login shell is asked to run. Fixed text: the command arrives on
+#: stdin, so no shell but bash ever parses model output (SEC-45).
+BASH_WRAPPER = f"exec {BASH_PATH} -s"
+
 
 def _truncate(text: str) -> str:
     if len(text) <= MAX_OUTPUT_CHARS:
@@ -187,8 +193,15 @@ async def _run_ssh_command(ctx: ToolContext, args: dict[str, Any]) -> ToolResult
 
     try:
         async with ssh_connect_host(host, ctx.db, client_keys=[imported_key]) as conn:
+            # SEC-45: the classifier models bash. Handing the string to
+            # conn.run() let the target user's login shell parse it, and
+            # under zsh or fish some text bash treats as a literal argument
+            # is command execution, classified read_only and run without
+            # approval. The command now goes to bash on stdin, so the login
+            # shell only ever sees a fixed wrapper with no model input in it.
             result = await asyncio.wait_for(
-                conn.run(command, check=False), timeout=COMMAND_TIMEOUT_SECONDS
+                conn.run(BASH_WRAPPER, input=command, check=False),
+                timeout=COMMAND_TIMEOUT_SECONDS,
             )
     except HostKeyMismatchError as exc:
         return ToolResult(
@@ -221,6 +234,18 @@ async def _run_ssh_command(ctx: ToolContext, args: dict[str, Any]) -> ToolResult
     stdout = (result.stdout or "").strip()
     stderr = (result.stderr or "").strip()
     exit_status = result.exit_status
+
+    if exit_status == 127 and BASH_PATH in stderr and not stderr.startswith("bash:"):
+        # The login shell could not start bash; nothing ran. Running the
+        # command in that shell instead is exactly what SEC-45 removed.
+        return ToolResult(
+            f"{host.hostname} has no {BASH_PATH}. The AI tools only run commands "
+            "under bash, the shell the safety classifier understands.",
+            ok=False,
+            target_host_id=host_id,
+            classification=verdict.classification,
+            summary="no bash on host",
+        )
 
     parts = [f"exit status: {exit_status}"]
     if stdout:

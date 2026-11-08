@@ -53,25 +53,6 @@ for the fix thread; none is fixed here.
 
 ### Security — Medium
 
-- [ ] **SEC-45** `backend/app/ai/safety.py:430`,
-      `backend/app/ai/tools/ssh.py:191` — the AI command classifier models
-      bash, but commands run in the target user's login shell
-
-      Symptom: `conn.run(command)` hands the string to the remote login
-      shell. When that shell is zsh or fish, some syntax that bash treats
-      as a literal argument is command execution, and the classifier
-      reports those commands as `read_only`, which runs without approval.
-      *Reproduced* at the classifier.
-
-      Fix direction: stop letting the login shell parse operator or model
-      text. Run `conn.run("/bin/bash -s", input=command)` (or `sh -s`) so
-      the wrapper contains no model input and bash, the shell the
-      classifier models, does the parsing. Refuse the tool on hosts
-      without `/bin/bash`. Test that a zsh-only construct is not run.
-
-      Severity Medium: needs a non-bash login shell on the target, but
-      then an injected prompt gets unapproved writes.
-
 - [ ] **SEC-46** `backend/app/ansible_runtime/runner.py:144-156` — Ansible
       runs inherit LabDog's whole environment, secrets included
 
