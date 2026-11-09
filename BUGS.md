@@ -33,7 +33,7 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-133`, `SEC-38`,
+ID counter as of last housekeeping pass: `BUG-171`, `SEC-38`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry.
 
@@ -210,6 +210,103 @@ against the container log and the 1.1.0 image.
       reports the run finished).
 
       Severity Low: display only; the run page and the database are right.
+
+### Correctness — Medium
+
+- [ ] **BUG-168** `backend/app/tasks/action_group.py:1287-1307` — the
+      pre-run snapshot of a rolled-back host is never deleted
+
+      Symptom: `k8s-upgrade` runs 397, 406 and 411 each failed on k8s-0
+      (VM 208), and LabDog rolled it back. All three left their pre-run
+      snapshot (`labdog-397-…`, `labdog-406-…`, `labdog-411-…`) on the VM.
+      The other hosts' snapshots were removed. Each host run's output has
+      `[rollback] success=True` followed by `[cleanup] WARN: Task failed:
+      can't lock file '/var/lock/qemu-server/lock-208.conf' - got timeout`.
+
+      Root cause: `rollback_to_snapshot` (`workflows/steps/rollback.py:65-112`)
+      waits for the rollback task, the VM start and SSH. The rollback kills
+      the running QEMU process, though, and Proxmox's `qmeventd` then runs
+      its own cleanup for the VM: it takes the VM's config lock as soon as
+      `qmstart` releases it and holds it about 30 s, waiting for a QEMU
+      process that has already been started again ("aborting cleanup, VM
+      is still running after 30 seconds"). The `qmdelsnapshot` LabDog
+      sends about 20 s after the start waits only Proxmox's default 10 s
+      for that lock. In all three runs it failed one second before
+      `qmeventd` let go (pvebig journal, run 411: rollback 11:04:23, start
+      11:04:25-28, delete 11:04:47-57 lock timeout, qmeventd gives up
+      11:04:58). So after a rollback the delete fails every time, not
+      occasionally. The delete is tried once and the error only goes to
+      the host run's output and a worker log warning. The per-host path
+      has the same single try (`tasks/action_host.py:1130-1162`), and so
+      does `ai/remediation.py:1034`.
+
+      Fix direction: retry the delete on a lock timeout with backoff for a
+      minute or two. Proxmox exposes no qmeventd state to wait on.
+
+      Severity Medium: every failed host leaves a full VM snapshot behind,
+      silently, and nothing reaps it (BUG-169).
+
+- [ ] **BUG-169** `backend/app/workflows/snapshot_cleanup.py:207` — the
+      periodic snapshot reaper the comments promise does not exist
+
+      Symptom: the snapshots BUG-168 leaves behind stay on the VMs until
+      someone deletes them by hand. Runs 397 and 406 were found a day
+      later.
+
+      Root cause: `action_group.py:1336-1339` and `action_host.py:1145-1146`
+      say a failed host's snapshot stays "for the periodic cleanup task to
+      reap". `cleanup_orphaned_snapshots` is only called from the manual
+      endpoint `POST /api/proxmox-nodes/cleanup-snapshots`
+      (`api/proxmox_nodes.py:76-82`). No beat schedule runs it, so
+      `workflow.snapshot_max_age_hours` is only read when someone calls that
+      endpoint.
+
+      Fix direction: schedule it on beat, or drop the claim from the
+      comments and surface leftover snapshots on the run page instead.
+
+      Severity Medium: leftover snapshots grow unbounded, and a leftover
+      snapshot also blocks some Proxmox operations (disk resize, migration).
+
+### Correctness — Low
+
+- [ ] **BUG-170** `backend/app/tasks/ai_snapshots.py:123-136` — the AI
+      snapshot sweep retries a snapshot that is already gone forever
+
+      Symptom: AI session 42 (2026-11-07) took 7 snapshots on k8s-0/2/3/4.
+      They were deleted by hand on 2026-11-09, but every row in
+      `ai_tool_calls` still has `snapshot_pruned_at = NULL`. Once they pass
+      `ai.snapshot_retention_days` (about 2026-11-14), the daily sweep will
+      fail to delete them, leave them unmarked, and log a warning every
+      day indefinitely.
+
+      Root cause: the sweep treats every delete error as "retry next time",
+      including "snapshot does not exist", as the comment at `:125-129`
+      says on purpose.
+
+      Fix direction: mark the row pruned when Proxmox reports the snapshot
+      missing; keep retrying other errors.
+
+      Severity Low: log noise and a wasted API call per snapshot per day.
+
+- [ ] **BUG-171** `backend/app/ai/command_policy.yaml` — read-only
+      pipelines through `awk` or `paste` are classed as changes and get a
+      VM snapshot each
+
+      Symptom: AI session 42, told to investigate disk usage without making
+      changes, took snapshots before calls 304, 305 and 320
+      (`crictl images -v | … | paste …`, `du … | awk …`), which only read.
+      Calls 302 and 303 (`crictl images | wc`) took none.
+
+      Root cause (inferred): `awk` and `paste` are not in the read-only
+      policy, while `crictl images`, `du`, `sort` and `head` are, so the
+      whole pipeline is classed `mutating`. `ai/snapshots.py:127-199` then
+      snapshots before every mutating call, with no reuse within a session.
+
+      Fix direction: add `paste` and a safe `awk` form (no `system()`, no
+      output redirection) to the policy, and consider one snapshot per
+      host per session turn.
+
+      Severity Low: extra snapshots, removed after the retention period.
 
 ## Open — 2026-11-08 load test (PR #270)
 
