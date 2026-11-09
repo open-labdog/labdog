@@ -74,3 +74,26 @@ def test_a_real_playbook_runs_with_pipelining(tmp_path):
 
 def test_a_caller_can_turn_pipelining_off(tmp_path):
     assert _effective_pipelining(tmp_path, envvars={"ANSIBLE_PIPELINING": "False"}) is False
+
+
+def test_a_run_prints_nothing_but_keeps_its_output(tmp_path, capfd):
+    """BUG-176: ansible-runner echoed every playbook line to stdout, which
+    Celery logs at WARNING. The events and the artifact keep it all."""
+    events: list[dict] = []
+    playbook = (
+        "- hosts: all\n  gather_facts: false\n  tasks:\n"
+        "    - ansible.builtin.debug:\n        msg: labdog-bug-176\n"
+    )
+    inventory = json.dumps({"all": {"hosts": {"localhost": {"ansible_connection": "local"}}}})
+    runner = run_ansible(
+        playbook_yaml=playbook,
+        inventory_json=inventory,
+        private_data_dir=str(tmp_path / "run"),
+        event_handler=lambda e: events.append(e) or True,
+    )
+
+    assert runner.status == "successful"
+    out, _ = capfd.readouterr()
+    assert "labdog-bug-176" not in out
+    assert "labdog-bug-176" in runner.stdout.read()
+    assert any("labdog-bug-176" in (e.get("stdout") or "") for e in events)

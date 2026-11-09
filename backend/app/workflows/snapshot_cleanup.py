@@ -13,7 +13,19 @@ A snapshot is considered orphaned when one of:
   embedded timestamp is older than the configured max-age threshold.
 
 The age threshold is only a safety net for snapshots whose origin we
-cannot identify; snapshots tied to a finished run never need to wait.
+cannot identify; snapshots tied to a finished run never need to wait when
+an operator asks for a cleanup (``POST /api/proxmox-nodes/cleanup-snapshots``).
+
+The hourly sweep (:mod:`app.tasks.snapshot_reaper`, BUG-169) runs the same
+code with ``grace_for_finished_runs=True``: a finished run's snapshot is
+left for ``workflow.snapshot_max_age_hours`` too. A failed host whose
+snapshot was kept on purpose (``auto_rollback: false``, or a rollback that
+failed) is one an operator may still want to restore by hand, and a sweep
+that removed it the next hour would take that away.
+
+AI sessions' snapshots (``labdog-ai-<session>-<ts>``) are never touched
+here. Their number is a session id, not a run id, and they have their own
+retention window and sweep (:mod:`app.tasks.ai_snapshots`).
 """
 
 import logging
@@ -28,10 +40,13 @@ from app.models.action_run import ActionHostRun, ActionRun
 from app.proxmox.client import ProxmoxClient, ProxmoxError
 from app.proxmox.models import ProxmoxNode
 from app.settings_service import get_setting_typed
+from app.workflows.steps.cleanup import delete_snapshot
 
 logger = logging.getLogger(__name__)
 
 _SNAPSHOT_PREFIX = "labdog-"
+# AI sessions' snapshots share the prefix but not the meaning of the number.
+_AI_SNAPSHOT_PREFIX = "labdog-ai-"
 # ActionHostRun status strings that indicate the snapshot is still in use.
 _ACTIVE_STATUSES = ("queued", "running")
 # ActionRun status strings that indicate the run has reached a final state.
@@ -58,6 +73,8 @@ def _parse_snapshot_name(snapshot_name: str) -> tuple[int, datetime] | None:
 async def find_orphaned_snapshots(
     db: AsyncSession,
     max_age_hours: int = 24,
+    *,
+    grace_for_finished_runs: bool = False,
 ) -> list[dict]:
     """Discover labdog snapshots that are no longer associated with an active run.
 
@@ -69,7 +86,10 @@ async def find_orphaned_snapshots(
        AND
     2. Either the parsed ``run_id`` refers to a terminal ``ActionRun``
        (safe to delete now), or the embedded timestamp is older than
-       ``max_age_hours`` (safety net for unknown-origin snapshots).
+       ``max_age_hours`` (safety net for unknown-origin snapshots). With
+       ``grace_for_finished_runs`` every snapshot must be that old.
+
+    ``labdog-ai-`` snapshots are skipped: see the module docstring.
 
     Returns a list of dicts with keys ``pve_node``, ``vmid``,
     ``vm_type`` (``"qemu"`` or ``"lxc"``), ``snapshot_name``, ``age_hours``,
@@ -170,6 +190,8 @@ async def find_orphaned_snapshots(
                         snap_name: str = snap.get("name", "")
                         if not snap_name.startswith(_SNAPSHOT_PREFIX):
                             continue
+                        if snap_name.startswith(_AI_SNAPSHOT_PREFIX):
+                            continue
 
                         if snap_name in active_snapshots:
                             continue
@@ -187,7 +209,9 @@ async def find_orphaned_snapshots(
                         # Either the run is known-terminal (always safe) OR
                         # we don't recognise it and it has aged past the
                         # configured safety threshold.
-                        if run_id not in terminal_run_ids and age_hours < max_age_hours:
+                        if age_hours < max_age_hours and (
+                            grace_for_finished_runs or run_id not in terminal_run_ids
+                        ):
                             continue
 
                         orphans.append(
@@ -204,17 +228,21 @@ async def find_orphaned_snapshots(
     return orphans
 
 
-async def cleanup_orphaned_snapshots(db: AsyncSession) -> dict:
+async def cleanup_orphaned_snapshots(
+    db: AsyncSession, *, grace_for_finished_runs: bool = False
+) -> dict:
     """Delete all orphaned labdog snapshots across every configured Proxmox node.
 
     The maximum age threshold is read from ``workflow.snapshot_max_age_hours``
     and is only applied to snapshots whose ``run_id`` does not match a known
     terminal ``ActionRun``. Snapshots tied to a finished run are cleaned up
-    immediately.
+    immediately, unless ``grace_for_finished_runs`` (the scheduled sweep).
     """
     max_age_hours = int(await get_setting_typed("workflow.snapshot_max_age_hours", db))
 
-    orphans = await find_orphaned_snapshots(db, max_age_hours=max_age_hours)
+    orphans = await find_orphaned_snapshots(
+        db, max_age_hours=max_age_hours, grace_for_finished_runs=grace_for_finished_runs
+    )
     logger.info("Found %d orphaned snapshots (max_age=%dh)", len(orphans), max_age_hours)
 
     if not orphans:
@@ -263,8 +291,7 @@ async def cleanup_orphaned_snapshots(db: AsyncSession) -> dict:
             continue
 
         try:
-            upid = await client.delete_snapshot(pve_node, vmid, snap_name, vm_type=vm_type)
-            await client.wait_for_task(pve_node, upid)
+            await delete_snapshot(client, pve_node, vmid, snap_name, vm_type=vm_type)
             logger.info(
                 "Deleted orphaned snapshot %r %s vmid=%d pve_node=%r",
                 snap_name,

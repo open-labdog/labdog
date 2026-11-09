@@ -79,7 +79,7 @@ def _authorized_key_tasks(users: list) -> list[dict]:
     alone, as before (``authorized_key`` with an empty key and
     ``state: absent`` removed nothing).
 
-    The home directory comes from ``getent`` on the target, the same source
+    The home directory and primary gid come from ``getent`` on the target, the same source
     the collector reads it from: one lookup of the whole passwd database
     before the first user's key tasks (BUG-164; it used to be one lookup
     task per user). In check mode a user created earlier in the same play
@@ -102,6 +102,10 @@ def _authorized_key_tasks(users: list) -> list[dict]:
         task_vars = {"labdog_key_user": username}
         passwd = "ansible_facts.getent_passwd[labdog_key_user]"  # nosec B105 - a fact path
         home = Template("{{ " + passwd + "[4] }}")
+        # The user's primary gid, as ssh-keygen, ssh-copy-id and the old
+        # ansible.posix.authorized_key leave them. Without it the play's
+        # become put both paths in group root (BUG-173).
+        gid = Template("{{ " + passwd + "[2] }}")
         exists = "labdog_key_user in ansible_facts.getent_passwd"
         if not tasks:
             tasks.append(
@@ -118,6 +122,7 @@ def _authorized_key_tasks(users: list) -> list[dict]:
                         "path": Template(home + "/.ssh"),
                         "state": "directory",
                         "owner": username,
+                        "group": gid,
                         "mode": "0700",
                     },
                     "vars": task_vars,
@@ -129,6 +134,7 @@ def _authorized_key_tasks(users: list) -> list[dict]:
                         "content": "".join(f"{key}\n" for key in keys),
                         "dest": Template(home + "/.ssh/authorized_keys"),
                         "owner": username,
+                        "group": gid,
                         "mode": "0600",
                     },
                     "vars": task_vars,

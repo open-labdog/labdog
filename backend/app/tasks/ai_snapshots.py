@@ -61,10 +61,14 @@ async def _prune_ai_snapshots() -> dict:
     from app.ai.snapshots import SnapshotFailed, resolve_target  # noqa: PLC0415
     from app.db import task_session  # noqa: PLC0415
     from app.settings_service import get_setting_typed  # noqa: PLC0415
-    from app.workflows.steps.cleanup import delete_snapshot  # noqa: PLC0415
+    from app.workflows.steps.cleanup import (  # noqa: PLC0415
+        delete_snapshot,
+        is_missing_snapshot_error,
+    )
 
     deleted = 0
     failed = 0
+    gone = 0
 
     async with task_session() as db:
         days = int(await get_setting_typed("ai.snapshot_retention_days", db))
@@ -122,11 +126,23 @@ async def _prune_ai_snapshots() -> dict:
                     vm_type=target.vm_type,
                 )
             except Exception as exc:
-                # Left unmarked so the next sweep retries. A snapshot that
-                # is already gone raises here too, and retrying that is
-                # cheap — far cheaper than the alternative failure, which
-                # is silently forgetting a rollback point still occupying
-                # the datastore.
+                if is_missing_snapshot_error(exc):
+                    # Already removed, by hand or by a rollback that had to
+                    # clear it out of the way. Marked, or the sweep would
+                    # try it and log it every day for ever (BUG-170).
+                    logger.info(
+                        "ai_snapshots: %r on vmid %s is already gone; marking it pruned",
+                        call.snapshot_name,
+                        target.vmid,
+                    )
+                    call.snapshot_pruned_at = datetime.now(UTC)
+                    gone += 1
+                    continue
+                # Left unmarked so the next sweep retries. Only Proxmox
+                # saying the snapshot itself does not exist counts as gone:
+                # anything else may be a rollback point still occupying
+                # the datastore, and forgetting one silently is worse than
+                # a warning a day.
                 logger.warning(
                     "ai_snapshots: could not delete %r on vmid %s: %s",
                     call.snapshot_name,
@@ -145,14 +161,15 @@ async def _prune_ai_snapshots() -> dict:
 
         await db.commit()
 
-    if deleted or failed:
+    if deleted or failed or gone:
         logger.info(
-            "ai_snapshots: deleted %d snapshot(s), %d failed, retention %d days",
+            "ai_snapshots: deleted %d snapshot(s), %d already gone, %d failed, retention %d days",
             deleted,
+            gone,
             failed,
             days,
         )
-    return {"deleted": deleted, "failed": failed, "retention_days": days}
+    return {"deleted": deleted, "gone": gone, "failed": failed, "retention_days": days}
 
 
 # ---------------------------------------------------------------------------

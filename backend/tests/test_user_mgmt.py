@@ -243,6 +243,19 @@ class TestAuthorizedKeyLookup:
         assert {t["when"] for t in tasks[1:]} == {"labdog_key_user in ansible_facts.getent_passwd"}
         assert [t["vars"]["labdog_key_user"] for t in tasks[1:]] == ["alice", "alice", "bob", "bob"]
 
+    def test_the_ssh_paths_get_the_users_primary_group(self):
+        """BUG-173: with only `owner`, become left them in group root."""
+        from app.user_mgmt.generator import _authorized_key_tasks
+
+        tasks = _authorized_key_tasks(
+            [{"username": "alice", "state": "present", "authorized_keys": ["ssh-ed25519 A"]}]
+        )
+
+        gid = "{{ ansible_facts.getent_passwd[labdog_key_user][2] }}"
+        assert tasks[1]["ansible.builtin.file"]["group"] == gid
+        assert tasks[2]["ansible.builtin.copy"]["group"] == gid
+        assert tasks[1]["ansible.builtin.file"]["owner"] == "alice"
+
     def test_no_lookup_when_no_user_has_keys(self):
         from app.user_mgmt.generator import _authorized_key_tasks
 

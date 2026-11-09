@@ -50,6 +50,36 @@ The format follows [Keep a Changelog]; LabDog follows
   under spellings the backend doesn't write (`services`, `packages`,
   `linux-users` instead of `service`, `package`, `linux_user`), so their
   states never showed.
+- **A rolled-back host keeps no snapshot.** Deleting the pre-run snapshot
+  right after a rollback hit the VM lock Proxmox holds for about 30 s
+  while it cleans up the killed QEMU process, so it failed every time.
+  LabDog now retries a locked delete for up to two minutes (BUG-168).
+- **Leftover snapshots are cleaned up on their own.** An hourly sweep
+  removes action-run snapshots older than `workflow.snapshot_max_age_hours`
+  that no running action uses. Before, only **Clean up orphaned
+  snapshots** did, by hand. Neither touches AI sessions' `labdog-ai-`
+  snapshots any more: the manual cleanup used to read their session number
+  as a run id (BUG-169).
+- **The AI snapshot sweep accepts a snapshot already gone.** One deleted
+  by hand was retried, with a warning, every day (BUG-170).
+- **Read-only AI pipelines through `awk` or `paste` take no snapshot.**
+  `paste`, and `awk`, `gawk` and `mawk` programs without `system()`,
+  pipes, `getline`, a redirection after `print`, gawk's `@` forms or
+  `ARGV`, now count as reads (BUG-171).
+- **Users with keys or a sudo rule no longer drift for ever when LabDog
+  logs in as a non-root user.** The `authorized_keys` file and the
+  sudoers drop-in are read through `sudo -n`, and a file that exists but
+  cannot be read is reported as an error instead of an empty one
+  (BUG-172).
+- **`~/.ssh` and `authorized_keys` get the user's primary group**, not
+  `root` (BUG-173).
+- **A cron schedule with stray whitespace no longer drifts for ever.**
+  Schedules are stored five fields one space apart, and the drift check
+  ignores whitespace in ones stored before (BUG-174).
+- **The Plans page no longer shows a host whose module preview failed as
+  "no change".** It shows the module error, and the Reachability check
+  names the host (BUG-175).
+- **Playbook output no longer floods the worker log at WARNING** (BUG-176).
 
 ## [1.1.0] — 2026-11-06
 

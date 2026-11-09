@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { syncModuleLabel } from "@/lib/modules"
 import type { Host } from "@/lib/types"
 import { Dot, Empty, Panel, Tag, toneVar, type Tone } from "@/components/ld"
-import { OP, realChanges, type HostPlan, type Phase, type PlanBreakdown } from "../model"
+import { OP, moduleErrors, realChanges, type HostPlan, type Phase, type PlanBreakdown } from "../model"
 
 /** Step 2: every host's dry-run diff, with the run's selection on the left edge. */
 export function DiffPanel({
@@ -60,6 +60,7 @@ export function DiffPanel({
       {plans.map((p) => {
         const o = !!open[p.host.id]
         const changes = realChanges(p.diffs)
+        const modErrors = moduleErrors(p.diffs)
         const selectable = phase === "review" && !p.skipped && !p.error && changes.length > 0
         const on = sel.has(p.host.id) && changes.length > 0
         return (
@@ -83,6 +84,10 @@ export function DiffPanel({
                   <Tag tone="danger" title={p.error}>
                     preview failed
                   </Tag>
+                ) : changes.length === 0 && modErrors.length > 0 ? (
+                  <Tag tone="danger" title={modErrors.map((d) => `${d.module}: ${d.error}`).join("\n")}>
+                    {modErrors.length} module error{modErrors.length === 1 ? "" : "s"}
+                  </Tag>
                 ) : changes.length === 0 ? (
                   <Tag tone="ok">no change</Tag>
                 ) : (
@@ -96,11 +101,23 @@ export function DiffPanel({
                         </Tag>
                       ) : null
                     })}
-                    {(p.diffs ?? []).filter((d) => d.error).length > 0 && <Tag tone="danger">{(p.diffs ?? []).filter((d) => d.error).length} module error</Tag>}
+                    {modErrors.length > 0 && (
+                      <Tag tone="danger" title={modErrors.map((d) => `${d.module}: ${d.error}`).join("\n")}>
+                        {modErrors.length} module error{modErrors.length === 1 ? "" : "s"}
+                      </Tag>
+                    )}
                   </span>
                 )}
                 <span className="tt ml-auto">
-                  {selectable && !on ? <span className="text-warn">excluded</span> : p.error ? p.error : `${changes.length} change${changes.length === 1 ? "" : "s"}`}
+                  {selectable && !on ? (
+                    <span className="text-warn">excluded</span>
+                  ) : p.error ? (
+                    p.error
+                  ) : changes.length === 0 && modErrors.length > 0 ? (
+                    <span className="text-danger">{`${modErrors[0].module}: ${modErrors[0].error}`}</span>
+                  ) : (
+                    `${changes.length} change${changes.length === 1 ? "" : "s"}`
+                  )}
                 </span>
               </button>
               <button type="button" className="btn btn-sm btn-ghost shrink-0 text-ld-accent" onClick={() => router.push(`/hosts/${p.host.id}`)}>
@@ -213,7 +230,7 @@ export function PlanSidebar({
         <div className="mt-[7px] text-[11px] leading-[1.5] text-text-3">
           Plan covers {scopeHosts.length} host{scopeHosts.length === 1 ? "" : "s"}: {changing.length} changing, {unchanged.length} unchanged
           {skipped.length ? `, ${skipped.length} skipped (no SSH key)` : ""}
-          {errored.length ? `, ${errored.length} could not be previewed` : ""}.
+          {errored.length ? `, ${errored.length} with a preview error` : ""}.
         </div>
       </div>
 
@@ -224,11 +241,18 @@ export function PlanSidebar({
             modules.includes("firewall")
               ? { label: "SSH lockout prevention", state: "pass", note: "LabDog injects its control-plane SSH rule into every firewall apply; it cannot be removed by a group or a host." }
               : null,
-            skipped.length
-              ? { label: "Reachability", state: "warn", note: `${skipped.map((p) => p.host.hostname).join(", ")} ${skipped.length === 1 ? "has" : "have"} no SSH key — skipped, not failed` }
-              : errored.length
-                ? { label: "Reachability", state: "warn", note: `${errored.map((p) => p.host.hostname).join(", ")} could not be previewed — see the diff for the error` }
-                : { label: "Reachability", state: "pass", note: `all ${scopeHosts.length} host${scopeHosts.length === 1 ? "" : "s"} answered the dry run` },
+            skipped.length || errored.length
+              ? {
+                  label: "Reachability",
+                  state: "warn",
+                  note: [
+                    skipped.length ? `${skipped.map((p) => p.host.hostname).join(", ")} ${skipped.length === 1 ? "has" : "have"} no SSH key — skipped, not failed` : "",
+                    errored.length ? `${errored.map((p) => p.host.hostname).join(", ")} could not be fully previewed — see the diff for the error` : "",
+                  ]
+                    .filter(Boolean)
+                    .join("; "),
+                }
+              : { label: "Reachability", state: "pass", note: `all ${scopeHosts.length} host${scopeHosts.length === 1 ? "" : "s"} answered the dry run` },
             unknownBackend.length
               ? { label: "Firewall backend", state: "warn", note: `${unknownBackend.map((h) => h.hostname).join(", ")}: backend not yet detected — it is picked on first apply` }
               : modules.includes("firewall")

@@ -3,7 +3,7 @@ from pydantic import ValidationError
 
 from app.cron.collector import _parse_crontab
 from app.cron.diff import diff_cron_jobs
-from app.cron.schemas import CronJobCreate
+from app.cron.schemas import CronJobCreate, CronJobUpdate
 from app.cron.validators import validate_cron_expression
 
 # ---------------------------------------------------------------------------
@@ -55,6 +55,12 @@ class TestCronValidator:
 
 
 class TestCronSchemas:
+    def test_a_schedule_is_stored_one_space_apart(self):
+        """BUG-174: "* * * * *\\n" was stored raw and drifted for ever."""
+        job = CronJobCreate(name="x", schedule="  0  2 * *\t*\n", command="true")
+        assert job.schedule == "0 2 * * *"
+        assert CronJobUpdate(schedule="* * * * *\n").schedule == "* * * * *"
+
     def test_invalid_slug_rejected(self):
         with pytest.raises(ValidationError, match="Invalid cron job name"):
             CronJobCreate(
@@ -153,6 +159,13 @@ class TestCronCollector:
 
 
 class TestCronDiff:
+    def test_whitespace_in_a_stored_schedule_is_no_change(self):
+        """BUG-174: rows written before the schema normalised, and GitOps
+        YAML imported byte-for-byte, still compare equal to the host's line."""
+        desired = [{"name": "x", "user": "root", "schedule": "* * * * *\n", "command": "true"}]
+        actual = [{"name": "x", "user": "root", "schedule": "* * * * *", "command": "true"}]
+        assert diff_cron_jobs(desired, actual).jobs_in_sync == ["x|root"]
+
     def test_job_to_add(self):
         desired = [
             {"name": "backup", "user": "root", "schedule": "0 2 * * *", "command": "/bin/backup"}

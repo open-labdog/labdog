@@ -11,9 +11,11 @@ from __future__ import annotations
 import re
 from types import SimpleNamespace
 
+import pytest
+
 from app.packages.collector import _package_manager, _query_installed
 from app.services.collector import _service_states
-from app.user_mgmt.collector import _group_states, _user_states
+from app.user_mgmt.collector import UserCollectionError, _group_states, _user_states
 
 
 class _Conn:
@@ -159,7 +161,7 @@ def _files_script(command: str) -> str:
 
 
 async def test_users_come_from_two_commands():
-    conn = _Conn({"getent passwd": (PASSWD, 2), "printf": _files_script})
+    conn = _Conn({"getent passwd": (PASSWD, 2), "if [": _files_script})
 
     users = await _user_states(conn, ["root", "alice", "ghost"])
 
@@ -200,11 +202,39 @@ async def test_users_come_from_two_commands():
 
 async def test_a_home_directory_is_quoted_into_the_script():
     passwd = "eve:x:1001:1001::/home/eve; touch /pwned:/bin/sh\n"
-    conn = _Conn({"getent passwd": passwd, "printf": lambda c: ""})
+    conn = _Conn({"getent passwd": passwd, "if [": lambda c: ""})
 
     await _user_states(conn, ["eve"])
 
-    assert "cat '/home/eve; touch /pwned'/.ssh/authorized_keys" in conn.commands[1]
+    assert "cat -- '/home/eve; touch /pwned/.ssh/authorized_keys'" in conn.commands[1]
+
+
+async def test_the_files_are_read_through_sudo_unless_root():
+    """BUG-172: as a non-root SSH user, a 0600 key file and a 0440 sudoers
+    drop-in read as empty, so a synced user drifted for ever."""
+    conn = _Conn({"getent passwd": (PASSWD, 2), "if [": lambda c: ""})
+
+    await _user_states(conn, ["alice"])
+
+    script = conn.commands[1]
+    assert script.startswith('if [ "$(id -u)" = 0 ]; then S=; elif sudo -n true')
+    assert "$S cat -- /home/alice/.ssh/authorized_keys" in script
+    assert "$S cat -- /etc/sudoers.d/alice" in script
+
+
+async def test_an_unreadable_file_is_an_error_not_an_empty_one():
+    def script(command: str) -> str:
+        marker = re.search(r"LABDOG-[0-9a-f]{16}", command).group(0)
+        return (
+            f"\n{marker} keys alice\n\n{marker} x-keys alice\n"
+            f"\n{marker} sudo alice\n"
+            f"\n{marker} groups alice\nalice : alice\n"
+        )
+
+    conn = _Conn({"getent passwd": (PASSWD, 2), "if [": script})
+
+    with pytest.raises(UserCollectionError, match="authorized_keys of 'alice'"):
+        await _user_states(conn, ["alice"])
 
 
 async def test_no_present_users_skips_the_files_script():

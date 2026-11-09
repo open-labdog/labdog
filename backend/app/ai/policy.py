@@ -36,18 +36,25 @@ MODES = ("any", "operands", "exact")
 
 #: Commands that run other commands or code, so nothing about them can be
 #: read from the command line. The policy refuses to call any of them
-#: read-only, whatever a policy file says: a rule for ``awk`` or ``xargs``
+#: read-only, whatever a policy file says: a rule for ``xargs`` or ``sed``
 #: would make every command a read.
 NEVER_READ_ONLY = frozenset(
     {
         "sh", "bash", "zsh", "dash", "ksh", "ash", "fish", "csh", "tcsh", "busybox",
         "python", "python2", "python3", "perl", "ruby", "php", "node", "nodejs", "lua", "tclsh",
-        "awk", "gawk", "mawk", "nawk", "sed", "xargs", "parallel", "watch", "eval", "exec",
+        "nawk", "sed", "xargs", "parallel", "watch", "eval", "exec",
         "source", ".", "su", "runuser", "chroot", "nsenter", "unshare", "systemd-run",
         "script", "expect", "tmux", "screen", "ssh", "scp", "sftp", "rsync", "socat",
         "nc", "ncat", "telnet",
     }
 )  # fmt: skip
+
+#: Languages whose ways out of stdout are few and spelled with fixed words
+#: (awk: system, getline, a pipe, a redirection after print, gawk's @). The
+#: policy may call one read-only only together with the gates that refuse
+#: those words, so a rule that lists one without a gate is refused (BUG-171).
+#: The gates themselves live in command_policy.yaml.
+NEEDS_GATES = frozenset({"awk", "gawk", "mawk"})
 
 #: Where a command may be named by its full path. Anything else with a
 #: ``/`` in it, ``./cat`` or ``/tmp/cat``, is not the system's ``cat``.
@@ -535,6 +542,13 @@ class CommandPolicy:
                     f"{', '.join(sorted(node.children))} mean nothing"
                 )
             _check_gate_values(node, effective)
+
+        for name in NEEDS_GATES & root.keys():
+            if root[name].mode is not None and not root[name].gates:
+                raise PolicyError(
+                    f"{name}: it runs commands through words in its program, so it is "
+                    f"read-only only with gates that refuse them"
+                )
 
         environment = tuple(str(name) for name in data.get("environment") or [])
         for name in environment:
