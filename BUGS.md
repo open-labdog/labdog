@@ -145,34 +145,6 @@ Checked and not filed:
       Severity Medium: package changes are the most common sync, and
       the cost grows with each package an operator adds.
 
-- [ ] **BUG-158** `backend/app/packages/collector.py:43` — drift checks
-      and previews run one remote command per package, service, user
-      and group
-
-      Symptom: collecting 20 packages took 241 ms with one
-      `dpkg -l | grep | head` pipeline each, and 10 ms with one
-      `dpkg-query` for all of them, over the same connection.
-      *Measured*. Each command is a round trip, so on a real network
-      the gap grows by the round-trip time per item. The services
-      collector runs `systemctl is-active` and more per service
-      (`app/services/collector.py:46`), and the users and groups
-      collectors run several commands per entry
-      (`app/user_mgmt/collector.py:30`, `:133`). These run on every
-      drift sweep and every preview.
-
-      Fix direction: one command per module. `dpkg-query -W
-      -f='${Package}\t${Version}\t${db:Status-Abbrev}\n' p1 p2 …` (or
-      `rpm -q --qf … p1 p2 …`), with missing names read from stderr;
-      `systemctl show --property=Id,ActiveState,UnitFileState svc1 svc2
-      …`; `getent passwd u1 u2 …` and `getent group g1 g2 …`, then one
-      `cat` of the `authorized_keys` files. Keep `shlex.quote` on every
-      name: the group lookup (`app/user_mgmt/collector.py:135`) lacks it
-      today, and only the schema's name check keeps that safe.
-
-      Severity Medium: it is the largest part of each drift check's
-      remote time, and drift checks run for every host and module all
-      day.
-
 - [ ] **BUG-159** `backend/app/ssh_utils.py:178` — each module collector
       opens its own SSH connection, so one preview of a host makes eight
       handshakes

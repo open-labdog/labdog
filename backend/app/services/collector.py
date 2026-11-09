@@ -33,72 +33,100 @@ async def collect_service_states(
 
     Connects via ssh_connect_host so the stored host key is verified (TOFU).
 
-    For each service:
-      - `systemctl is-active {name}` → "active" = running, everything else = stopped
-      - `systemctl is-enabled {name}` → "enabled" = True, "disabled" = False
-      - Exit code 4 = service not found → mark as error
-    """
-    results = []
+    One ``systemctl show`` for every service (BUG-158; it used to run
+    ``is-active`` and ``is-enabled`` per service, a round trip each):
+      - ``ActiveState=active`` → running, anything else → stopped
+      - ``UnitFileState=enabled`` → enabled, anything else → not enabled
 
+    A unit that does not exist reads as stopped and not enabled, as
+    ``is-active`` (exit 3, ``inactive``) reported it on current systemd.
+    An alias reads as its unit does (``is-enabled`` said ``alias``, which
+    never counted as enabled). If systemctl rejects the call as a whole —
+    a template name such as ``getty@`` does that — each service is asked
+    about on its own, as before.
+    """
     try:
         private_key = asyncssh.import_private_key(private_key_pem)
         async with ssh_connect_host(host, db, client_keys=[private_key]) as conn:
-            for name in service_names:
-                try:
-                    # Check active state
-                    active_result = await conn.run(
-                        f"systemctl is-active {shlex.quote(name)}", check=False
-                    )
-                    active_stdout = active_result.stdout.strip()
-                    exit_code = active_result.exit_status
-
-                    if exit_code == 4:
-                        # Service unit not found
-                        results.append(
-                            ServiceCurrentState(
-                                service_name=name,
-                                active_state="error",
-                                enabled=False,
-                            )
-                        )
-                        continue
-
-                    active_state = "running" if active_stdout == "active" else "stopped"
-
-                    # Check enabled state
-                    enabled_result = await conn.run(
-                        f"systemctl is-enabled {shlex.quote(name)}", check=False
-                    )
-                    enabled_stdout = enabled_result.stdout.strip()
-                    enabled = enabled_stdout == "enabled"
-
-                    results.append(
-                        ServiceCurrentState(
-                            service_name=name,
-                            active_state=active_state,
-                            enabled=enabled,
-                        )
-                    )
-                except Exception:
-                    results.append(
-                        ServiceCurrentState(
-                            service_name=name,
-                            active_state="error",
-                            enabled=False,
-                        )
-                    )
+            return await _service_states(conn, service_names)
     except Exception:
         # Connection failure — all services in error state
-        for name in service_names:
-            results.append(
-                ServiceCurrentState(
-                    service_name=name,
-                    active_state="error",
-                    enabled=False,
-                )
-            )
+        return [_service_error(name) for name in service_names]
 
-    return results
+
+#: What ``systemctl show`` is asked for, one ``Key=value`` line each.
+_SHOW_PROPERTIES = "ActiveState,UnitFileState"
+
+
+async def _service_states(conn, service_names: list[str]) -> list[ServiceCurrentState]:
+    if not service_names:
+        return []
+    names = " ".join(shlex.quote(name) for name in service_names)
+    result = await conn.run(
+        f"systemctl show --property={_SHOW_PROPERTIES} -- {names}",
+        check=False,
+    )
+    blocks = _parse_show_blocks(result.stdout or "")
+    if result.exit_status != 0 or len(blocks) != len(service_names):
+        # systemctl refused the whole call (a template name, an old
+        # systemd), so ask about each service on its own, as before.
+        return [await _service_state_one(conn, name) for name in service_names]
+    return [
+        _state_from_show(name, props) for name, props in zip(service_names, blocks, strict=True)
+    ]
+
+
+def _parse_show_blocks(output: str) -> list[dict[str, str]]:
+    """``systemctl show`` output for several units → one dict per unit.
+
+    Units come back in the order asked for, each a run of ``Key=value``
+    lines, separated by a blank line.
+    """
+    blocks: list[dict[str, str]] = []
+    current: dict[str, str] = {}
+    for line in output.splitlines():
+        if not line.strip():
+            if current:
+                blocks.append(current)
+                current = {}
+            continue
+        key, sep, value = line.partition("=")
+        if sep:
+            current[key.strip()] = value.strip()
+    if current:
+        blocks.append(current)
+    return blocks
+
+
+def _state_from_show(name: str, props: dict[str, str]) -> ServiceCurrentState:
+    return ServiceCurrentState(
+        service_name=name,
+        active_state="running" if props.get("ActiveState") == "active" else "stopped",
+        enabled=props.get("UnitFileState") == "enabled",
+    )
+
+
+async def _service_state_one(conn, name: str) -> ServiceCurrentState:
+    """The per-service fallback: ``is-active``, then ``is-enabled``.
+
+    Exit code 4 from ``is-active`` means the unit does not exist.
+    """
+    try:
+        active_result = await conn.run(f"systemctl is-active {shlex.quote(name)}", check=False)
+        if active_result.exit_status == 4:
+            return _service_error(name)
+        enabled_result = await conn.run(f"systemctl is-enabled {shlex.quote(name)}", check=False)
+        return ServiceCurrentState(
+            service_name=name,
+            active_state="running" if active_result.stdout.strip() == "active" else "stopped",
+            enabled=enabled_result.stdout.strip() == "enabled",
+        )
+    except Exception:
+        return _service_error(name)
+
+
+def _service_error(name: str) -> ServiceCurrentState:
+    return ServiceCurrentState(service_name=name, active_state="error", enabled=False)
 
 
 def _parse_unit_file_states(output: str) -> dict[str, str]:
