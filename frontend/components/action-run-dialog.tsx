@@ -34,21 +34,72 @@ interface ActionRunDialogProps {
   onPickAction?: (action: ActionDefinition) => void
   /** Shown under the title — the target's name, so the dialog says what it will run against. */
   targetLabel?: string
+  /**
+   * Re-run: start the form from a past run's settings instead of the
+   * manifest defaults. Every field stays editable. Read once, when the
+   * dialog mounts, so mount it only while it is open.
+   */
+  rerunOf?: ActionRun
+}
+
+/** Keys the API adds to a run's stored parameters; never manifest fields. */
+const INTERNAL_PREFIX = "__"
+const DRY_RUN_PARAM = "__dry_run"
+const METRICS_DESTINATIONS_PARAM = "__metrics_destinations"
+const PARALLELISM_OPTIONS: { value: number; label: string }[] = [
+  { value: -1, label: "All at once" },
+  { value: 1, label: "Rolling — 1 at a time" },
+  { value: 2, label: "Rolling — 2 at a time" },
+  { value: 5, label: "Rolling — 5 at a time" },
+]
+
+/**
+ * A past run's parameters as the form's values: only the keys the
+ * action's manifest still declares (the API rejects any other), and the
+ * metrics destinations it picked put back on their pickers as ids.
+ */
+export function formValuesFromRun(action: ActionDefinition, run: ActionRun): { values: Record<string, unknown>; dropped: string[] } {
+  const declared = new Set(action.parameters.map((p) => p.key))
+  const values: Record<string, unknown> = {}
+  const dropped: string[] = []
+  for (const [k, v] of Object.entries(run.parameters ?? {})) {
+    if (k.startsWith(INTERNAL_PREFIX)) continue
+    if (declared.has(k)) values[k] = v
+    else dropped.push(k)
+  }
+  const mb = action.metrics_backend
+  const dest = run.parameters?.[METRICS_DESTINATIONS_PARAM] as Partial<Record<GrafanaKind, number>> | undefined
+  if (mb && dest) {
+    if (mb.prometheus_push_var && dest.mimir !== undefined) values[mb.prometheus_push_var] = String(dest.mimir)
+    if (mb.loki_push_var && dest.loki !== undefined) values[mb.loki_push_var] = String(dest.loki)
+  } else if (mb) {
+    // No explicit pick: the run went to each host's own destination,
+    // which is the picker's "" — not the URL the run log recorded.
+    if (mb.prometheus_push_var) delete values[mb.prometheus_push_var]
+    if (mb.loki_push_var) delete values[mb.loki_push_var]
+  }
+  return { values, dropped }
 }
 
 const NO_PARAMS: Record<string, unknown> = {}
 
-export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOsCodename, actions, onPickAction, targetLabel }: ActionRunDialogProps) {
+export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOsCodename, actions, onPickAction, targetLabel, rerunOf }: ActionRunDialogProps) {
   const router = useRouter()
   const { trackRun } = useActionTray()
+  const rerun = useMemo(() => (action && rerunOf ? formValuesFromRun(action, rerunOf) : null), [action, rerunOf])
   // Parameters are kept per action key so switching the picked action
   // never carries one playbook's values into another's form.
-  const [paramsByAction, setParamsByAction] = useState<Record<string, Record<string, unknown>>>({})
+  const [paramsByAction, setParamsByAction] = useState<Record<string, Record<string, unknown>>>(() =>
+    action && rerun ? { [action.key]: rerun.values } : {},
+  )
   const params = (action && paramsByAction[action.key]) ?? NO_PARAMS
   const setParams = (next: Record<string, unknown>) => {
     if (action) setParamsByAction((prev) => ({ ...prev, [action.key]: next }))
   }
-  const [parallelism, setParallelism] = useState(1)
+  const [parallelism, setParallelism] = useState(() => rerunOf?.parallelism ?? 1)
+  const parallelismOptions = PARALLELISM_OPTIONS.some((o) => o.value === parallelism)
+    ? PARALLELISM_OPTIONS
+    : [...PARALLELISM_OPTIONS, { value: parallelism, label: `Rolling — ${parallelism} at a time` }]
   const [submitting, setSubmitting] = useState(false)
 
   // Fetch group hosts to show OS codename context for linux-os-upgrade
@@ -194,7 +245,7 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
     <Modal
       open={open}
       onClose={onClose}
-      title={action.name}
+      title={rerunOf ? `Re-run ${action.name}` : action.name}
       meta={targetLabel ? `${scope}: ${targetLabel}` : scope}
       w={440}
       footer={
@@ -208,6 +259,25 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
         </>
       }
     >
+      {rerunOf && (
+        <div className="text-[11.5px] leading-[1.5] text-text-2" data-testid="rerun-note">
+          Same target and settings as run{" "}
+          <span className="mono text-text">#{rerunOf.id}</span>
+          {rerunOf.parameters?.[DRY_RUN_PARAM] ? " (a dry-run preview)" : ""}. Change anything below before running.
+        </div>
+      )}
+
+      {rerunOf && (rerunOf.action_version !== action.version || (rerun?.dropped.length ?? 0) > 0) && (
+        <Banner tone="warn">
+          {rerunOf.action_version !== action.version
+            ? `The action changed since that run (v${rerunOf.action_version} → v${action.version}).`
+            : "The action's parameters changed since that run."}
+          {rerun && rerun.dropped.length > 0 && (
+            <> It no longer takes <span className="mono">{rerun.dropped.join(", ")}</span>, so {rerun.dropped.length > 1 ? "those were" : "that was"} left out.</>
+          )}
+        </Banner>
+      )}
+
       {actions && actions.length > 1 && onPickAction && (
         <Field label="action" htmlFor="run-action-pick">
           <select
@@ -275,10 +345,11 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
       {scope === "group" && (
         <Field label="parallelism" htmlFor="run-parallelism">
           <select id="run-parallelism" className="inp" value={parallelism} onChange={(e) => setParallelism(Number(e.target.value))}>
-            <option value={-1}>All at once</option>
-            <option value={1}>Rolling — 1 at a time</option>
-            <option value={2}>Rolling — 2 at a time</option>
-            <option value={5}>Rolling — 5 at a time</option>
+            {parallelismOptions.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
           </select>
         </Field>
       )}

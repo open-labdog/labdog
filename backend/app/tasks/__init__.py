@@ -62,6 +62,7 @@ celery_app.conf.update(
         # app/celery_manager.py.
         "app.tasks.action_orchestrator.*": {"queue": "orchestrator"},
         "app.tasks.action_host.*": {"queue": "long_running"},
+        "app.tasks.action_group.*": {"queue": "long_running"},
         "app.tasks.builtin_dispatchers.*": {"queue": "long_running"},
         "app.tasks.scheduled_action_schedule.*": {"queue": "long_running"},
         "app.tasks.facts.*": {"queue": "long_running"},
@@ -272,6 +273,7 @@ celery_app.conf.include = [
     "app.tasks.drift_sweep",
     "app.tasks.action_orchestrator",
     "app.tasks.action_host",
+    "app.tasks.action_group",
     "app.tasks.builtin_dispatchers",
     "app.tasks.scheduled_action_schedule",
     "app.tasks.scan_schedule",

@@ -12,6 +12,9 @@ export async function mockRun(
     hosts = 1,
     alert,
     investigations = [],
+    parameters = {},
+    parallelism = 1,
+    actionVersion = "1.0",
   }: {
     id?: number
     log: string
@@ -19,6 +22,9 @@ export async function mockRun(
     hosts?: number
     alert?: { id: number; name: string }
     investigations?: { session_id: number; status: string; target_host_ids: number[]; created_at: string }[]
+    parameters?: Record<string, unknown>
+    parallelism?: number
+    actionVersion?: string
   },
 ) {
   const hostRuns = Array.from({ length: hosts }, (_, i) => ({
@@ -37,7 +43,7 @@ export async function mockRun(
   const run = {
     id,
     action_key: "linux-upgrade",
-    action_version: "1.0",
+    action_version: actionVersion,
     host_id: hosts === 1 ? 8101 : null,
     group_id: hosts === 1 ? null : 7101,
     target_kind: hosts === 1 ? "host" : "group",
@@ -45,8 +51,8 @@ export async function mockRun(
     scheduled_action_id: null,
     alert_event_id: alert?.id ?? null,
     alertname: alert?.name ?? null,
-    parameters: {},
-    parallelism: 1,
+    parameters,
+    parallelism,
     snapshot_enabled: true,
     verify_enabled: true,
     auto_rollback: true,

@@ -10,6 +10,7 @@ import { useLocalPref } from "@/lib/local-pref"
 import type { ActionHostRun, ActionRun } from "@/lib/types"
 import { AnsibleLog, findMatches } from "@/components/ansible-log"
 import { InvestigateRunButton } from "@/components/investigate-run-button"
+import { RerunActionButton } from "@/components/rerun-action-button"
 import { FAILURE_KINDS, parseAnsibleLog } from "@/lib/ansible-log"
 
 const TERMINAL = new Set(["succeeded", "failed", "partial", "cancelled"])
@@ -251,11 +252,13 @@ export function ActionRunDetail({ runId }: { runId: number }) {
             )}
           </>
         )}
-        actions={run && !isTerminal && (
+        actions={run && (isTerminal ? (
+          <RerunActionButton run={run} />
+        ) : (
           <button type="button" className="btn btn-sm btn-danger" disabled={cancelling} onClick={handleCancel}>
             {cancelling ? "Cancelling…" : "Cancel run"}
           </button>
-        )}
+        ))}
       />
 
       {/* No page scroll. The host table takes its own height and the log

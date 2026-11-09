@@ -9,6 +9,12 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Added
 
+- **Re-run an action from its run page.** A finished run's head has a
+  **Re-run…** button that opens the run dialog on the same host or group,
+  filled in with the run's parameters, metrics destinations and
+  parallelism. Anything can be changed before **Run** or **Preview**. It is
+  disabled, with the reason on hover, for a fleet run, a run whose target
+  was deleted, and an action no pack supplies any more.
 - **Investigate with AI from where a problem shows up.** The sparkle
   button now sits on the Fleet state resource hot spots, a host's Metrics
   tab and header, failed syncs, the Pending stuck and drift lanes, and
