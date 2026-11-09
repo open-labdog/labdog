@@ -264,8 +264,8 @@ against the container log and the 1.1.0 image.
       Fix direction: schedule it on beat, or drop the claim from the
       comments and surface leftover snapshots on the run page instead.
 
-      Severity Medium: leftover snapshots grow unbounded, and a leftover
-      snapshot also blocks some Proxmox operations (disk resize, migration).
+      Severity Medium: leftover snapshots pile up unbounded and hold
+      datastore space.
 
 ### Correctness — Low
 
