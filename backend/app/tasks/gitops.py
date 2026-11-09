@@ -18,23 +18,18 @@ def process_gitops_webhook(self, repo_id: int, commit_sha: str):
     asyncio.run(_process_webhook_async(self, repo_id, commit_sha))
 
 
+#: Convention: the optional global YAML lives at the repo root.
+#: Operators who want a different layout can symlink to it, but the
+#: path itself is not user-configurable — keeps Phase 2 small.
+GLOBAL_YAML_PATH = "_global.yaml"
+
+
 async def _process_webhook_async(task, repo_id: int, commit_sha: str):
     from pathlib import Path
 
-    from sqlalchemy import select
-
     from app.actions.registry import ensure_registry_current
     from app.db import task_session
-    from app.gitops.git_service import cleanup_repo, clone_repo, read_file_at_sha
-    from app.gitops.importer import import_global_from_yaml, import_group_from_yaml
-    from app.models.git_repository import GitAuthType, GitOpsStatus, GitRepository
-    from app.models.host_group import HostGroup
-    from app.models.ssh_key import SSHKey
-
-    # Convention: the optional global YAML lives at the repo root.
-    # Operators who want a different layout can symlink to it, but the
-    # path itself is not user-configurable — keeps Phase 2 small.
-    GLOBAL_YAML_PATH = "_global.yaml"
+    from app.gitops.git_service import cleanup_repo, clone_repo
 
     repo_dir: Path | None = None
 
@@ -45,47 +40,18 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
             # rejected every pack key (BUG-105). First, so the rebuild's
             # commit lands before the import's transaction begins.
             await ensure_registry_current(db)
-            result = await db.execute(select(GitRepository).where(GitRepository.id == repo_id))
-            repo = result.scalar_one_or_none()
-            if not repo:
-                logger.error("GitOps: repo %d not found", repo_id)
+            repo = await _repo_needing_import(db, repo_id, commit_sha)
+            if repo is None:
                 return
 
-            if repo.last_commit_sha == commit_sha:
-                logger.info(
-                    "GitOps: SHA %s already processed for repo %s, skipping",
-                    commit_sha[:8],
-                    repo.name,
-                )
-                return
-
-            encrypted_ssh_key = None
-            if repo.auth_type == GitAuthType.ssh_key and repo.ssh_key_id:
-                key_result = await db.execute(select(SSHKey).where(SSHKey.id == repo.ssh_key_id))
-                ssh_key = key_result.scalar_one_or_none()
-                if ssh_key:
-                    encrypted_ssh_key = ssh_key.encrypted_private_key
-
+            encrypted_ssh_key = await _encrypted_ssh_key(db, repo)
             try:
                 _git_repo, repo_dir = clone_repo(repo, encrypted_ssh_key=encrypted_ssh_key)
             except Exception as e:
                 logger.error("GitOps: failed to clone repo %s: %s", repo.name, e)
                 raise task.retry(exc=e)
 
-            # SEC-48: the webhook is a trigger, not an instruction. Import the
-            # tip of the branch just fetched, whatever SHA the payload named:
-            # a replayed delivery (GitHub's signature covers only the body)
-            # or anyone holding the static GitLab token could otherwise roll
-            # the groups back to an older commit on the branch.
-            tip = _git_repo.head.commit.hexsha
-            if commit_sha != tip:
-                logger.info(
-                    "GitOps: webhook for repo %s named %s; importing the branch tip %s",
-                    repo.name,
-                    (commit_sha or "")[:8],
-                    tip[:8],
-                )
-            commit_sha = tip
+            commit_sha = _branch_tip(_git_repo, repo, commit_sha)
             if repo.last_commit_sha == commit_sha:
                 logger.info(
                     "GitOps: branch tip %s already processed for repo %s, skipping",
@@ -101,117 +67,21 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
             # leave the next clone unverified again.
             await db.commit()
 
-            # Global YAML is optional; missing file is the common case.
-            # Failures here are logged but never abort the per-group loop —
-            # an operator typo in `_global.yaml` shouldn't block per-group
-            # rules from importing.
-            try:
-                global_yaml_content = read_file_at_sha(repo_dir, GLOBAL_YAML_PATH, commit_sha)
-            except FileNotFoundError:
-                global_yaml_content = None
+            await _import_global_yaml(db, repo, repo_id, repo_dir, commit_sha)
 
-            if global_yaml_content is not None:
-                try:
-                    global_result = await import_global_from_yaml(
-                        repo_id=repo_id,
-                        yaml_content=global_yaml_content,
-                        commit_sha=commit_sha,
-                        db=db,
-                    )
-                    if not global_result.success:
-                        logger.warning(
-                            "GitOps: global import failed for repo %s: %s",
-                            repo.name,
-                            global_result.error_message,
-                        )
-                    else:
-                        logger.info(
-                            "GitOps: global import OK for repo %s (changes=%s)",
-                            repo.name,
-                            global_result.any_changes(),
-                        )
-                except Exception as e:
-                    logger.error(
-                        "GitOps: error importing _global.yaml for repo %s: %s",
-                        repo.name,
-                        e,
-                    )
-
-            groups_result = await db.execute(
-                select(HostGroup).where(
-                    HostGroup.git_repository_id == repo_id,
-                    HostGroup.gitops_enabled == True,  # noqa: E712
-                )
-            )
-            groups = groups_result.scalars().all()
-
+            groups = await _gitops_groups(db, repo_id)
             if not groups:
                 logger.info("GitOps: no gitops-enabled groups for repo %s", repo.name)
-                repo.last_commit_sha = commit_sha
-                repo.last_sync_at = datetime.now(UTC)
+                _mark_processed(repo, commit_sha)
                 await db.commit()
                 return
 
-            # BUG-37: collect dispatches across all groups, commit once, then
-            # dispatch. Per-group _trigger_group_sync stages SyncJob rows but
-            # does NOT call .delay(); the caller drains this list after the
-            # commit on line below.
-            pending_dispatches: list[tuple[int, int, list[str] | None]] = []
+            pending_dispatches = await _import_groups(db, groups, repo_dir, commit_sha)
 
-            for group in groups:
-                try:
-                    try:
-                        yaml_content = read_file_at_sha(
-                            repo_dir, group.gitops_file_path, commit_sha
-                        )
-                    except FileNotFoundError:
-                        group.gitops_status = GitOpsStatus.error
-                        group.gitops_error_message = f"File not found: {group.gitops_file_path}"
-                        await db.flush()
-                        logger.warning(
-                            "GitOps: file %s not found for group %s",
-                            group.gitops_file_path,
-                            group.name,
-                        )
-                        continue
-
-                    import_result = await import_group_from_yaml(
-                        group_id=group.id,
-                        yaml_content=yaml_content,
-                        commit_sha=commit_sha,
-                        db=db,
-                    )
-
-                    if not import_result.success:
-                        logger.warning(
-                            "GitOps: import failed for group %s: %s",
-                            group.name,
-                            import_result.error_message,
-                        )
-                        continue
-
-                    if import_result.any_changes():
-                        pending_dispatches.extend(
-                            await _trigger_group_sync(
-                                group.id, db, changed_sync_modules(import_result)
-                            )
-                        )
-
-                except Exception as e:
-                    logger.error("GitOps: error processing group %s: %s", group.name, e)
-                    group.gitops_status = GitOpsStatus.error
-                    group.gitops_error_message = str(e)
-                    await db.flush()
-
-            repo.last_commit_sha = commit_sha
-            repo.last_sync_at = datetime.now(UTC)
+            _mark_processed(repo, commit_sha)
             await db.commit()
 
-            from app.tasks.host_sync_orchestrator import run_host_sync  # noqa: PLC0415
-
-            for job_id, host_id, module_filter in pending_dispatches:
-                run_host_sync.delay(job_id=job_id, host_id=host_id, module_filter=module_filter)
-                logger.info("GitOps: dispatched sync job %d for host %d", job_id, host_id)
+            _dispatch_syncs(pending_dispatches)
 
             logger.info(
                 "GitOps: processed webhook for repo %s, SHA %s, %d groups",
@@ -223,6 +93,199 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
     finally:
         if repo_dir is not None:
             cleanup_repo(repo_dir)
+
+
+async def _repo_needing_import(db, repo_id: int, commit_sha: str):
+    """The repository, or None when it is gone or already at ``commit_sha``."""
+    from sqlalchemy import select
+
+    from app.models.git_repository import GitRepository
+
+    result = await db.execute(select(GitRepository).where(GitRepository.id == repo_id))
+    repo = result.scalar_one_or_none()
+    if not repo:
+        logger.error("GitOps: repo %d not found", repo_id)
+        return None
+
+    if repo.last_commit_sha == commit_sha:
+        logger.info(
+            "GitOps: SHA %s already processed for repo %s, skipping",
+            commit_sha[:8],
+            repo.name,
+        )
+        return None
+    return repo
+
+
+async def _encrypted_ssh_key(db, repo) -> bytes | None:
+    """The linked SSH key's ciphertext, for an SSH-key repo that has one."""
+    from sqlalchemy import select
+
+    from app.models.git_repository import GitAuthType
+    from app.models.ssh_key import SSHKey
+
+    encrypted_ssh_key = None
+    if repo.auth_type == GitAuthType.ssh_key and repo.ssh_key_id:
+        key_result = await db.execute(select(SSHKey).where(SSHKey.id == repo.ssh_key_id))
+        ssh_key = key_result.scalar_one_or_none()
+        if ssh_key:
+            encrypted_ssh_key = ssh_key.encrypted_private_key
+    return encrypted_ssh_key
+
+
+def _branch_tip(git_repo, repo, commit_sha: str) -> str:
+    """The SHA to import: the tip of the branch just fetched.
+
+    SEC-48: the webhook is a trigger, not an instruction. Import the
+    tip of the branch just fetched, whatever SHA the payload named:
+    a replayed delivery (GitHub's signature covers only the body)
+    or anyone holding the static GitLab token could otherwise roll
+    the groups back to an older commit on the branch.
+    """
+    tip = git_repo.head.commit.hexsha
+    if commit_sha != tip:
+        logger.info(
+            "GitOps: webhook for repo %s named %s; importing the branch tip %s",
+            repo.name,
+            (commit_sha or "")[:8],
+            tip[:8],
+        )
+    return tip
+
+
+async def _import_global_yaml(db, repo, repo_id: int, repo_dir, commit_sha: str) -> None:
+    """Global YAML is optional; missing file is the common case.
+    Failures here are logged but never abort the per-group loop —
+    an operator typo in `_global.yaml` shouldn't block per-group
+    rules from importing."""
+    from app.gitops.git_service import read_file_at_sha
+    from app.gitops.importer import import_global_from_yaml
+
+    try:
+        global_yaml_content = read_file_at_sha(repo_dir, GLOBAL_YAML_PATH, commit_sha)
+    except FileNotFoundError:
+        global_yaml_content = None
+
+    if global_yaml_content is not None:
+        try:
+            global_result = await import_global_from_yaml(
+                repo_id=repo_id,
+                yaml_content=global_yaml_content,
+                commit_sha=commit_sha,
+                db=db,
+            )
+            if not global_result.success:
+                logger.warning(
+                    "GitOps: global import failed for repo %s: %s",
+                    repo.name,
+                    global_result.error_message,
+                )
+            else:
+                logger.info(
+                    "GitOps: global import OK for repo %s (changes=%s)",
+                    repo.name,
+                    global_result.any_changes(),
+                )
+        except Exception as e:
+            logger.error(
+                "GitOps: error importing _global.yaml for repo %s: %s",
+                repo.name,
+                e,
+            )
+
+
+async def _gitops_groups(db, repo_id: int) -> list:
+    from sqlalchemy import select
+
+    from app.models.host_group import HostGroup
+
+    groups_result = await db.execute(
+        select(HostGroup).where(
+            HostGroup.git_repository_id == repo_id,
+            HostGroup.gitops_enabled == True,  # noqa: E712
+        )
+    )
+    return groups_result.scalars().all()
+
+
+async def _import_groups(
+    db, groups, repo_dir, commit_sha: str
+) -> list[tuple[int, int, list[str] | None]]:
+    """Import each group's file; one group's failure is recorded on that
+    group and the loop goes on.
+
+    BUG-37: collect dispatches across all groups, commit once, then
+    dispatch. Per-group _trigger_group_sync stages SyncJob rows but
+    does NOT call .delay(); the caller drains the returned list after
+    its commit.
+    """
+    from app.models.git_repository import GitOpsStatus
+
+    pending_dispatches: list[tuple[int, int, list[str] | None]] = []
+    for group in groups:
+        try:
+            pending_dispatches.extend(await _import_group(db, group, repo_dir, commit_sha))
+        except Exception as e:
+            logger.error("GitOps: error processing group %s: %s", group.name, e)
+            group.gitops_status = GitOpsStatus.error
+            group.gitops_error_message = str(e)
+            await db.flush()
+    return pending_dispatches
+
+
+async def _import_group(
+    db, group, repo_dir, commit_sha: str
+) -> list[tuple[int, int, list[str] | None]]:
+    """Import one group's file and stage syncs for what it changed."""
+    from app.gitops.git_service import read_file_at_sha
+    from app.gitops.importer import import_group_from_yaml
+    from app.models.git_repository import GitOpsStatus
+
+    try:
+        yaml_content = read_file_at_sha(repo_dir, group.gitops_file_path, commit_sha)
+    except FileNotFoundError:
+        group.gitops_status = GitOpsStatus.error
+        group.gitops_error_message = f"File not found: {group.gitops_file_path}"
+        await db.flush()
+        logger.warning(
+            "GitOps: file %s not found for group %s",
+            group.gitops_file_path,
+            group.name,
+        )
+        return []
+
+    import_result = await import_group_from_yaml(
+        group_id=group.id,
+        yaml_content=yaml_content,
+        commit_sha=commit_sha,
+        db=db,
+    )
+
+    if not import_result.success:
+        logger.warning(
+            "GitOps: import failed for group %s: %s",
+            group.name,
+            import_result.error_message,
+        )
+        return []
+
+    if import_result.any_changes():
+        return await _trigger_group_sync(group.id, db, changed_sync_modules(import_result))
+    return []
+
+
+def _mark_processed(repo, commit_sha: str) -> None:
+    repo.last_commit_sha = commit_sha
+    repo.last_sync_at = datetime.now(UTC)
+
+
+def _dispatch_syncs(pending_dispatches: list[tuple[int, int, list[str] | None]]) -> None:
+    """Send the staged syncs. After the commit, as BUG-37 requires."""
+    from app.tasks.host_sync_orchestrator import run_host_sync  # noqa: PLC0415
+
+    for job_id, host_id, module_filter in pending_dispatches:
+        run_host_sync.delay(job_id=job_id, host_id=host_id, module_filter=module_filter)
+        logger.info("GitOps: dispatched sync job %d for host %d", job_id, host_id)
 
 
 #: GitOps importer module name → orchestrator module (CANONICAL_ORDER).
