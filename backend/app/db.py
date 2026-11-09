@@ -33,6 +33,24 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
+async def release_connection(session: AsyncSession) -> None:
+    """Hand the session's pooled connection back before a long wait.
+
+    For a request that reads what it needs and then waits on something
+    else — a live stream, SSH to a host. A ``get_db`` session is closed
+    only after the response has been sent, so without this its connection
+    stays checked out for the whole wait, and fifteen such requests take
+    every connection in the default pool (BUG-152, BUG-153).
+
+    A commit, not a close or rollback. Nothing is pending at the call
+    sites, so it changes nothing in the database, and unlike a rollback it
+    keeps rows the request (or a test's savepoint-wrapped session) has
+    flushed. The session stays usable: its next query checks a connection
+    out again, for as long as that query takes.
+    """
+    await session.commit()
+
+
 @asynccontextmanager
 async def task_session():
     """Create a fresh engine + session for use in Celery task workers.

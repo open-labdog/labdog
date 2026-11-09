@@ -80,39 +80,6 @@ Checked and not filed:
 
 ### Performance — High
 
-- [ ] **BUG-152** `backend/app/api/actions.py:838` — every open live
-      output stream holds a database connection until the run ends
-
-      Symptom: with 15 streams open (the API pool is `pool_size` 5 +
-      `max_overflow` 10), every other API request waits 30 s and fails
-      with `QueuePool limit of size 5 overflow 10 reached, connection
-      timed out, timeout 30.00`. *Reproduced*: 15 clients on
-      `GET /api/actions/runs/{id}/stream` for a running run, then
-      `GET /api/hosts` timed out. The run detail page opens one stream
-      per open tab (`components/action-run-detail.tsx:125`), and the
-      assistant opens one per session (`stream_session`,
-      `app/api/ai.py:1117`), which has the same shape.
-
-      Root cause: both endpoints take `db` from `Depends(get_db)`, read
-      one row, and return a `StreamingResponse` that relays Redis
-      pub/sub. The session's transaction began with that read, and a
-      yield dependency is closed only after the response has finished
-      streaming, so the pooled connection stays checked out for the
-      whole run. A run whose terminal status is published between the
-      status read and the `subscribe` never sends a terminal event, so
-      that stream (and its connection) lasts until the page closes.
-
-      Fix direction: read the row, then `await db.close()` before
-      returning the `StreamingResponse` (or read it in a short
-      `AsyncSessionLocal()` block and drop the dependency). Subscribe
-      before reading the status, so a run that ends in between still
-      closes the stream. A test can hold `pool_size + max_overflow`
-      streams open and assert that another request still succeeds.
-
-      Severity High: a few operators watching runs make the whole UI
-      and API fail for everyone, and the failure looks like a database
-      outage.
-
 - [ ] **BUG-153** `frontend/app/(dashboard)/plans/_hooks/use-plan-computation.ts:36`
       — computing a plan sends one preview per host at once, and each
       holds a database connection across seven SSH collections

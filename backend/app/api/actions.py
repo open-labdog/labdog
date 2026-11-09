@@ -5,7 +5,6 @@ import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 from sqlalchemy import case, exists, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -841,53 +840,24 @@ async def stream_run_events(
     db: AsyncSession = Depends(get_db),
 ):
     """Server-Sent Events stream for a run. Subscribes to Redis pub/sub channel
-    'actions.run.{id}', relays events. Closes when run reaches terminal status."""
+    'actions.run.{id}', relays events. Closes when run reaches terminal status.
 
-    run = await db.get(ActionRun, id)
-    if run is None:
-        raise HTTPException(status_code=404, detail="Action run not found")
+    Holds no database connection while it streams (BUG-152); see
+    ``app.api._sse``.
+    """
+    from app.api._sse import relay_channel  # noqa: PLC0415
 
-    terminal_states = {"succeeded", "failed", "partial", "cancelled"}
-    run_status = run.status
+    async def _status() -> str | None:
+        run = await db.get(ActionRun, id)
+        return run.status if run is not None else None
 
-    async def event_generator():
-        import redis.asyncio as aioredis
-
-        from app.config import settings
-
-        client = aioredis.from_url(settings.redis.url)
-        pubsub = client.pubsub()
-        await pubsub.subscribe(f"actions.run.{id}")
-
-        try:
-            # If run is already terminal, send current status and close
-            if run_status in terminal_states:
-                yield f"event: status\ndata: {json.dumps({'status': run_status})}\n\n"
-                return
-
-            async for message in pubsub.listen():
-                if message["type"] != "message":
-                    continue
-
-                data = json.loads(message["data"])
-                event_type = data.get("event", "output")
-                payload = json.dumps(data)
-                yield f"event: {event_type}\ndata: {payload}\n\n"
-
-                # Close on terminal status
-                if data.get("event") == "status" and data.get("status") in terminal_states:
-                    return
-        finally:
-            await pubsub.unsubscribe(f"actions.run.{id}")
-            await client.aclose()
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        },
+    return await relay_channel(
+        db,
+        f"actions.run.{id}",
+        _status,
+        terminal_states={"succeeded", "failed", "partial", "cancelled"},
+        default_event="output",
+        not_found="Action run not found",
     )
 
 
