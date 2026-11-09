@@ -76,57 +76,7 @@ def generate_package_playbook(
                 )
 
     # STEP 2: Package tasks (after repos are configured)
-    for pkg in packages:
-        state = pkg.get("state", "present")
-        name = pkg["package_name"]
-        version = pkg.get("version")
-
-        if state == "absent":
-            tasks.append(
-                {
-                    "name": f"Remove package: {name}",
-                    "ansible.builtin.package": {
-                        "name": name,
-                        "state": "absent",
-                    },
-                }
-            )
-        elif state == "latest":
-            tasks.append(
-                {
-                    "name": f"Ensure latest: {name}",
-                    "ansible.builtin.package": {
-                        "name": name,
-                        "state": "latest",
-                    },
-                }
-            )
-        else:
-            if version:
-                pkg_name_versioned = _format_package_name_with_version(
-                    name,
-                    version,
-                    pkg.get("package_manager", "auto"),
-                )
-                tasks.append(
-                    {
-                        "name": f"Install package: {name} version {version}",
-                        "ansible.builtin.package": {
-                            "name": pkg_name_versioned,
-                            "state": "present",
-                        },
-                    }
-                )
-            else:
-                tasks.append(
-                    {
-                        "name": f"Ensure present: {name}",
-                        "ansible.builtin.package": {
-                            "name": name,
-                            "state": "present",
-                        },
-                    }
-                )
+    tasks.extend(_package_tasks(packages))
 
     # STEP 3: Hold/unhold tasks (after packages are installed)
     hold_pkgs = [
@@ -178,7 +128,13 @@ def generate_package_playbook(
             "name": "LabDog Package Management",
             "hosts": "all",
             "become": True,
+            # BUG-157: only what the tasks read. ``os_family`` for the
+            # repository and hold conditions, and ``pkg_mgr``, which
+            # ``ansible.builtin.package`` would otherwise look up with a
+            # setup run of its own. Gathering everything cost about 0.35 s
+            # more per sync.
             "gather_facts": True,
+            "gather_subset": ["!all", "!min", "distribution", "pkg_mgr"],
             "tasks": tasks,
         }
     ]
@@ -186,6 +142,72 @@ def generate_package_playbook(
     inventory = generate_inventory(host_ip, ssh_port, ssh_key_path, ssh_user)
 
     return {"playbook": playbook, "inventory": inventory}
+
+
+#: Package states in the order their tasks run: removals first, so that a
+#: package replacing a removed one (an MTA, say) is installed after it.
+_STATE_ORDER = (
+    ("absent", "Remove"),
+    ("present", "Ensure present"),
+    ("latest", "Ensure latest"),
+)
+
+
+def _package_tasks(packages: list[dict]) -> list[dict]:
+    """One package-manager call per target state, not one per package.
+
+    BUG-157: 20 packages were 20 ``ansible.builtin.package`` tasks, each a
+    module run of its own that started the package manager and read its
+    cache again. Packages that want the same state now go in one task with
+    ``name:`` as a list, which apt and dnf resolve in one transaction.
+
+    One bad name fails the whole list, so a list task ignores its failure
+    and is followed by one task per package that runs only when it failed:
+    the good packages are still installed and the bad one fails the
+    module, as before. (An ignored failure does not count against the
+    module, BUG-167.) A state with one package keeps the single task.
+    """
+    names: dict[str, list[tuple[str, str]]] = {state: [] for state, _ in _STATE_ORDER}
+    for pkg in packages:
+        state = pkg.get("state", "present")
+        name = pkg["package_name"]
+        version = pkg.get("version")
+        if state not in ("absent", "latest"):
+            state = "present"
+        if state == "present" and version:
+            spec = _format_package_name_with_version(
+                name, version, pkg.get("package_manager", "auto")
+            )
+            label = f"{name} version {version}"
+        else:
+            spec, label = name, name
+        names[state].append((spec, label))
+
+    tasks: list[dict] = []
+    for state, verb in _STATE_ORDER:
+        group = names[state]
+        if len(group) == 1:
+            spec, label = group[0]
+            tasks.append(_package_task(f"{verb}: {label}", spec, state))
+        elif group:
+            register = f"labdog_packages_{state}"
+            listed = _package_task(
+                f"{verb}: {', '.join(label for _, label in group)}",
+                [spec for spec, _ in group],
+                state,
+            )
+            listed["register"] = register
+            listed["ignore_errors"] = True
+            tasks.append(listed)
+            for spec, label in group:
+                one = _package_task(f"{verb} one by one: {label}", spec, state)
+                one["when"] = f"{register} is failed"
+                tasks.append(one)
+    return tasks
+
+
+def _package_task(name: str, spec: str | list[str], state: str) -> dict:
+    return {"name": name, "ansible.builtin.package": {"name": spec, "state": state}}
 
 
 def _build_apt_repo_string(repo: dict) -> str:

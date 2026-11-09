@@ -2,6 +2,7 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
+from app.db import with_task_engine
 from app.tasks import celery_app
 
 logger = logging.getLogger(__name__)
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 )
 def process_gitops_webhook(self, repo_id: int, commit_sha: str):
     """Celery task: clone repo, import YAML for each linked group, trigger sync."""
-    asyncio.run(_process_webhook_async(self, repo_id, commit_sha))
+    asyncio.run(with_task_engine(_process_webhook_async(self, repo_id, commit_sha)))
 
 
 #: Convention: the optional global YAML lives at the repo root.

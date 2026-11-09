@@ -17,6 +17,7 @@ the verdict becomes durable.
 import logging
 from datetime import UTC
 
+from app.db import with_task_engine
 from app.enum_utils import enum_str
 from app.tasks import celery_app
 
@@ -164,7 +165,7 @@ def check_all_drift():
 
     from app.tasks.drift_sweep import sweep_module
 
-    return asyncio.run(sweep_module("firewall", _sweep_one, host_gated=True))
+    return asyncio.run(with_task_engine(sweep_module("firewall", _sweep_one, host_gated=True)))
 
 
 # Register periodic drift check via RedBeat (prevents duplicate schedules on restart)

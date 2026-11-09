@@ -23,6 +23,7 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
+from app.db import with_task_engine
 from app.tasks import celery_app
 
 logger = logging.getLogger(__name__)
@@ -259,7 +260,7 @@ async def _load_action_run_parameters(action_run_id: int) -> dict:
 )
 def run_builtin_collect_state(action_run_id: int, host_run_id: int) -> dict:
     """Refresh cached host facts for one host."""
-    asyncio.run(_collect_state_async(action_run_id, host_run_id))
+    asyncio.run(with_task_engine(_collect_state_async(action_run_id, host_run_id)))
     return {"action_run_id": action_run_id, "host_run_id": host_run_id}
 
 
@@ -377,7 +378,7 @@ async def _collect_state_async(action_run_id: int, host_run_id: int) -> None:
 )
 def run_builtin_drift_check(action_run_id: int, host_run_id: int) -> dict:
     """Drift-check one host using the same logic as the periodic sweep."""
-    asyncio.run(_drift_check_async(action_run_id, host_run_id))
+    asyncio.run(with_task_engine(_drift_check_async(action_run_id, host_run_id)))
     return {"action_run_id": action_run_id, "host_run_id": host_run_id}
 
 
@@ -440,7 +441,7 @@ def run_builtin_sync(action_run_id: int, host_run_id: int) -> dict:
     SyncJob's terminal status maps to our ActionHostRun status:
     ``success → succeeded``, anything else → ``failed``.
     """
-    asyncio.run(_sync_async(action_run_id, host_run_id))
+    asyncio.run(with_task_engine(_sync_async(action_run_id, host_run_id)))
     return {"action_run_id": action_run_id, "host_run_id": host_run_id}
 
 

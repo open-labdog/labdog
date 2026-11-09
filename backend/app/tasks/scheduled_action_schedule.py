@@ -26,6 +26,7 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
+from app.db import with_task_engine
 from app.tasks import celery_app
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,7 @@ logger = logging.getLogger(__name__)
 )
 def check_due() -> dict:
     """Walk scheduled_actions, dispatch any rows that are due."""
-    return asyncio.run(_check_due_async())
+    return asyncio.run(with_task_engine(_check_due_async()))
 
 
 async def _check_due_async() -> dict:

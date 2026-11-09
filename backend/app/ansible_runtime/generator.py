@@ -358,20 +358,29 @@ def generate_iptables_playbook(
         # iptables is now the active backend; strip any stale LabDog nftables
         # table so it can't shadow this ruleset or confuse collection.
         _nftables_teardown_task(),
+        # BUG-163: this was two package installs with ignore_errors on every
+        # sync, each a package-manager run, and on an RPM host both failed.
+        # Look first, and install only on an apt host that lacks it.
+        # iptables-persistent pulls in netfilter-persistent.
+        {
+            "name": "Check for netfilter-persistent",
+            "ansible.builtin.shell": (
+                "if command -v netfilter-persistent >/dev/null 2>&1"
+                " || [ -x /usr/sbin/netfilter-persistent ]; then echo present;"
+                " elif command -v apt-get >/dev/null 2>&1; then echo missing;"
+                " else echo unsupported; fi"
+            ),
+            "register": "labdog_netfilter_persistent",
+            "changed_when": False,
+            "check_mode": False,
+        },
         {
             "name": "Install iptables-persistent for boot persistence",
-            "ansible.builtin.package": {
+            "ansible.builtin.apt": {
                 "name": "iptables-persistent",
                 "state": "present",
             },
-            "ignore_errors": True,
-        },
-        {
-            "name": "Install netfilter-persistent for boot persistence (fallback)",
-            "ansible.builtin.package": {
-                "name": "netfilter-persistent",
-                "state": "present",
-            },
+            "when": "labdog_netfilter_persistent.stdout == 'missing'",
             "ignore_errors": True,
         },
         {

@@ -31,7 +31,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select, update
 
-from app.db import task_session
+from app.db import task_session, with_task_engine
 from app.tasks import celery_app
 
 logger = logging.getLogger(__name__)
@@ -408,7 +408,7 @@ def sweep_stale_action_runs() -> dict:
     """Celery entrypoint. Drives the async sweeper inside ``asyncio.run``."""
     import asyncio
 
-    return asyncio.run(_sweep_stale_action_runs_async())
+    return asyncio.run(with_task_engine(_sweep_stale_action_runs_async()))
 
 
 # ---------------------------------------------------------------------------

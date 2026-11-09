@@ -80,11 +80,13 @@ def _authorized_key_tasks(users: list) -> list[dict]:
     ``state: absent`` removed nothing).
 
     The home directory comes from ``getent`` on the target, the same source
-    the collector reads it from. In check mode a user created earlier in the
-    same play does not exist yet, so the lookup is allowed to miss and the
-    key tasks are skipped for that user.
+    the collector reads it from: one lookup of the whole passwd database
+    before the first user's key tasks (BUG-164; it used to be one lookup
+    task per user). In check mode a user created earlier in the same play
+    does not exist yet, so it is missing from the result and the key tasks
+    are skipped for that user.
     """
-    tasks = []
+    tasks: list[dict] = []
     for u in users:
         username = _get(u, "username")
         state = _get(u, "state", "present")
@@ -100,17 +102,16 @@ def _authorized_key_tasks(users: list) -> list[dict]:
         task_vars = {"labdog_key_user": username}
         passwd = "ansible_facts.getent_passwd[labdog_key_user]"  # nosec B105 - a fact path
         home = Template("{{ " + passwd + "[4] }}")
-        exists = f"{passwd} is not none"
+        exists = "labdog_key_user in ansible_facts.getent_passwd"
+        if not tasks:
+            tasks.append(
+                {
+                    "name": "Look up home directories",
+                    "ansible.builtin.getent": {"database": "passwd"},
+                }
+            )
         tasks.extend(
             [
-                {
-                    "name": f"Look up home directory of {username}",
-                    "ansible.builtin.getent": {
-                        "database": "passwd",
-                        "key": username,
-                        "fail_key": False,
-                    },
-                },
                 {
                     "name": f"SSH directory for {username}",
                     "ansible.builtin.file": {

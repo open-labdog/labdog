@@ -1,8 +1,18 @@
 "use client"
 
+import dynamic from "next/dynamic"
 import Link from "next/link"
 import { Window } from "@/components/ld"
-import { SshTerminal } from "@/components/ssh-terminal"
+
+// xterm.js is the largest chunk in the export (84 KB gzipped). Loaded
+// here, only the Terminal tab and page pay for it, not every host page.
+const SshTerminal = dynamic(
+  () => import("@/components/ssh-terminal").then((m) => m.SshTerminal),
+  {
+    ssr: false,
+    loading: () => <div className="p-3.5 text-xs text-text-3">Loading terminal…</div>,
+  },
+)
 
 export function TerminalTab({ hostId, hostname }: { hostId: number; hostname: string }) {
   return (

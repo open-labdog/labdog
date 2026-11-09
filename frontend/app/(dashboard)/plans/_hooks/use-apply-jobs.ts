@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { apiFetch, ApiError } from "@/lib/api"
+import { pollWhileVisible } from "@/lib/poll"
 import { useSyncTray, type SyncJob } from "@/lib/sync-tray"
 import { showError } from "@/lib/toast"
 import { TERMINAL, type HostJob, type HostPlan, type Phase } from "../model"
@@ -73,11 +74,10 @@ export function useApplyJobs(phase: Phase, setPhase: (phase: Phase) => void) {
         /* transient — try again next tick */
       }
     }
-    void tick()
-    const t = setInterval(() => void tick(), 2000)
+    const stopPolling = pollWhileVisible(() => void tick(), 2000)
     return () => {
       stop = true
-      clearInterval(t)
+      stopPolling()
     }
   }, [phase, jobIds, queryClient, setPhase])
 

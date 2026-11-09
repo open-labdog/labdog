@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react"
 import { apiFetch } from "@/lib/api"
+import { pollWhileVisible } from "@/lib/poll"
 import { showSuccess, showError } from "@/lib/toast"
 
 export interface ModuleSubStatus {
@@ -166,9 +167,7 @@ export function SyncTrayProvider({ children }: { children: ReactNode }) {
 
     const anyActive = operations.some((o) => !operationDone(o, jobsRef.current))
     if (!anyActive) return
-    poll()
-    const interval = setInterval(poll, 3000)
-    return () => clearInterval(interval)
+    return pollWhileVisible(() => void poll(), 3000)
   }, [operations])
 
   return (

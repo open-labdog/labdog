@@ -23,6 +23,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from app.db import with_task_engine
 from app.tasks import celery_app
 
 logger = logging.getLogger(__name__)
@@ -101,7 +102,7 @@ async def _handle(alert_event_id: int) -> dict:
 @celery_app.task(name="app.tasks.alert_handling.handle_alert")
 def handle_alert(alert_event_id: int) -> dict:
     """Act on one alert's labdog_action label, then apply the AI policy."""
-    return asyncio.run(_handle(alert_event_id))
+    return asyncio.run(with_task_engine(_handle(alert_event_id)))
 
 
 async def _output_tail(db, run_id: int) -> str:  # noqa: ANN001
@@ -224,7 +225,7 @@ async def _check(now: datetime | None = None) -> dict:
 @celery_app.task(name="app.tasks.alert_handling.check_alert_actions", queue="default")
 def check_alert_actions() -> dict:
     """Judge finished runs that alerts started — see the module docstring."""
-    return asyncio.run(_check())
+    return asyncio.run(with_task_engine(_check()))
 
 
 def _register_beat_schedules() -> None:

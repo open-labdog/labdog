@@ -71,7 +71,7 @@ class _FakeRedis:
 def stub_celery_dispatch():
     """Capture what the orchestrator sends, and don't wait for it to run.
 
-    The orchestrator waits for a batch by re-reading its rows, and nothing
+    The orchestrator waits for its hosts by re-reading their rows, and nothing
     here runs the per-host tasks, so the wait is stubbed out: these tests
     are about which task is sent for which host.
     """
@@ -82,7 +82,7 @@ def stub_celery_dispatch():
 
     with (
         patch("app.tasks.action_orchestrator.celery_app.send_task", side_effect=_send_task),
-        patch("app.tasks.action_orchestrator._wait", new=AsyncMock(return_value="go")),
+        patch("app.tasks.action_orchestrator._wait", new=AsyncMock(return_value=("go", {}))),
         patch("redis.from_url", return_value=_FakeRedis()),
     ):
         yield sent

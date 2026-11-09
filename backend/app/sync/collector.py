@@ -3,10 +3,8 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import asyncssh
-
 from app.rules.model import ChainPolicies, FirewallRuleSpec
-from app.ssh_utils import ssh_connect_host
+from app.ssh_utils import host_connection
 from app.sync.parsers.iptables import parse_iptables_policies, parse_iptables_save
 from app.sync.parsers.nftables import parse_nftables_json, parse_nftables_policies
 
@@ -45,6 +43,7 @@ async def collect_firewall_state(
     db: "AsyncSession",
     private_key_pem: str,
     firewall_backend: str,
+    conn=None,
 ) -> CollectedFirewallState:
     """SSH into a host and collect its current firewall rules and chain policies.
 
@@ -65,9 +64,8 @@ async def collect_firewall_state(
     rule_parser = _RULE_PARSERS[firewall_backend]
     policy_parser = _POLICY_PARSERS[firewall_backend]
 
-    key = asyncssh.import_private_key(private_key_pem)
-    async with ssh_connect_host(host, db, client_keys=[key]) as conn:
-        result = await conn.run(command, check=True)
+    async with host_connection(host, db, private_key_pem, conn) as c:
+        result = await c.run(command, check=True)
         return CollectedFirewallState(
             rules=rule_parser(result.stdout),
             policies=policy_parser(result.stdout),
@@ -79,15 +77,11 @@ async def collect_current_rules(
     db: "AsyncSession",
     private_key_pem: str,
     firewall_backend: str,
+    conn=None,
 ) -> list[FirewallRuleSpec]:
     """SSH into a host and collect its current firewall rules.
 
     Backward-compatible wrapper around collect_firewall_state.
     """
-    state = await collect_firewall_state(
-        host,
-        db,
-        private_key_pem,
-        firewall_backend,
-    )
+    state = await collect_firewall_state(host, db, private_key_pem, firewall_backend, conn=conn)
     return state.rules

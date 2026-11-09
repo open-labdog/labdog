@@ -8,12 +8,10 @@ channel — so the frontend has one streaming idiom to learn, not two.
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1122,43 +1120,22 @@ async def stream_session(
     """Relay a session's live events as SSE.
 
     Same mechanism as ``GET /api/actions/runs/{id}/stream``: the worker
-    publishes to a Redis channel, this endpoint forwards it.
+    publishes to a Redis channel, this endpoint forwards it, holding no
+    database connection while it does (BUG-152).
     """
-    session = await db.get(AISession, session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session not found")
+    from app.api._sse import relay_channel  # noqa: PLC0415
 
-    channel = SESSION_CHANNEL.format(id=session_id)
-    current_status = session.status
+    async def _status() -> str | None:
+        session = await db.get(AISession, session_id)
+        return session.status if session is not None else None
 
-    async def event_generator():
-        import redis.asyncio as aioredis
-
-        from app.config import settings
-
-        client = aioredis.from_url(settings.redis.url)
-        pubsub = client.pubsub()
-        await pubsub.subscribe(channel)
-        try:
-            if current_status in TERMINAL_STATES:
-                yield f"event: status\ndata: {json.dumps({'status': current_status})}\n\n"
-                return
-            async for message in pubsub.listen():
-                if message["type"] != "message":
-                    continue
-                data = json.loads(message["data"])
-                event_type = data.get("event", "text")
-                yield f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
-                if event_type == "status" and data.get("status") in TERMINAL_STATES:
-                    return
-        finally:
-            await pubsub.unsubscribe(channel)
-            await client.aclose()
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    return await relay_channel(
+        db,
+        SESSION_CHANNEL.format(id=session_id),
+        _status,
+        terminal_states=TERMINAL_STATES,
+        default_event="text",
+        not_found="Session not found",
     )
 
 

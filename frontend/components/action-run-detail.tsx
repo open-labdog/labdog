@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { API_BASE, apiFetch } from "@/lib/api"
 import { toast } from "sonner"
@@ -42,6 +42,23 @@ function stripAnsi(text: string): string {
   return text.replace(ANSI_OSC, "").replace(ANSI_CSI, "").replace(BARE_CR, "")
 }
 
+// A finished run's combined log is loaded by itself up to this many hosts.
+// Past it the page waits to be asked: every host's output is up to 1 MiB, so
+// a 100-host run meant 100 requests at once and the whole lot joined into
+// one string, when one host is read at a time (BUG-161).
+const COMBINED_AUTOLOAD_MAX = 10
+// Output requests in flight at once while loading the combined log.
+const OUTPUT_FETCH_CONCURRENCY = 6
+
+async function fetchHostOutput(runId: number, hostRunId: number): Promise<string> {
+  try {
+    const res = await fetch(`${API_BASE}/api/actions/runs/${runId}/host-runs/${hostRunId}/output`, { credentials: "include" })
+    return res.ok ? stripAnsi(await res.text()) : ""
+  } catch {
+    return ""
+  }
+}
+
 // `hostname` is the live host's name when it still exists and the
 // dispatch-time snapshot when it does not, so it is set on every row;
 // the fallback is for rows written before that column existed.
@@ -70,6 +87,7 @@ export function ActionRunDetail({ runId }: { runId: number }) {
   // terminal fetch runs exactly once per run (see the effect below).
   const terminalFetchedForRef = useRef<number | null>(null)
   const [cancelling, setCancelling] = useState(false)
+  const [combined, setCombined] = useState<"idle" | "loading" | "loaded">("idle")
 
   const { data: run, isLoading } = useQuery<ActionRun>({
     queryKey: ["action-run", runId],
@@ -82,40 +100,47 @@ export function ActionRunDetail({ runId }: { runId: number }) {
     },
   })
 
+  /** Every host's persisted output, a few requests at a time, as the combined log. */
+  const loadCombined = useCallback(
+    async (finished: ActionRun) => {
+      const hostRuns = finished.host_runs
+      const texts = new Array<string>(hostRuns.length)
+      let next = 0
+      const worker = async () => {
+        while (next < hostRuns.length) {
+          const i = next++
+          texts[i] = await fetchHostOutput(runId, hostRuns[i].id)
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(OUTPUT_FETCH_CONCURRENCY, hostRuns.length) }, worker))
+      if (terminalFetchedForRef.current !== runId) return
+      setHostOutputs(Object.fromEntries(hostRuns.map((hr, i) => [hr.id, texts[i]])))
+      setOutput(
+        hostRuns.length > 1
+          ? hostRuns.map((hr, i) => `===== ${hostLabel(hr)} (${hr.status}) =====\n${texts[i]}\n`).join("\n")
+          : texts.join("\n"),
+      )
+      setCombined("loaded")
+    },
+    [runId],
+  )
+
   // Once a run reaches a terminal state, load the authoritative, complete
   // output from the DB. Do this even when SSE already streamed partial
   // output (e.g. the pre-run step-log): the live stream only carries what
   // was published while this tab was connected and is never replayed, so
   // the persisted per-host output is the source of truth. Gate on a ref
   // keyed by runId (NOT on `output` being empty) so a live-watched run
-  // still loads its full log on completion. Fetches exactly once per run.
+  // still loads its full log on completion. Fetches exactly once per run,
+  // and for a large run only when asked (COMBINED_AUTOLOAD_MAX).
   useEffect(() => {
     if (!run || !TERMINAL.has(run.status)) return
     if (terminalFetchedForRef.current === runId) return
     if (run.host_runs.length === 0) return
     terminalFetchedForRef.current = runId
-
-    ;(async () => {
-      const entries = await Promise.all(
-        run.host_runs.map(async (hr) => {
-          try {
-            const res = await fetch(`${API_BASE}/api/actions/runs/${runId}/host-runs/${hr.id}/output`, { credentials: "include" })
-            return { hr, text: res.ok ? stripAnsi(await res.text()) : "" }
-          } catch {
-            return { hr, text: "" }
-          }
-        }),
-      )
-      if (terminalFetchedForRef.current !== runId) return
-      const map: Record<number, string> = {}
-      for (const { hr, text } of entries) map[hr.id] = text
-      setHostOutputs(map)
-      const combined = run.host_runs.length > 1
-        ? entries.map(({ hr, text }) => `===== ${hostLabel(hr)} (${hr.status}) =====\n${text}\n`).join("\n")
-        : entries.map((e) => e.text).join("\n")
-      setOutput(combined)
-    })()
-  }, [run, runId])
+    if (run.host_runs.length > COMBINED_AUTOLOAD_MAX) return
+    void loadCombined(run)
+  }, [run, runId, loadCombined])
 
   // SSE subscription for live output
   useEffect(() => {
@@ -160,13 +185,8 @@ export function ActionRunDetail({ runId }: { runId: number }) {
     }
     setSelectedHostRunId(hostRunId)
     if (hostOutputs[hostRunId] !== undefined) return
-    try {
-      const res = await fetch(`${API_BASE}/api/actions/runs/${runId}/host-runs/${hostRunId}/output`, { credentials: "include" })
-      const text = res.ok ? stripAnsi(await res.text()) : ""
-      setHostOutputs((prev) => ({ ...prev, [hostRunId]: text }))
-    } catch {
-      setHostOutputs((prev) => ({ ...prev, [hostRunId]: "" }))
-    }
+    const text = await fetchHostOutput(runId, hostRunId)
+    setHostOutputs((prev) => ({ ...prev, [hostRunId]: text }))
   }
 
   async function handleCancel() {
@@ -209,9 +229,13 @@ export function ActionRunDetail({ runId }: { runId: number }) {
     setPinToBottom(false)
     reveal(outputRef.current?.querySelector(`[data-line="${firstFailure}"]`))
   }
+  // A large finished run whose combined log has not been asked for.
+  const combinedOnRequest = !!run && !!isTerminal && run.host_runs.length > COMBINED_AUTOLOAD_MAX && combined !== "loaded"
   const paneFallback = selectedHostRunId !== null
     ? hostOutputs[selectedHostRunId] === undefined ? "Loading…" : "(no output captured for this host)"
-    : isLoading ? "Loading…" : isTerminal ? "(no output captured)" : "Waiting for output…"
+    : isLoading ? "Loading…"
+    : combinedOnRequest ? (combined === "loading" ? "Loading every host's output…" : "Pick a host above to read its output, or load every host's output at once.")
+    : isTerminal ? "(no output captured)" : "Waiting for output…"
 
   // A fleet run legitimately has neither id; only host/group targets go
   // null because the row was removed.
@@ -308,11 +332,20 @@ export function ActionRunDetail({ runId }: { runId: number }) {
           key={runId}
           storageKey="log"
           title={selectedLabel ? `ansible output — ${selectedLabel}` : "ansible output"}
-          meta={selectedLabel && (
+          meta={selectedLabel ? (
             <button type="button" className="btn btn-sm btn-ghost" title="back to every host's output (or click the host again)" onClick={() => setSelectedHostRunId(null)}>
               ← all hosts
             </button>
-          )}
+          ) : combinedOnRequest && run ? (
+            <button type="button" className="btn btn-sm btn-ghost" disabled={combined === "loading"} onClick={() => {
+                setCombined("loading")
+                void loadCombined(run)
+              }}
+              data-testid="load-combined-log"
+            >
+              {combined === "loading" ? "loading…" : `load all ${run.host_runs.length} hosts`}
+            </button>
+          ) : null}
           defaultHeight="fill"
           defaultFontSize={11}
           escRestores

@@ -15,6 +15,7 @@ nothing upstream of it does.
 import logging
 from datetime import UTC
 
+from app.db import with_task_engine
 from app.tasks import celery_app
 
 logger = logging.getLogger(__name__)
@@ -169,7 +170,7 @@ def run_resolver_drift_check(self, host_id: int) -> dict:
                 "desired": diff.desired,
             }
 
-    return asyncio.run(_run())
+    return asyncio.run(with_task_engine(_run()))
 
 
 @celery_app.task(
@@ -182,7 +183,9 @@ def check_all_resolver_drift():
 
     from app.tasks.drift_sweep import sweep_module
 
-    return asyncio.run(sweep_module("resolver", check_resolver_drift_for_one_host))
+    return asyncio.run(
+        with_task_engine(sweep_module("resolver", check_resolver_drift_for_one_host))
+    )
 
 
 def _register_resolver_drift_schedule():

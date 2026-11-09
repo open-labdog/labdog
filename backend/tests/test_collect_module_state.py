@@ -268,7 +268,10 @@ async def test_a_full_collection_reads_every_module(db, caplog):
     }
     assert world.package_states.await_args.args[3] == ["curl"]
     assert by_module["resolver"].collected_state == {"nameservers": ["1.1.1.1"]}
-    assert world.resolver_state.await_args.kwargs == {"resolver_type": "resolved"}
+    assert world.resolver_state.await_args.kwargs == {
+        "resolver_type": "resolved",
+        "conn": world.conn,
+    }
     assert by_module["firewall"].collected_state == [{"action": "allow", "port": 22}]
     assert world.rules.await_args.args[3] == "nftables"
     world.detect.assert_not_awaited()
@@ -285,8 +288,11 @@ async def test_a_full_collection_reads_every_module(db, caplog):
     assert host.labdog_source_ip == "10.9.9.9"
     rows = await _hms(db, host.id)
     assert set(rows) == set(ORDER)
-    # One probe connection, then one each for the users and cron collectors.
-    assert world.connects == 3
+    # BUG-159: one connection for the probe and every collector, which each
+    # used to open their own.
+    assert world.connects == 1
+    for collector in (world.services, world.hosts_file, world.repo_sources, world.rules):
+        assert collector.await_args.kwargs["conn"] is world.conn
 
 
 async def test_a_failing_collector_is_recorded_and_the_rest_still_run(db, caplog):
@@ -381,7 +387,7 @@ async def test_packages_skip_the_state_probe_when_none_are_desired(db):
         "packages": [],
         "repos": [{"uri": "http://deb.test"}],
     }
-    assert world.resolver_state.await_args.kwargs == {"resolver_type": "resolv_conf"}
+    assert world.resolver_state.await_args.kwargs["resolver_type"] == "resolv_conf"
     assert states[0].collected_state == {"nameservers": ["1.1.1.1"]}
 
 

@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from app.db import with_task_engine
 from app.tasks import celery_app
 
 logger = logging.getLogger(__name__)
@@ -39,7 +40,7 @@ EXPIRY_NOTE = "Nobody decided within the time allowed, so the request expired."
 )
 def expire_stale_approvals() -> dict:
     """Expire lapsed approval requests and let their sessions finish."""
-    return asyncio.run(_expire_stale_approvals())
+    return asyncio.run(with_task_engine(_expire_stale_approvals()))
 
 
 async def _expire_stale_approvals() -> dict:

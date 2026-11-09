@@ -14,7 +14,7 @@ import asyncio
 import hashlib
 import logging
 
-from app.db import task_session
+from app.db import task_session, with_task_engine
 from app.tasks import celery_app
 
 logger = logging.getLogger(__name__)
@@ -83,7 +83,10 @@ def run_scan_config(self, config_id: int, is_manual: bool = False) -> dict:
         plus ``config_id`` so ``GET /api/scans/{id}/runs/{task_id}`` can
         check the task id belongs to that config.
     """
-    return {**asyncio.run(_async_run(config_id, is_manual=is_manual)), "config_id": config_id}
+    return {
+        **asyncio.run(with_task_engine(_async_run(config_id, is_manual=is_manual))),
+        "config_id": config_id,
+    }
 
 
 async def _async_run(config_id: int, is_manual: bool = False) -> dict:

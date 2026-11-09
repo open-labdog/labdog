@@ -2,7 +2,9 @@
 
 import asyncio
 import tempfile
-from typing import TYPE_CHECKING
+from collections.abc import AsyncIterator, Callable
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
+from typing import TYPE_CHECKING, Any
 
 import asyncssh
 
@@ -312,6 +314,154 @@ def ssh_connect_host(
         timeout=connect_timeout,
         db=db,
     )
+
+
+@asynccontextmanager
+async def host_connection(
+    host: "Host",
+    db: "AsyncSession | None",
+    private_key_pem: str,
+    conn: Any = None,
+) -> AsyncIterator[Any]:
+    """``conn`` when the caller already has one open, else a new connection.
+
+    For the collectors: each takes an optional ``conn`` so that a caller
+    collecting several modules from one host — a preview, a collect-state —
+    can hand them all one connection (BUG-159), while a caller with no
+    connection (the per-module drift sweeps) gets one opened and closed
+    around the block, as before. Only a new connection uses ``db``, for
+    TOFU, and ``private_key_pem``.
+    """
+    if conn is not None:
+        yield conn
+        return
+    key = asyncssh.import_private_key(private_key_pem)
+    async with ssh_connect_host(host, db, client_keys=[key]) as own:
+        yield own
+
+
+class SharedHostConnection:
+    """One SSH connection to a host, for several collectors at once.
+
+    BUG-159: each module's collector opened its own connection, so a preview
+    of one host made eight handshakes (about 90 ms each on loopback, against
+    3 ms for a command on an open connection), and for a host that does not
+    answer each of them waited out the connect timeout in turn: 80 s
+    instead of 10.
+
+    Connects on the first command, so a preview where no module has
+    anything to read never connects, as before. A failure to connect is
+    kept and raised to every later caller at once, rather than waited out
+    again. At most ``max_channels`` commands run at a time; OpenSSH allows
+    ten sessions per connection by default (``MaxSessions``). A host set to
+    fewer refuses the session channel past its limit (OpenSSH answers
+    "open failed", ``OPEN_CONNECT_FAILED``). When that happens while other
+    commands are running, the refused command waits for them to finish and
+    from then on commands go one at a time. A refusal with nothing else
+    running is a real failure and is raised.
+
+    Only ``run`` is offered, which is all the collectors use.
+    """
+
+    #: Channel-open failures that can mean the server's session limit.
+    #: OpenSSH sends the first; other servers the second.
+    _REFUSED = frozenset({asyncssh.OPEN_CONNECT_FAILED, asyncssh.OPEN_ADMINISTRATIVELY_PROHIBITED})
+    #: Retries of a refused command once one at a time, 0.1 s apart: a
+    #: server can free a closed session a moment after the client sees it
+    #: close.
+    _SERIAL_RETRIES = 5
+
+    def __init__(
+        self,
+        open_connection: Callable[[], AbstractAsyncContextManager[Any]],
+        max_channels: int = 4,
+    ):
+        self._open_connection = open_connection
+        self._stack = AsyncExitStack()
+        self._conn: Any = None
+        self._error: Exception | None = None
+        self._connecting = asyncio.Lock()
+        self._channels = asyncio.Semaphore(max_channels)
+        self._one_at_a_time = asyncio.Lock()
+        self._serial = False
+        self._busy = 0
+        self._idle = asyncio.Condition()
+
+    async def _connection(self) -> Any:
+        if self._conn is not None:
+            return self._conn
+        async with self._connecting:
+            if self._error is not None:
+                raise self._error
+            if self._conn is None:
+                try:
+                    self._conn = await self._stack.enter_async_context(self._open_connection())
+                except Exception as exc:
+                    self._error = exc
+                    raise
+        return self._conn
+
+    async def run(self, *args, **kwargs):
+        conn = await self._connection()
+        async with self._channels:
+            # Checked again here: a command queued for a channel before the
+            # switch must not start alongside the serial ones.
+            if not self._serial:
+                others = self._busy
+                self._busy += 1
+                try:
+                    return await conn.run(*args, **kwargs)
+                except asyncssh.ChannelOpenError as exc:
+                    if exc.code not in self._REFUSED or others == 0:
+                        raise
+                    self._serial = True
+                finally:
+                    self._busy -= 1
+                    if self._busy == 0:
+                        async with self._idle:
+                            self._idle.notify_all()
+        async with self._one_at_a_time:
+            async with self._idle:
+                await self._idle.wait_for(lambda: self._busy == 0)
+            for attempt in range(self._SERIAL_RETRIES):
+                try:
+                    return await conn.run(*args, **kwargs)
+                except asyncssh.ChannelOpenError as exc:
+                    if exc.code not in self._REFUSED or attempt == self._SERIAL_RETRIES - 1:
+                        raise
+                    await asyncio.sleep(0.1)
+        raise AssertionError("unreachable")  # pragma: no cover
+
+    async def aclose(self) -> None:
+        await self._stack.aclose()
+
+
+@asynccontextmanager
+async def shared_host_connection(
+    host: "Host",
+    db: "AsyncSession | None",
+    private_key_pem: str | None,
+    *,
+    max_channels: int = 4,
+) -> AsyncIterator[SharedHostConnection]:
+    """A :class:`SharedHostConnection` to ``host``, closed at the end of the block.
+
+    ``db`` is used for TOFU when the connection is made, as by
+    :func:`ssh_connect_host`. A missing or unreadable key is raised to the
+    first command, like any other failure to connect.
+    """
+
+    def _open() -> AbstractAsyncContextManager[Any]:
+        if private_key_pem is None:
+            raise ValueError("Host has no SSH key assigned")
+        key = asyncssh.import_private_key(private_key_pem)
+        return ssh_connect_host(host, db, client_keys=[key])
+
+    shared = SharedHostConnection(_open, max_channels=max_channels)
+    try:
+        yield shared
+    finally:
+        await shared.aclose()
 
 
 async def get_source_ip(conn: "BoundedConnection | asyncssh.SSHClientConnection") -> str | None:

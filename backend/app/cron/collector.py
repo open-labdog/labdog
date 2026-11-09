@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import asyncssh
 
-from app.ssh_utils import ssh_connect_host
+from app.ssh_utils import host_connection
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +26,7 @@ async def collect_cron_jobs(
     db: "AsyncSession",
     private_key_pem: str,
     users: list[str],
+    conn=None,
 ) -> list[dict]:
     """SSH into a host and parse Ansible-managed crontab entries for each user.
 
@@ -37,12 +38,11 @@ async def collect_cron_jobs(
     results: list[dict] = []
 
     try:
-        private_key = asyncssh.import_private_key(private_key_pem)
 
         async def _run() -> list[dict]:
-            async with ssh_connect_host(host, db, client_keys=[private_key]) as conn:
+            async with host_connection(host, db, private_key_pem, conn) as c:
                 for user in users:
-                    results.extend(await _collect_user_crontab(conn, user))
+                    results.extend(await _collect_user_crontab(c, user))
             return results
 
         return await asyncio.wait_for(_run(), timeout=30.0)
