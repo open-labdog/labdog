@@ -71,6 +71,7 @@ import logging
 import os
 import shutil
 import tempfile
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -278,6 +279,53 @@ async def _claim_or_defer_group(action_run_id: int) -> list[int] | None:
     return list(member_ids_peek)
 
 
+@dataclass
+class _GroupRunSpec:
+    """Run and action attributes, copied out while the loading session is open.
+
+    The session closes before the playbook runs, so everything the later
+    phases need is read here once.
+    """
+
+    action_key: str
+    playbook_path: Any
+    roles_paths: tuple
+    destructive: bool
+    verify_playbook_path: Any
+    verify_timeout: int
+    ai_verify_prompt: str | None
+    ai_verify_fail_closed: bool
+    playbook_timeout: int | None
+    parameters: dict
+    snapshot_enabled: bool
+    verify_enabled: bool
+    auto_rollback: bool
+
+
+@dataclass
+class _GroupPlaybookResult:
+    """What Phase B's single ansible-runner invocation produced."""
+
+    runner: Any
+    output: str
+    status: str
+    rc: int
+    extra_vars: dict | None
+    dry_run: Any
+
+
+@dataclass
+class _MemberOutcomes:
+    """Per-host playbook verdicts derived from the runner's events (Phase C).
+
+    Both maps are keyed by ``ActionHostRun.id``. The verify and rollback
+    phases read ``succeeded`` rather than re-querying the DB.
+    """
+
+    succeeded: dict[int, bool]
+    error_message: dict[int, str]
+
+
 async def _run_action_group_async(action_run_id: int) -> None:
     """Drive a single ansible-runner invocation across all group members,
     wrapped in a per-host snapshot/verify/rollback envelope for destructive
@@ -285,24 +333,12 @@ async def _run_action_group_async(action_run_id: int) -> None:
     """
     import redis as redis_lib
     from celery.exceptions import SoftTimeLimitExceeded
-    from sqlalchemy import select
 
-    from app.actions.extra_vars import sanitize_extra_vars
-    from app.actions.registry import ACTION_REGISTRY, ensure_registry_current
-    from app.actions.validation import DRY_RUN_PARAM
-    from app.ansible_runtime.known_hosts import remove_known_hosts, write_known_hosts
-    from app.ansible_runtime.runner import generate_multi_host_inventory, run_ansible
     from app.config import settings
-    from app.crypto import decrypt_ssh_key, get_master_key
-    from app.db import task_session
-    from app.grafana.service import METRICS_DESTINATIONS_PARAM
-    from app.models.action_run import ActionHostRun, ActionRun
-    from app.models.host import Host, HostGroupMembership
-    from app.models.ssh_key import SSHKey
-    from app.tasks.action_timeouts import effective_playbook_timeout
+    from app.crypto import get_master_key
     from app.tasks.host_lock import release_host_queue
 
-    r = redis_lib.from_url(settings.redis.url)
+    redis_client = redis_lib.from_url(settings.redis.url)
     channel = f"actions.run.{action_run_id}"
 
     private_data_dir = tempfile.mkdtemp(prefix="labdog-action-group-")
@@ -317,8 +353,8 @@ async def _run_action_group_async(action_run_id: int) -> None:
         # ------------------------------------------------------------------ #
         # Pre-flight cancel check                                             #
         # ------------------------------------------------------------------ #
-        if r.exists(f"actions.cancel.{action_run_id}"):
-            await _mark_run_cancelled(action_run_id, channel, r)
+        if redis_client.exists(f"actions.cancel.{action_run_id}"):
+            await _mark_run_cancelled(action_run_id, channel, redis_client)
             return
 
         # ------------------------------------------------------------------ #
@@ -329,442 +365,21 @@ async def _run_action_group_async(action_run_id: int) -> None:
             return
         claimed_member_ids = claim
 
-        # ------------------------------------------------------------------ #
-        # Phase 1: load run + action + group members + ssh keys, mark running #
-        # ------------------------------------------------------------------ #
-        host_ctxs: list[_HostCtx] = []
-        host_run_by_inventory_name: dict[str, _HostCtx] = {}
         master_key = get_master_key()
-
-        async with task_session() as db:
-            # Current before the lookup, not only on a miss: a key this
-            # process knows from an older build never misses, and would
-            # run whichever pack won back then (BUG-105).
-            await ensure_registry_current(db)
-            run_result = await db.execute(select(ActionRun).where(ActionRun.id == action_run_id))
-            run: ActionRun = run_result.scalar_one()
-
-            action = ACTION_REGISTRY.get(run.action_key)
-            if action is None:
-                # Registry may be stale (pack synced after worker started).
-                # Reload from disk once and retry before failing the run.
-                from app.actions.registry import reload_registry_async  # noqa: PLC0415
-
-                await reload_registry_async(db)
-                action = ACTION_REGISTRY.get(run.action_key)
-            if action is None:
-                run.status = "failed"
-                run.error_message = f"Unknown action key: {run.action_key}"
-                run.finished_at = datetime.now(UTC)
-                await db.commit()
-                return
-
-            if run.group_id is None:
-                run.status = "failed"
-                run.error_message = "action_group: ActionRun has no group_id (caller bug)"
-                run.finished_at = datetime.now(UTC)
-                await db.commit()
-                return
-
-            # Resolve all member hosts of the group.
-            hosts_result = await db.execute(
-                select(Host)
-                .join(HostGroupMembership, Host.id == HostGroupMembership.c.host_id)
-                .where(HostGroupMembership.c.group_id == run.group_id)
-                .order_by(Host.id)
-            )
-            hosts = list(hosts_result.scalars().all())
-
-            if not hosts:
-                logger.warning(
-                    "action_group: no hosts in group %d for action_run %d",
-                    run.group_id,
-                    action_run_id,
-                )
-                run.status = "succeeded"
-                run.started_at = datetime.now(UTC)
-                run.finished_at = datetime.now(UTC)
-                await db.commit()
-                return
-
-            # Already flipped under the member locks in the claim block; a
-            # cancel is the one thing that can legitimately have moved it
-            # since, and re-asserting "running" over that would run a group
-            # action the operator stopped.
-            if run.status == "cancelled":
-                logger.info(
-                    "action_group: action_run %d was cancelled after the claim — not proceeding",
-                    action_run_id,
-                )
-                return
-            run.status = "running"
-            if run.started_at is None:
-                run.started_at = datetime.now(UTC)
-            await db.flush()
-
-            # Cache action + run attributes before the session closes.
-            action_key: str = run.action_key
-            playbook_path = action.playbook_path
-            action_roles_paths: tuple = action.roles_paths
-            action_destructive: bool = action.destructive
-            action_verify_playbook_path = action.verify_playbook_path
-            action_verify_timeout: int = action.verify_timeout_seconds
-            action_ai_verify_prompt: str | None = action.ai_verify_prompt
-            action_ai_verify_fail_closed: bool = action.ai_verify_fail_closed
-            action_playbook_timeout: int | None = action.playbook_timeout_seconds
-            parameters: dict = dict(run.parameters or {})
-            run_snapshot_enabled: bool = bool(run.snapshot_enabled)
-            run_verify_enabled: bool = bool(run.verify_enabled)
-            run_auto_rollback: bool = bool(run.auto_rollback)
-
-            # Per-host: create ActionHostRun, decrypt SSH key, write to tmpfs,
-            # add to inventory list. Hosts without an SSH key get a skipped row.
-            for host in hosts:
-                hr = ActionHostRun(
-                    action_run_id=action_run_id,
-                    host_id=host.id,
-                    hostname=host.hostname,
-                    status="queued",
-                )
-                db.add(hr)
-                await db.flush()
-
-                if host.ssh_key_id is None:
-                    hr.status = "skipped"
-                    hr.error_message = "Host has no SSH key configured"
-                    hr.finished_at = datetime.now(UTC)
-                    continue
-
-                key_result = await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
-                ssh_key = key_result.scalar_one()
-                private_key_text = decrypt_ssh_key(ssh_key.encrypted_private_key, master_key)
-
-                fd, key_path = tempfile.mkstemp(
-                    dir="/dev/shm",  # nosec B108 — intentional tmpfs for in-memory key storage
-                    prefix="labdog-action-group-",
-                    suffix=".key",
-                )
-                os.close(fd)
-                with open(key_path, "w") as fh:
-                    fh.write(private_key_text)
-                    if not private_key_text.endswith("\n"):
-                        fh.write("\n")
-                os.chmod(key_path, 0o600)
-                ssh_key_paths.append(key_path)
-
-                # Stable inventory name = the hostname. ansible-runner's
-                # event_data.host is keyed by inventory name, which we'll
-                # use to route per-host events back to the right
-                # ActionHostRun row.
-                ctx = _HostCtx(host_id=host.id, host_run_id=hr.id, inv_name=host.hostname)
-                ctx.ip = host.ip_address
-                ctx.port = host.ssh_port or 22
-                ctx.ssh_user = ssh_key.ssh_user or "root"
-                ctx.ssh_key_path = key_path
-                # SEC-26: pin this member's connections to the host key
-                # LabDog recorded over asyncssh; None until first contact,
-                # which leaves the accept-new fallback in place.
-                ctx.known_hosts_path = write_known_hosts(host.ssh_host_key_entry, key_path)
-                ctx.hostname = host.hostname
-                host_ctxs.append(ctx)
-                host_run_by_inventory_name[ctx.inv_name] = ctx
-
-                # Mark this host's row as running now (matches per-host path's
-                # behaviour where the row flips to running before ansible runs).
-                hr.status = "running"
-                hr.started_at = datetime.now(UTC)
-
-            await db.commit()
-
-        # If every host was skipped (no SSH keys), aggregate and exit early.
-        if not host_ctxs:
-            await _aggregate_and_finalise(action_run_id, channel, r)
+        loaded = await _load_group_run(action_run_id, master_key, ssh_key_paths)
+        if loaded is None:
             return
+        spec, host_ctxs = loaded
 
-        # Notify SSE listeners that the run is moving — emit one host_status
-        # per running host so the UI flips its rows.
-        for ctx in host_ctxs:
-            try:
-                r.publish(
-                    channel,
-                    json.dumps(
-                        {
-                            "event": "host_status",
-                            "host_run_id": ctx.host_run_id,
-                            "status": "running",
-                        }
-                    ),
-                )
-            except Exception:
-                logger.debug(
-                    "action_group: SSE publish failed for host_status running",
-                    exc_info=True,
-                )
-
-        # ------------------------------------------------------------------ #
-        # Phase A: per-host pre-action snapshot                               #
-        # ------------------------------------------------------------------ #
-        # Destructive + snapshot_enabled + has VM mapping → take a snapshot.
-        # Snapshots are taken in parallel via asyncio.gather; a snapshot
-        # failure on any single host fails that host immediately (its row
-        # is marked ``failed`` and it is dropped from the inventory before
-        # the playbook runs — matching the per-host path's bail-on-snapshot
-        # behaviour).
-        # A dry run is ``ansible-playbook --check`` and changes nothing, so
-        # there is nothing to snapshot (and, with no snapshot, verify and
-        # rollback below don't run either).
-        run_is_dry = bool(parameters.get(DRY_RUN_PARAM, False))
-        if run_is_dry:
-            _publish_global(
-                r,
-                channel,
-                "[group] dry run: ansible-playbook --check, no changes are made; "
-                "snapshot skipped\n",
-            )
-        elif action_destructive and run_snapshot_enabled:
-            await _snapshot_all(
-                host_ctxs,
-                action_run_id,
-                action_key,
-                master_key,
-                channel,
-                r,
-            )
-
-            # Drop hosts whose snapshot failed: we already marked them
-            # ``failed`` in the DB and emitted a status event. They're not
-            # part of the inventory the playbook sees.
-            snapshot_failed = [c for c in host_ctxs if _was_snapshot_failed(c)]
-            host_ctxs = [c for c in host_ctxs if not _was_snapshot_failed(c)]
-            for c in snapshot_failed:
-                host_run_by_inventory_name.pop(c.inv_name, None)
-
-            if not host_ctxs:
-                # Every host failed snapshot — nothing left to run.
-                await _aggregate_and_finalise(action_run_id, channel, r)
-                return
-        elif action_destructive:
-            # Destructive but snapshot_enabled=False — log the choice once.
-            _publish_global(
-                r,
-                channel,
-                "[group] destructive action with snapshot_enabled=false "
-                "— skipping snapshot envelope, playbook owns rollback\n",
-            )
-
-        # ------------------------------------------------------------------ #
-        # Phase B: build inventory + extra-vars, run ansible-runner once     #
-        # ------------------------------------------------------------------ #
-        inventory_json = generate_multi_host_inventory(
-            [
-                {
-                    "name": ctx.inv_name,
-                    "ip": ctx.ip,
-                    "port": ctx.port,
-                    "ssh_user": ctx.ssh_user,
-                    "ssh_key_path": ctx.ssh_key_path,
-                    "known_hosts_path": ctx.known_hosts_path,
-                }
-                for ctx in host_ctxs
-            ]
+        await _run_envelope(
+            action_run_id,
+            spec,
+            host_ctxs,
+            master_key,
+            private_data_dir,
+            channel,
+            redis_client,
         )
-
-        dry_run = parameters.pop(DRY_RUN_PARAM, False)
-        # Group dispatch doesn't inject metrics destinations (no manifest
-        # that declares ``metrics_backend`` is group-only today), but the
-        # reserved key must not reach the playbook as an extra-var.
-        parameters.pop(METRICS_DESTINATIONS_PARAM, None)
-        # Fail closed before these become extra-vars. Ansible evaluates
-        # extra-vars on the controller — the LabDog host — not on the
-        # target, so a template expression here is code execution here.
-        # The API rejects them too; this catches rows that did not come
-        # through that path. See app/actions/extra_vars.py.
-        sanitize_extra_vars(parameters)
-        extra_vars: dict | None = dict(parameters) if parameters else None
-        # Dry run is ``--check`` via run_ansible, not an extra-var: see
-        # run_ansible's ``check_mode``.
-
-        # Per-action floor — see the matching comment in action_host.py.
-        timeout = effective_playbook_timeout(action_playbook_timeout)
-
-        runner = run_ansible(
-            playbook_path=playbook_path,
-            inventory_json=inventory_json,
-            private_data_dir=private_data_dir,
-            extra_vars=extra_vars,
-            timeout=timeout,
-            roles_paths=list(action_roles_paths) if action_roles_paths else None,
-            check_mode=bool(dry_run),
-        )
-
-        playbook_output: str = (
-            runner.stdout.read() if hasattr(runner.stdout, "read") else str(runner.stdout)
-        )
-        if len(playbook_output.encode()) > MAX_OUTPUT_BYTES:
-            playbook_output = (
-                playbook_output[:MAX_OUTPUT_BYTES] + "\n\n(truncated — output exceeded 1 MB)"
-            )
-
-        playbook_status = getattr(runner, "status", "unknown")
-        playbook_rc = getattr(runner, "rc", -1)
-
-        # ------------------------------------------------------------------ #
-        # Phase C: route per-host events from runner.events back to rows     #
-        # ------------------------------------------------------------------ #
-        per_host_failure: dict[str, str] = {}
-        per_host_unreachable: set[str] = set()
-        per_host_seen: set[str] = set()
-
-        for event in getattr(runner, "events", None) or []:
-            event_type = event.get("event")
-            event_data = event.get("event_data") or {}
-            host_name = event_data.get("host")
-            if not host_name:
-                continue
-            per_host_seen.add(host_name)
-            if event_type == "runner_on_failed":
-                msg = (event_data.get("res") or {}).get("msg") or "task failed"
-                per_host_failure.setdefault(host_name, str(msg))
-            elif event_type == "runner_on_unreachable":
-                per_host_unreachable.add(host_name)
-                per_host_failure.setdefault(host_name, "host unreachable")
-
-        # Derive per-host playbook outcome (succeeded / failed). Saved
-        # to ActionHostRun below; the verify+rollback phases read from
-        # `per_host_playbook_success` rather than re-querying the DB.
-        per_host_playbook_success: dict[int, bool] = {}
-        per_host_error_msg: dict[int, str] = {}
-        for ctx in host_ctxs:
-            if ctx.inv_name in per_host_failure:
-                per_host_playbook_success[ctx.host_run_id] = False
-                per_host_error_msg[ctx.host_run_id] = per_host_failure[ctx.inv_name]
-            elif playbook_status == "successful" or ctx.inv_name in per_host_seen:
-                # Either the run completed cleanly, or we saw at least one
-                # event for this host with no failure event — treat as success.
-                per_host_playbook_success[ctx.host_run_id] = True
-            else:
-                # Playbook failed globally before reaching this host
-                # (e.g. parse error, ``serial: 1`` halt after an earlier
-                # failure). Mark as failed; downstream verify is skipped
-                # and rollback runs if a snapshot exists.
-                per_host_playbook_success[ctx.host_run_id] = False
-                per_host_error_msg[ctx.host_run_id] = (
-                    f"playbook did not reach host (status={playbook_status}, rc={playbook_rc})"
-                )
-
-        # ------------------------------------------------------------------ #
-        # Phase D: per-host verify (succeeded + snapshotted + verify_enabled) #
-        # ------------------------------------------------------------------ #
-        if run_verify_enabled and action_destructive:
-            await _verify_all(
-                host_ctxs,
-                per_host_playbook_success,
-                action_verify_playbook_path,
-                action_verify_timeout,
-                action_roles_paths,
-                extra_vars,
-                private_data_dir,
-                channel,
-                r,
-                ai_verify_prompt=action_ai_verify_prompt,
-                ai_verify_fail_closed=action_ai_verify_fail_closed,
-                action_run_id=action_run_id,
-                dry_run=dry_run,
-            )
-
-        # ------------------------------------------------------------------ #
-        # Phase E: per-host rollback (failed playbook OR failed verify)      #
-        # ------------------------------------------------------------------ #
-        if run_auto_rollback and action_destructive:
-            await _rollback_all(
-                host_ctxs,
-                per_host_playbook_success,
-                channel,
-                r,
-            )
-
-        # ------------------------------------------------------------------ #
-        # Phase F: per-host cleanup (delete snapshots on succeeded hosts)    #
-        # ------------------------------------------------------------------ #
-        if action_destructive:
-            await _cleanup_all(
-                host_ctxs,
-                per_host_playbook_success,
-                channel,
-                r,
-            )
-
-        # ------------------------------------------------------------------ #
-        # Persist final per-host outcomes                                     #
-        # ------------------------------------------------------------------ #
-        async with task_session() as db:
-            for ctx in host_ctxs:
-                hr_result = await db.execute(
-                    select(ActionHostRun).where(ActionHostRun.id == ctx.host_run_id)
-                )
-                hr = hr_result.scalar_one()
-                playbook_ok = per_host_playbook_success.get(ctx.host_run_id, False)
-                final_ok = playbook_ok and ctx.verify_passed
-                if final_ok:
-                    hr.status = "succeeded"
-                else:
-                    hr.status = "failed"
-                    if ctx.verify_error and playbook_ok:
-                        hr.error_message = ctx.verify_error
-                    elif ctx.host_run_id in per_host_error_msg:
-                        hr.error_message = per_host_error_msg[ctx.host_run_id]
-                hr.exit_code = playbook_rc
-                hr.finished_at = datetime.now(UTC)
-                # Compose final per-host output: pre/post step log lines
-                # plus the (truncated) shared playbook output. The shared
-                # log is stamped on every host's row — the underlying
-                # ansible-runner ran once for the whole group, so per-host
-                # slicing of stdout isn't meaningful.
-                ctx_log = "\n".join(ctx.step_log)
-                if ctx_log:
-                    hr.output = ctx_log + "\n=== Ansible output ===\n" + playbook_output
-                else:
-                    hr.output = playbook_output
-
-                # SSE host_status update.
-                try:
-                    r.publish(
-                        channel,
-                        json.dumps(
-                            {
-                                "event": "host_status",
-                                "host_run_id": ctx.host_run_id,
-                                "status": hr.status,
-                            }
-                        ),
-                    )
-                except Exception:
-                    logger.debug(
-                        "action_group: SSE publish failed for host_status final",
-                        exc_info=True,
-                    )
-
-            await db.commit()
-
-        # Stream the tail of the playbook output once for the run.
-        try:
-            r.publish(
-                channel,
-                json.dumps(
-                    {
-                        "event": "output",
-                        "host_run_id": None,
-                        "text": "=== Ansible output ===\n" + playbook_output[-4000:],
-                    }
-                ),
-            )
-        except Exception:
-            logger.debug("action_group: SSE publish failed for ansible output", exc_info=True)
-
-        # ------------------------------------------------------------------ #
-        # Phase G: aggregate run-level status                                 #
-        # ------------------------------------------------------------------ #
-        await _aggregate_and_finalise(action_run_id, channel, r)
 
     except SoftTimeLimitExceeded:
         # Celery's graceful abort — the orchestrator sizes our soft limit
@@ -778,13 +393,13 @@ async def _run_action_group_async(action_run_id: int) -> None:
             "aborted: exceeded task soft time limit — playbook or "
             "snapshot/verify/rollback step hung",
             channel,
-            r,
+            redis_client,
         )
         return
 
     except Exception as exc:
         logger.exception("action_group: unhandled error for action_run %d", action_run_id)
-        await _mark_run_failed(action_run_id, str(exc), channel, r)
+        await _mark_run_failed(action_run_id, str(exc), channel, redis_client)
         return
 
     finally:
@@ -799,27 +414,557 @@ async def _run_action_group_async(action_run_id: int) -> None:
             after=f"action_run_id={action_run_id}",
             exclude_action_run_id=action_run_id,
         )
+        _remove_workspaces(ssh_key_paths, private_data_dir)
 
-        # CRITICAL: always remove SSH keys from tmpfs.
-        for key_path in ssh_key_paths:
-            try:
-                if os.path.exists(key_path):
-                    os.unlink(key_path)
-                # The pinned known-hosts file sits beside the key (SEC-26).
-                remove_known_hosts(key_path)
-            except Exception:
-                logger.debug("action_group: failed to remove key %s", key_path, exc_info=True)
-        if os.path.exists(private_data_dir):
-            shutil.rmtree(private_data_dir, ignore_errors=True)
-        # _verify_all allocates a sibling runner dir per verified host
-        # (f"{private_data_dir}-verify-{host_id}"), so removing only the base
-        # dir leaked one tree per host per run — each holding the rendered
-        # inventory and the full ansible event stream. Globbing the siblings
-        # cannot miss one and needs no bookkeeping threaded through
-        # _verify_all; private_data_dir is an mkdtemp path, so the prefix is
-        # unambiguous.
-        for verify_dir in glob.glob(f"{private_data_dir}-verify*"):
-            shutil.rmtree(verify_dir, ignore_errors=True)
+
+async def _load_group_run(
+    action_run_id: int,
+    master_key: bytes,
+    ssh_key_paths: list[str],
+) -> tuple[_GroupRunSpec, list[_HostCtx]] | None:
+    """Phase 1: load run + action + group members + ssh keys, mark running.
+
+    Returns ``None`` when the run ends here: an unknown action key, no
+    ``group_id``, an empty group, or a cancel since the claim. Each key
+    file is appended to *ssh_key_paths* as soon as it exists, so the
+    caller's ``finally`` removes it even if a later member fails.
+    """
+    from sqlalchemy import select
+
+    from app.actions.registry import ACTION_REGISTRY, ensure_registry_current
+    from app.db import task_session
+    from app.models.action_run import ActionRun
+    from app.models.host import Host, HostGroupMembership
+
+    async with task_session() as db:
+        # Current before the lookup, not only on a miss: a key this
+        # process knows from an older build never misses, and would
+        # run whichever pack won back then (BUG-105).
+        await ensure_registry_current(db)
+        run_result = await db.execute(select(ActionRun).where(ActionRun.id == action_run_id))
+        run: ActionRun = run_result.scalar_one()
+
+        action = ACTION_REGISTRY.get(run.action_key)
+        if action is None:
+            # Registry may be stale (pack synced after worker started).
+            # Reload from disk once and retry before failing the run.
+            from app.actions.registry import reload_registry_async  # noqa: PLC0415
+
+            await reload_registry_async(db)
+            action = ACTION_REGISTRY.get(run.action_key)
+        if action is None:
+            await _fail_run_at_load(db, run, f"Unknown action key: {run.action_key}")
+            return None
+
+        if run.group_id is None:
+            await _fail_run_at_load(db, run, "action_group: ActionRun has no group_id (caller bug)")
+            return None
+
+        # Resolve all member hosts of the group.
+        hosts_result = await db.execute(
+            select(Host)
+            .join(HostGroupMembership, Host.id == HostGroupMembership.c.host_id)
+            .where(HostGroupMembership.c.group_id == run.group_id)
+            .order_by(Host.id)
+        )
+        hosts = list(hosts_result.scalars().all())
+
+        if not hosts:
+            logger.warning(
+                "action_group: no hosts in group %d for action_run %d",
+                run.group_id,
+                action_run_id,
+            )
+            run.status = "succeeded"
+            run.started_at = datetime.now(UTC)
+            run.finished_at = datetime.now(UTC)
+            await db.commit()
+            return None
+
+        # Already flipped under the member locks in the claim block; a
+        # cancel is the one thing that can legitimately have moved it
+        # since, and re-asserting "running" over that would run a group
+        # action the operator stopped.
+        if run.status == "cancelled":
+            logger.info(
+                "action_group: action_run %d was cancelled after the claim — not proceeding",
+                action_run_id,
+            )
+            return None
+        run.status = "running"
+        if run.started_at is None:
+            run.started_at = datetime.now(UTC)
+        await db.flush()
+
+        # Cache action + run attributes before the session closes.
+        spec = _GroupRunSpec(
+            action_key=run.action_key,
+            playbook_path=action.playbook_path,
+            roles_paths=action.roles_paths,
+            destructive=action.destructive,
+            verify_playbook_path=action.verify_playbook_path,
+            verify_timeout=action.verify_timeout_seconds,
+            ai_verify_prompt=action.ai_verify_prompt,
+            ai_verify_fail_closed=action.ai_verify_fail_closed,
+            playbook_timeout=action.playbook_timeout_seconds,
+            parameters=dict(run.parameters or {}),
+            snapshot_enabled=bool(run.snapshot_enabled),
+            verify_enabled=bool(run.verify_enabled),
+            auto_rollback=bool(run.auto_rollback),
+        )
+
+        # Per-host: create ActionHostRun, decrypt SSH key, write to tmpfs,
+        # add to inventory list. Hosts without an SSH key get a skipped row.
+        host_ctxs: list[_HostCtx] = []
+        for host in hosts:
+            ctx = await _prepare_member(db, action_run_id, host, master_key, ssh_key_paths)
+            if ctx is not None:
+                host_ctxs.append(ctx)
+
+        await db.commit()
+
+    return spec, host_ctxs
+
+
+async def _fail_run_at_load(db: Any, run: Any, error_message: str) -> None:
+    """Fail *run* before any member row exists, and commit."""
+    run.status = "failed"
+    run.error_message = error_message
+    run.finished_at = datetime.now(UTC)
+    await db.commit()
+
+
+async def _prepare_member(
+    db: Any,
+    action_run_id: int,
+    host: Any,
+    master_key: bytes,
+    ssh_key_paths: list[str],
+) -> _HostCtx | None:
+    """Create one member's ``ActionHostRun`` row and its connection context.
+
+    A host with no SSH key gets a ``skipped`` row and no context. Any other
+    host gets its key written to tmpfs and its row flipped to ``running``.
+    """
+    from sqlalchemy import select
+
+    from app.ansible_runtime.known_hosts import write_known_hosts
+    from app.crypto import decrypt_ssh_key
+    from app.models.action_run import ActionHostRun
+    from app.models.ssh_key import SSHKey
+
+    hr = ActionHostRun(
+        action_run_id=action_run_id,
+        host_id=host.id,
+        hostname=host.hostname,
+        status="queued",
+    )
+    db.add(hr)
+    await db.flush()
+
+    if host.ssh_key_id is None:
+        hr.status = "skipped"
+        hr.error_message = "Host has no SSH key configured"
+        hr.finished_at = datetime.now(UTC)
+        return None
+
+    key_result = await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
+    ssh_key = key_result.scalar_one()
+    private_key_text = decrypt_ssh_key(ssh_key.encrypted_private_key, master_key)
+    key_path = _write_member_key(private_key_text)
+    ssh_key_paths.append(key_path)
+
+    # Stable inventory name = the hostname. ansible-runner's
+    # event_data.host is keyed by inventory name, which we'll
+    # use to route per-host events back to the right
+    # ActionHostRun row.
+    ctx = _HostCtx(host_id=host.id, host_run_id=hr.id, inv_name=host.hostname)
+    ctx.ip = host.ip_address
+    ctx.port = host.ssh_port or 22
+    ctx.ssh_user = ssh_key.ssh_user or "root"
+    ctx.ssh_key_path = key_path
+    # SEC-26: pin this member's connections to the host key
+    # LabDog recorded over asyncssh; None until first contact,
+    # which leaves the accept-new fallback in place.
+    ctx.known_hosts_path = write_known_hosts(host.ssh_host_key_entry, key_path)
+    ctx.hostname = host.hostname
+
+    # Mark this host's row as running now (matches per-host path's
+    # behaviour where the row flips to running before ansible runs).
+    hr.status = "running"
+    hr.started_at = datetime.now(UTC)
+    return ctx
+
+
+def _write_member_key(private_key_text: str) -> str:
+    """Write a member's private key to a fresh 0600 tmpfs file; return its path."""
+    fd, key_path = tempfile.mkstemp(
+        dir="/dev/shm",  # nosec B108 — intentional tmpfs for in-memory key storage
+        prefix="labdog-action-group-",
+        suffix=".key",
+    )
+    os.close(fd)
+    with open(key_path, "w") as fh:
+        fh.write(private_key_text)
+        if not private_key_text.endswith("\n"):
+            fh.write("\n")
+    os.chmod(key_path, 0o600)
+    return key_path
+
+
+async def _run_envelope(
+    action_run_id: int,
+    spec: _GroupRunSpec,
+    host_ctxs: list[_HostCtx],
+    master_key: bytes,
+    private_data_dir: str,
+    channel: str,
+    redis_client: Any,
+) -> None:
+    """Phases A to G for the members that have a usable SSH key."""
+    # If every host was skipped (no SSH keys), aggregate and exit early.
+    if not host_ctxs:
+        await _aggregate_and_finalise(action_run_id, channel, redis_client)
+        return
+
+    # Notify SSE listeners that the run is moving — emit one host_status
+    # per running host so the UI flips its rows.
+    for ctx in host_ctxs:
+        _publish(
+            redis_client,
+            channel,
+            {"event": "host_status", "host_run_id": ctx.host_run_id, "status": "running"},
+            "host_status running",
+        )
+
+    host_ctxs = await _snapshot_phase(
+        action_run_id, spec, host_ctxs, master_key, channel, redis_client
+    )
+    if not host_ctxs:
+        # Every host failed snapshot — nothing left to run.
+        await _aggregate_and_finalise(action_run_id, channel, redis_client)
+        return
+
+    playbook = _run_group_playbook(spec, host_ctxs, private_data_dir)
+    outcomes = _route_runner_events_to_hosts(
+        host_ctxs,
+        getattr(playbook.runner, "events", None) or [],
+        playbook.status,
+        playbook.rc,
+    )
+
+    # ------------------------------------------------------------------ #
+    # Phase D: per-host verify (succeeded + snapshotted + verify_enabled) #
+    # ------------------------------------------------------------------ #
+    if spec.verify_enabled and spec.destructive:
+        await _verify_all(
+            host_ctxs,
+            outcomes.succeeded,
+            spec.verify_playbook_path,
+            spec.verify_timeout,
+            spec.roles_paths,
+            playbook.extra_vars,
+            private_data_dir,
+            channel,
+            redis_client,
+            ai_verify_prompt=spec.ai_verify_prompt,
+            ai_verify_fail_closed=spec.ai_verify_fail_closed,
+            action_run_id=action_run_id,
+            dry_run=playbook.dry_run,
+        )
+
+    # ------------------------------------------------------------------ #
+    # Phase E: per-host rollback (failed playbook OR failed verify)      #
+    # ------------------------------------------------------------------ #
+    if spec.auto_rollback and spec.destructive:
+        await _rollback_all(host_ctxs, outcomes.succeeded)
+
+    # ------------------------------------------------------------------ #
+    # Phase F: per-host cleanup (delete snapshots on succeeded hosts)    #
+    # ------------------------------------------------------------------ #
+    if spec.destructive:
+        await _cleanup_all(host_ctxs, outcomes.succeeded)
+
+    await _persist_member_outcomes(host_ctxs, outcomes, playbook, channel, redis_client)
+
+    # Stream the tail of the playbook output once for the run.
+    _publish(
+        redis_client,
+        channel,
+        {
+            "event": "output",
+            "host_run_id": None,
+            "text": "=== Ansible output ===\n" + playbook.output[-4000:],
+        },
+        "ansible output",
+    )
+
+    # ------------------------------------------------------------------ #
+    # Phase G: aggregate run-level status                                 #
+    # ------------------------------------------------------------------ #
+    await _aggregate_and_finalise(action_run_id, channel, redis_client)
+
+
+async def _snapshot_phase(
+    action_run_id: int,
+    spec: _GroupRunSpec,
+    host_ctxs: list[_HostCtx],
+    master_key: bytes,
+    channel: str,
+    redis_client: Any,
+) -> list[_HostCtx]:
+    """Phase A: per-host pre-action snapshot. Returns the members still in play.
+
+    Destructive + snapshot_enabled + has VM mapping → take a snapshot.
+    Snapshots are taken in parallel via asyncio.gather; a snapshot
+    failure on any single host fails that host immediately (its row
+    is marked ``failed`` and it is dropped from the inventory before
+    the playbook runs — matching the per-host path's bail-on-snapshot
+    behaviour).
+    A dry run is ``ansible-playbook --check`` and changes nothing, so
+    there is nothing to snapshot (and, with no snapshot, verify and
+    rollback below don't run either).
+    """
+    from app.actions.validation import DRY_RUN_PARAM
+
+    run_is_dry = bool(spec.parameters.get(DRY_RUN_PARAM, False))
+    if run_is_dry:
+        _publish_global(
+            redis_client,
+            channel,
+            "[group] dry run: ansible-playbook --check, no changes are made; snapshot skipped\n",
+        )
+        return host_ctxs
+
+    if spec.destructive and spec.snapshot_enabled:
+        await _snapshot_all(
+            host_ctxs,
+            action_run_id,
+            spec.action_key,
+            master_key,
+            channel,
+            redis_client,
+        )
+        # Drop hosts whose snapshot failed: we already marked them
+        # ``failed`` in the DB and emitted a status event. They're not
+        # part of the inventory the playbook sees.
+        return [c for c in host_ctxs if not _was_snapshot_failed(c)]
+
+    if spec.destructive:
+        # Destructive but snapshot_enabled=False — log the choice once.
+        _publish_global(
+            redis_client,
+            channel,
+            "[group] destructive action with snapshot_enabled=false "
+            "— skipping snapshot envelope, playbook owns rollback\n",
+        )
+    return host_ctxs
+
+
+def _run_group_playbook(
+    spec: _GroupRunSpec,
+    host_ctxs: list[_HostCtx],
+    private_data_dir: str,
+) -> _GroupPlaybookResult:
+    """Phase B: build inventory + extra-vars, run ansible-runner once."""
+    from app.actions.extra_vars import sanitize_extra_vars
+    from app.actions.validation import DRY_RUN_PARAM
+    from app.ansible_runtime.runner import generate_multi_host_inventory, run_ansible
+    from app.grafana.service import METRICS_DESTINATIONS_PARAM
+    from app.tasks.action_timeouts import effective_playbook_timeout
+
+    inventory_json = generate_multi_host_inventory(
+        [
+            {
+                "name": ctx.inv_name,
+                "ip": ctx.ip,
+                "port": ctx.port,
+                "ssh_user": ctx.ssh_user,
+                "ssh_key_path": ctx.ssh_key_path,
+                "known_hosts_path": ctx.known_hosts_path,
+            }
+            for ctx in host_ctxs
+        ]
+    )
+
+    parameters = spec.parameters
+    dry_run = parameters.pop(DRY_RUN_PARAM, False)
+    # Group dispatch doesn't inject metrics destinations (no manifest
+    # that declares ``metrics_backend`` is group-only today), but the
+    # reserved key must not reach the playbook as an extra-var.
+    parameters.pop(METRICS_DESTINATIONS_PARAM, None)
+    # Fail closed before these become extra-vars. Ansible evaluates
+    # extra-vars on the controller — the LabDog host — not on the
+    # target, so a template expression here is code execution here.
+    # The API rejects them too; this catches rows that did not come
+    # through that path. See app/actions/extra_vars.py.
+    sanitize_extra_vars(parameters)
+    extra_vars: dict | None = dict(parameters) if parameters else None
+    # Dry run is ``--check`` via run_ansible, not an extra-var: see
+    # run_ansible's ``check_mode``.
+
+    # Per-action floor — see the matching comment in action_host.py.
+    timeout = effective_playbook_timeout(spec.playbook_timeout)
+
+    runner = run_ansible(
+        playbook_path=spec.playbook_path,
+        inventory_json=inventory_json,
+        private_data_dir=private_data_dir,
+        extra_vars=extra_vars,
+        timeout=timeout,
+        roles_paths=list(spec.roles_paths) if spec.roles_paths else None,
+        check_mode=bool(dry_run),
+    )
+
+    playbook_output: str = (
+        runner.stdout.read() if hasattr(runner.stdout, "read") else str(runner.stdout)
+    )
+    if len(playbook_output.encode()) > MAX_OUTPUT_BYTES:
+        playbook_output = (
+            playbook_output[:MAX_OUTPUT_BYTES] + "\n\n(truncated — output exceeded 1 MB)"
+        )
+
+    return _GroupPlaybookResult(
+        runner=runner,
+        output=playbook_output,
+        status=getattr(runner, "status", "unknown"),
+        rc=getattr(runner, "rc", -1),
+        extra_vars=extra_vars,
+        dry_run=dry_run,
+    )
+
+
+def _route_runner_events_to_hosts(
+    host_ctxs: list[_HostCtx],
+    events: Any,
+    playbook_status: str,
+    playbook_rc: int,
+) -> _MemberOutcomes:
+    """Phase C: route per-host events from runner.events back to rows.
+
+    Derives each member's playbook outcome (succeeded / failed) from the
+    failure and unreachable events keyed by inventory hostname.
+    """
+    per_host_failure: dict[str, str] = {}
+    per_host_unreachable: set[str] = set()
+    per_host_seen: set[str] = set()
+
+    for event in events:
+        event_type = event.get("event")
+        event_data = event.get("event_data") or {}
+        host_name = event_data.get("host")
+        if not host_name:
+            continue
+        per_host_seen.add(host_name)
+        if event_type == "runner_on_failed":
+            msg = (event_data.get("res") or {}).get("msg") or "task failed"
+            per_host_failure.setdefault(host_name, str(msg))
+        elif event_type == "runner_on_unreachable":
+            per_host_unreachable.add(host_name)
+            per_host_failure.setdefault(host_name, "host unreachable")
+
+    outcomes = _MemberOutcomes(succeeded={}, error_message={})
+    for ctx in host_ctxs:
+        if ctx.inv_name in per_host_failure:
+            outcomes.succeeded[ctx.host_run_id] = False
+            outcomes.error_message[ctx.host_run_id] = per_host_failure[ctx.inv_name]
+        elif playbook_status == "successful" or ctx.inv_name in per_host_seen:
+            # Either the run completed cleanly, or we saw at least one
+            # event for this host with no failure event — treat as success.
+            outcomes.succeeded[ctx.host_run_id] = True
+        else:
+            # Playbook failed globally before reaching this host
+            # (e.g. parse error, ``serial: 1`` halt after an earlier
+            # failure). Mark as failed; downstream verify is skipped
+            # and rollback runs if a snapshot exists.
+            outcomes.succeeded[ctx.host_run_id] = False
+            outcomes.error_message[ctx.host_run_id] = (
+                f"playbook did not reach host (status={playbook_status}, rc={playbook_rc})"
+            )
+    return outcomes
+
+
+async def _persist_member_outcomes(
+    host_ctxs: list[_HostCtx],
+    outcomes: _MemberOutcomes,
+    playbook: _GroupPlaybookResult,
+    channel: str,
+    redis_client: Any,
+) -> None:
+    """Persist final per-host outcomes and publish each host's final status."""
+    from sqlalchemy import select
+
+    from app.db import task_session
+    from app.models.action_run import ActionHostRun
+
+    async with task_session() as db:
+        for ctx in host_ctxs:
+            hr_result = await db.execute(
+                select(ActionHostRun).where(ActionHostRun.id == ctx.host_run_id)
+            )
+            hr = hr_result.scalar_one()
+            playbook_ok = outcomes.succeeded.get(ctx.host_run_id, False)
+            final_ok = playbook_ok and ctx.verify_passed
+            if final_ok:
+                hr.status = "succeeded"
+            else:
+                hr.status = "failed"
+                if ctx.verify_error and playbook_ok:
+                    hr.error_message = ctx.verify_error
+                elif ctx.host_run_id in outcomes.error_message:
+                    hr.error_message = outcomes.error_message[ctx.host_run_id]
+            hr.exit_code = playbook.rc
+            hr.finished_at = datetime.now(UTC)
+            hr.output = _member_output(ctx, playbook.output)
+
+            # SSE host_status update.
+            _publish(
+                redis_client,
+                channel,
+                {"event": "host_status", "host_run_id": ctx.host_run_id, "status": hr.status},
+                "host_status final",
+            )
+
+        await db.commit()
+
+
+def _member_output(ctx: _HostCtx, playbook_output: str) -> str:
+    """Compose a member's final output: its own step log plus the shared playbook log.
+
+    The shared log is stamped on every host's row — the underlying
+    ansible-runner ran once for the whole group, so per-host slicing of
+    stdout isn't meaningful.
+    """
+    ctx_log = "\n".join(ctx.step_log)
+    if ctx_log:
+        return ctx_log + "\n=== Ansible output ===\n" + playbook_output
+    return playbook_output
+
+
+def _remove_workspaces(ssh_key_paths: list[str], private_data_dir: str) -> None:
+    """Remove every key file, pinned known-hosts file and runner dir this run made."""
+    from app.ansible_runtime.known_hosts import remove_known_hosts
+
+    # CRITICAL: always remove SSH keys from tmpfs.
+    for key_path in ssh_key_paths:
+        try:
+            if os.path.exists(key_path):
+                os.unlink(key_path)
+            # The pinned known-hosts file sits beside the key (SEC-26).
+            remove_known_hosts(key_path)
+        except Exception:
+            logger.debug("action_group: failed to remove key %s", key_path, exc_info=True)
+    if os.path.exists(private_data_dir):
+        shutil.rmtree(private_data_dir, ignore_errors=True)
+    # _verify_all allocates a sibling runner dir per verified host
+    # (f"{private_data_dir}-verify-{host_id}"), so removing only the base
+    # dir leaked one tree per host per run — each holding the rendered
+    # inventory and the full ansible event stream. Globbing the siblings
+    # cannot miss one and needs no bookkeeping threaded through
+    # _verify_all; private_data_dir is an mkdtemp path, so the prefix is
+    # unambiguous.
+    for verify_dir in glob.glob(f"{private_data_dir}-verify*"):
+        shutil.rmtree(verify_dir, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------
@@ -840,7 +985,7 @@ async def _snapshot_all(
     action_key: str,
     master_key: bytes,
     channel: str,
-    r: Any,
+    redis_client: Any,
 ) -> None:
     """Take a Proxmox snapshot on every host that has a VM mapping.
 
@@ -872,25 +1017,7 @@ async def _snapshot_all(
             )
         return
 
-    from sqlalchemy import select  # noqa: PLC0415
-
-    from app.crypto import decrypt_ssh_key  # noqa: PLC0415
-    from app.db import task_session  # noqa: PLC0415
-    from app.models.action_run import ActionHostRun  # noqa: PLC0415
-
-    # Load every VM mapping in one query, then attach to the ctxs.
-    async with task_session() as db:
-        host_ids = [c.host_id for c in host_ctxs]
-        vm_map_result = await db.execute(select(VMMapping).where(VMMapping.host_id.in_(host_ids)))
-        mappings = {m.host_id: m for m in vm_map_result.scalars().all()}
-
-        # Cache proxmox node rows referenced by any mapping.
-        node_ids = {m.proxmox_node_id for m in mappings.values()}
-        proxmox_nodes: dict[int, Any] = {}
-        if node_ids:
-            node_result = await db.execute(select(ProxmoxNode).where(ProxmoxNode.id.in_(node_ids)))
-            for n in node_result.scalars().all():
-                proxmox_nodes[n.id] = n
+    mappings, proxmox_nodes = await _load_vm_mappings(host_ctxs, VMMapping, ProxmoxNode)
 
     # ------------------------------------------------------------------ #
     # Step 1 — Proxmox I/O (parallel, no DB writes)                       #
@@ -902,61 +1029,6 @@ async def _snapshot_all(
     # in production would still serialise on the asyncpg pool. Keeping
     # the parallel section pure-I/O lets the Proxmox API calls actually
     # overlap.
-    async def _snap(ctx: _HostCtx, mapping: Any, proxmox_node: Any) -> None:
-        from app.workflows.steps.snapshot import create_snapshot  # noqa: PLC0415
-
-        def _on_lock_wait(msg: str) -> None:
-            line = f"[snapshot] {msg}"
-            ctx.step_log.append(line)
-            try:
-                r.publish(
-                    channel,
-                    json.dumps(
-                        {"event": "output", "host_run_id": ctx.host_run_id, "text": line + "\n"}
-                    ),
-                )
-            except Exception:
-                logger.debug("action_group: SSE publish failed for snapshot wait", exc_info=True)
-
-        token_secret = decrypt_ssh_key(proxmox_node.encrypted_token_secret, master_key)
-        client = ProxmoxClient(
-            api_url=proxmox_node.api_url,
-            token_id=proxmox_node.token_id,
-            token_secret=token_secret,
-            verify_ssl=proxmox_node.verify_ssl,
-            ca_cert_pem=proxmox_node.ca_cert_pem,
-        )
-        ctx.proxmox_client = client
-        ctx.pve_node = mapping.pve_node_name
-        ctx.vmid = mapping.vmid
-        ctx.vm_type = mapping.vm_type
-
-        try:
-            snap_name = await create_snapshot(
-                client,
-                ctx.pve_node,
-                ctx.vmid,
-                action_run_id,
-                ctx.vm_type,
-                action_key,
-                lock_wait_seconds=lock_wait_seconds,
-                on_lock_wait=_on_lock_wait,
-            )
-        except Exception as exc:
-            logger.exception(
-                "action_group: snapshot failed for action_run %d host %d: %s",
-                action_run_id,
-                ctx.host_id,
-                exc,
-            )
-            ctx.step_log.append(f"[snapshot] FAILED: {exc}")
-            ctx.snapshot_name = _SNAPSHOT_FAILED_MARKER
-            ctx.snapshot_error = f"Snapshot failed: {exc}"
-            return
-
-        ctx.snapshot_name = snap_name
-        ctx.step_log.append(f"[snapshot] created {snap_name} on {ctx.pve_node}/{ctx.vmid}")
-
     from app.workflows.steps.snapshot import snapshot_lock_wait_seconds  # noqa: PLC0415
 
     lock_wait_seconds = snapshot_lock_wait_seconds()
@@ -974,7 +1046,20 @@ async def _snapshot_all(
         if proxmox_node is None:
             ctx.step_log.append("[snapshot] skipped — VM mapping references missing Proxmox node")
             continue
-        tasks.append(_snap(ctx, mapping, proxmox_node))
+        tasks.append(
+            _snapshot_member(
+                ctx,
+                mapping,
+                proxmox_node,
+                client_cls=ProxmoxClient,
+                action_run_id=action_run_id,
+                action_key=action_key,
+                master_key=master_key,
+                lock_wait_seconds=lock_wait_seconds,
+                channel=channel,
+                redis_client=redis_client,
+            )
+        )
 
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=False)
@@ -982,9 +1067,133 @@ async def _snapshot_all(
     # ------------------------------------------------------------------ #
     # Step 2 — persist results sequentially in one session                #
     # ------------------------------------------------------------------ #
-    # Each row update is independent; we don't need cross-row consistency
-    # here — just a clean serial commit so concurrent writers (in tests
-    # or under asyncpg) can't trip the SQLAlchemy state machine.
+    await _persist_snapshot_results(host_ctxs)
+
+    # Emit SSE host_status=failed for any snapshot-failed hosts (broker
+    # publish is sync and fine outside the DB session).
+    for ctx in host_ctxs:
+        if ctx.snapshot_name == _SNAPSHOT_FAILED_MARKER:
+            _publish(
+                redis_client,
+                channel,
+                {"event": "host_status", "host_run_id": ctx.host_run_id, "status": "failed"},
+                "snapshot-failed status",
+            )
+
+
+async def _load_vm_mappings(
+    host_ctxs: list[_HostCtx],
+    vm_mapping_model: Any,
+    proxmox_node_model: Any,
+) -> tuple[dict[int, Any], dict[int, Any]]:
+    """Load every member's VM mapping and the Proxmox nodes they reference.
+
+    Returns ``(mappings by host id, proxmox nodes by id)``.
+    """
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from app.db import task_session  # noqa: PLC0415
+
+    # Load every VM mapping in one query, then attach to the ctxs.
+    async with task_session() as db:
+        host_ids = [c.host_id for c in host_ctxs]
+        vm_map_result = await db.execute(
+            select(vm_mapping_model).where(vm_mapping_model.host_id.in_(host_ids))
+        )
+        mappings = {m.host_id: m for m in vm_map_result.scalars().all()}
+
+        # Cache proxmox node rows referenced by any mapping.
+        node_ids = {m.proxmox_node_id for m in mappings.values()}
+        proxmox_nodes: dict[int, Any] = {}
+        if node_ids:
+            node_result = await db.execute(
+                select(proxmox_node_model).where(proxmox_node_model.id.in_(node_ids))
+            )
+            for n in node_result.scalars().all():
+                proxmox_nodes[n.id] = n
+
+    return mappings, proxmox_nodes
+
+
+async def _snapshot_member(
+    ctx: _HostCtx,
+    mapping: Any,
+    proxmox_node: Any,
+    *,
+    client_cls: Any,
+    action_run_id: int,
+    action_key: str,
+    master_key: bytes,
+    lock_wait_seconds: Any,
+    channel: str,
+    redis_client: Any,
+) -> None:
+    """Snapshot one member's VM, recording the result on *ctx* only (no DB writes)."""
+    from app.crypto import decrypt_ssh_key  # noqa: PLC0415
+    from app.workflows.steps.snapshot import create_snapshot  # noqa: PLC0415
+
+    def _on_lock_wait(msg: str) -> None:
+        line = f"[snapshot] {msg}"
+        ctx.step_log.append(line)
+        _publish(
+            redis_client,
+            channel,
+            {"event": "output", "host_run_id": ctx.host_run_id, "text": line + "\n"},
+            "snapshot wait",
+        )
+
+    token_secret = decrypt_ssh_key(proxmox_node.encrypted_token_secret, master_key)
+    client = client_cls(
+        api_url=proxmox_node.api_url,
+        token_id=proxmox_node.token_id,
+        token_secret=token_secret,
+        verify_ssl=proxmox_node.verify_ssl,
+        ca_cert_pem=proxmox_node.ca_cert_pem,
+    )
+    ctx.proxmox_client = client
+    ctx.pve_node = mapping.pve_node_name
+    ctx.vmid = mapping.vmid
+    ctx.vm_type = mapping.vm_type
+
+    try:
+        snap_name = await create_snapshot(
+            client,
+            ctx.pve_node,
+            ctx.vmid,
+            action_run_id,
+            ctx.vm_type,
+            action_key,
+            lock_wait_seconds=lock_wait_seconds,
+            on_lock_wait=_on_lock_wait,
+        )
+    except Exception as exc:
+        logger.exception(
+            "action_group: snapshot failed for action_run %d host %d: %s",
+            action_run_id,
+            ctx.host_id,
+            exc,
+        )
+        ctx.step_log.append(f"[snapshot] FAILED: {exc}")
+        ctx.snapshot_name = _SNAPSHOT_FAILED_MARKER
+        ctx.snapshot_error = f"Snapshot failed: {exc}"
+        return
+
+    ctx.snapshot_name = snap_name
+    ctx.step_log.append(f"[snapshot] created {snap_name} on {ctx.pve_node}/{ctx.vmid}")
+
+
+async def _persist_snapshot_results(host_ctxs: list[_HostCtx]) -> None:
+    """Write each member's snapshot name, or its snapshot failure, to its row.
+
+    Each row update is independent; we don't need cross-row consistency
+    here — just a clean serial commit so concurrent writers (in tests
+    or under asyncpg) can't trip the SQLAlchemy state machine.
+    """
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from app.db import task_session  # noqa: PLC0415
+    from app.models.action_run import ActionHostRun  # noqa: PLC0415
+
     async with task_session() as db:
         for ctx in host_ctxs:
             if ctx.snapshot_name is None:
@@ -1003,27 +1212,6 @@ async def _snapshot_all(
                 hr.snapshot_name = ctx.snapshot_name
         await db.commit()
 
-    # Emit SSE host_status=failed for any snapshot-failed hosts (broker
-    # publish is sync and fine outside the DB session).
-    for ctx in host_ctxs:
-        if ctx.snapshot_name == _SNAPSHOT_FAILED_MARKER:
-            try:
-                r.publish(
-                    channel,
-                    json.dumps(
-                        {
-                            "event": "host_status",
-                            "host_run_id": ctx.host_run_id,
-                            "status": "failed",
-                        }
-                    ),
-                )
-            except Exception:
-                logger.debug(
-                    "action_group: SSE publish failed for snapshot-failed status",
-                    exc_info=True,
-                )
-
 
 async def _verify_all(
     host_ctxs: list[_HostCtx],
@@ -1034,7 +1222,7 @@ async def _verify_all(
     extra_vars: dict | None,
     private_data_dir: str,
     channel: str,
-    r: Any,
+    redis_client: Any,
     *,
     ai_verify_prompt: str | None = None,
     ai_verify_fail_closed: bool = False,
@@ -1053,9 +1241,6 @@ async def _verify_all(
     * hosts whose playbook failed (already known failed)
     * hosts without a snapshot (no VM mapping, or snapshot disabled)
     """
-    from app.ansible_runtime.inventory import generate_inventory  # noqa: PLC0415
-    from app.ansible_runtime.runner import run_ansible  # noqa: PLC0415
-
     # Filter to the hosts that are actually eligible for verify, so we
     # only preload DB data for them.
     eligible = [
@@ -1066,150 +1251,198 @@ async def _verify_all(
     if not eligible:
         return
 
-    # For the built-in path, preload Host / effective services / packages
-    # for every eligible host in ONE session — we can't share an async
-    # SQLAlchemy session across parallel verify tasks (state machine
-    # races). The verify itself is SSH-bound and runs in parallel.
     preloaded: dict[int, tuple[Any, list, list]] = {}
     if verify_playbook_path is None:
-        from sqlalchemy import select  # noqa: PLC0415
-
-        from app.db import task_session  # noqa: PLC0415
-        from app.models.host import Host  # noqa: PLC0415
-        from app.packages.merge import get_effective_packages  # noqa: PLC0415
-        from app.services.merge import get_effective_services  # noqa: PLC0415
-
-        async with task_session() as db:
-            for ctx in eligible:
-                host_result = await db.execute(select(Host).where(Host.id == ctx.host_id))
-                host = host_result.scalar_one()
-                effective_services = await get_effective_services(ctx.host_id, db)
-                effective_packages = await get_effective_packages(ctx.host_id, db)
-                preloaded[ctx.host_id] = (host, effective_services, effective_packages)
+        preloaded = await _preload_builtin_verify_inputs(eligible)
 
     async def _verify_one(ctx: _HostCtx) -> None:
         if verify_playbook_path is not None:
-            # Pack-supplied verify: run against this host only.
-            try:
-                inv_json = generate_inventory(
-                    ctx.ip,
-                    ctx.port,
-                    ctx.ssh_key_path,
-                    ssh_user=ctx.ssh_user,
-                    hostname=ctx.hostname,
-                    known_hosts_path=ctx.known_hosts_path,
-                )
-                verify_runner = run_ansible(
-                    playbook_path=verify_playbook_path,
-                    inventory_json=inv_json,
-                    private_data_dir=f"{private_data_dir}-verify-{ctx.host_id}",
-                    extra_vars=extra_vars,
-                    timeout=verify_timeout,
-                    roles_paths=list(roles_paths) if roles_paths else None,
-                )
-                verify_output: str = (
-                    verify_runner.stdout.read()
-                    if hasattr(verify_runner.stdout, "read")
-                    else str(verify_runner.stdout)
-                )
-                ctx.verify_passed = verify_runner.status == "successful"
-                ctx.step_log.append(
-                    f"[verify] pack playbook exit={verify_runner.rc} "
-                    f"status={verify_runner.status} "
-                    f"passed={ctx.verify_passed}"
-                )
-                ctx.step_log.append("=== Verify playbook output ===")
-                ctx.step_log.append(verify_output)
-                if not ctx.verify_passed:
-                    ctx.verify_error = (
-                        f"Verify playbook failed "
-                        f"(status={verify_runner.status}, rc={verify_runner.rc})"
-                    )
-                try:
-                    r.publish(
-                        channel,
-                        json.dumps(
-                            {
-                                "event": "output",
-                                "host_run_id": ctx.host_run_id,
-                                "text": "=== Verify playbook output ===\n" + verify_output[-4000:],
-                            }
-                        ),
-                    )
-                except Exception:
-                    logger.debug(
-                        "action_group: SSE publish failed for verify output",
-                        exc_info=True,
-                    )
-            except Exception as exc:
-                logger.exception(
-                    "action_group: verify playbook errored for host %d: %s",
-                    ctx.host_id,
-                    exc,
-                )
-                ctx.verify_passed = False
-                ctx.verify_error = f"Verify playbook error: {exc}"
-                ctx.step_log.append(f"[verify] ERROR: {exc}")
+            _verify_member_with_pack_playbook(
+                ctx,
+                verify_playbook_path,
+                verify_timeout,
+                roles_paths,
+                extra_vars,
+                private_data_dir,
+                channel,
+                redis_client,
+            )
         else:
-            # Built-in SSH/services/packages check — runs with the data
-            # preloaded above. ``db=None`` is still correct: the only
-            # thing verify used a session for was the AI path, and that
-            # now opens its own, because these verifications run
-            # concurrently and one async session cannot serve them all.
-            try:
-                from app.workflows.steps.verify import run_verification  # noqa: PLC0415
-
-                host, effective_services, effective_packages = preloaded[ctx.host_id]
-                verify_result = await run_verification(
-                    host,
-                    ctx.ssh_key_path,
-                    effective_services,
-                    effective_packages,
-                    ai_verify_prompt,
-                    None,
-                    ai_fail_closed=ai_verify_fail_closed,
-                    action_run_id=action_run_id,
-                    dry_run=dry_run,
-                )
-                ctx.verify_passed = bool(verify_result.get("passed"))
-                ctx.step_log.append(
-                    f"[verify] passed={ctx.verify_passed} "
-                    f"services_ok={verify_result.get('services_ok')} "
-                    f"({verify_result.get('services_checked', 0)} checked) "
-                    f"packages_ok={verify_result.get('packages_ok')} "
-                    f"({verify_result.get('packages_checked', 0)} checked)"
-                )
-                if ai_result := verify_result.get("ai_result"):
-                    # Logged apart from `passed` because the two can
-                    # legitimately differ: under the default policy an
-                    # inconclusive verdict is a pass, and this line is
-                    # where an operator finds that out.
-                    ctx.step_log.append(
-                        f"[verify] ai verdict={ai_result.get('verdict')} "
-                        f"session={ai_result.get('session_id')}"
-                    )
-                    ctx.step_log.append("=== AI verification ===")
-                    ctx.step_log.append(str(ai_result.get("output") or ""))
-                if not ctx.verify_passed:
-                    ctx.verify_error = f"Post-run verification failed: {verify_result}"
-            except Exception as exc:
-                logger.exception(
-                    "action_group: verification failed for host %d: %s",
-                    ctx.host_id,
-                    exc,
-                )
-                ctx.verify_passed = False
-                ctx.verify_error = f"Verification error: {exc}"
-                ctx.step_log.append(f"[verify] ERROR: {exc}")
+            await _verify_member_with_builtin_checks(
+                ctx,
+                preloaded,
+                ai_verify_prompt=ai_verify_prompt,
+                ai_verify_fail_closed=ai_verify_fail_closed,
+                action_run_id=action_run_id,
+                dry_run=dry_run,
+            )
 
     await asyncio.gather(*(_verify_one(ctx) for ctx in eligible), return_exceptions=False)
+
+
+async def _preload_builtin_verify_inputs(
+    eligible: list[_HostCtx],
+) -> dict[int, tuple[Any, list, list]]:
+    """Load each host's row and effective services and packages, by host id.
+
+    For the built-in path, preload Host / effective services / packages
+    for every eligible host in ONE session — we can't share an async
+    SQLAlchemy session across parallel verify tasks (state machine
+    races). The verify itself is SSH-bound and runs in parallel.
+    """
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from app.db import task_session  # noqa: PLC0415
+    from app.models.host import Host  # noqa: PLC0415
+    from app.packages.merge import get_effective_packages  # noqa: PLC0415
+    from app.services.merge import get_effective_services  # noqa: PLC0415
+
+    preloaded: dict[int, tuple[Any, list, list]] = {}
+    async with task_session() as db:
+        for ctx in eligible:
+            host_result = await db.execute(select(Host).where(Host.id == ctx.host_id))
+            host = host_result.scalar_one()
+            effective_services = await get_effective_services(ctx.host_id, db)
+            effective_packages = await get_effective_packages(ctx.host_id, db)
+            preloaded[ctx.host_id] = (host, effective_services, effective_packages)
+    return preloaded
+
+
+def _verify_member_with_pack_playbook(
+    ctx: _HostCtx,
+    verify_playbook_path: Any,
+    verify_timeout: int,
+    roles_paths: tuple,
+    extra_vars: dict | None,
+    private_data_dir: str,
+    channel: str,
+    redis_client: Any,
+) -> None:
+    """Pack-supplied verify: run the pack's verify playbook against this host only."""
+    from app.ansible_runtime.inventory import generate_inventory  # noqa: PLC0415
+    from app.ansible_runtime.runner import run_ansible  # noqa: PLC0415
+
+    try:
+        inv_json = generate_inventory(
+            ctx.ip,
+            ctx.port,
+            ctx.ssh_key_path,
+            ssh_user=ctx.ssh_user,
+            hostname=ctx.hostname,
+            known_hosts_path=ctx.known_hosts_path,
+        )
+        verify_runner = run_ansible(
+            playbook_path=verify_playbook_path,
+            inventory_json=inv_json,
+            private_data_dir=f"{private_data_dir}-verify-{ctx.host_id}",
+            extra_vars=extra_vars,
+            timeout=verify_timeout,
+            roles_paths=list(roles_paths) if roles_paths else None,
+        )
+        verify_output: str = (
+            verify_runner.stdout.read()
+            if hasattr(verify_runner.stdout, "read")
+            else str(verify_runner.stdout)
+        )
+        ctx.verify_passed = verify_runner.status == "successful"
+        ctx.step_log.append(
+            f"[verify] pack playbook exit={verify_runner.rc} "
+            f"status={verify_runner.status} "
+            f"passed={ctx.verify_passed}"
+        )
+        ctx.step_log.append("=== Verify playbook output ===")
+        ctx.step_log.append(verify_output)
+        if not ctx.verify_passed:
+            ctx.verify_error = (
+                f"Verify playbook failed (status={verify_runner.status}, rc={verify_runner.rc})"
+            )
+        _publish(
+            redis_client,
+            channel,
+            {
+                "event": "output",
+                "host_run_id": ctx.host_run_id,
+                "text": "=== Verify playbook output ===\n" + verify_output[-4000:],
+            },
+            "verify output",
+        )
+    except Exception as exc:
+        logger.exception(
+            "action_group: verify playbook errored for host %d: %s",
+            ctx.host_id,
+            exc,
+        )
+        ctx.verify_passed = False
+        ctx.verify_error = f"Verify playbook error: {exc}"
+        ctx.step_log.append(f"[verify] ERROR: {exc}")
+
+
+async def _verify_member_with_builtin_checks(
+    ctx: _HostCtx,
+    preloaded: dict[int, tuple[Any, list, list]],
+    *,
+    ai_verify_prompt: str | None,
+    ai_verify_fail_closed: bool,
+    action_run_id: int | None,
+    dry_run: bool,
+) -> None:
+    """Built-in SSH/services/packages check — runs with the data preloaded above.
+
+    ``db=None`` is still correct: the only thing verify used a session
+    for was the AI path, and that now opens its own, because these
+    verifications run concurrently and one async session cannot serve
+    them all.
+    """
+    try:
+        from app.workflows.steps.verify import run_verification  # noqa: PLC0415
+
+        host, effective_services, effective_packages = preloaded[ctx.host_id]
+        verify_result = await run_verification(
+            host,
+            ctx.ssh_key_path,
+            effective_services,
+            effective_packages,
+            ai_verify_prompt,
+            None,
+            ai_fail_closed=ai_verify_fail_closed,
+            action_run_id=action_run_id,
+            dry_run=dry_run,
+        )
+        ctx.verify_passed = bool(verify_result.get("passed"))
+        ctx.step_log.append(
+            f"[verify] passed={ctx.verify_passed} "
+            f"services_ok={verify_result.get('services_ok')} "
+            f"({verify_result.get('services_checked', 0)} checked) "
+            f"packages_ok={verify_result.get('packages_ok')} "
+            f"({verify_result.get('packages_checked', 0)} checked)"
+        )
+        if ai_result := verify_result.get("ai_result"):
+            # Logged apart from `passed` because the two can
+            # legitimately differ: under the default policy an
+            # inconclusive verdict is a pass, and this line is
+            # where an operator finds that out.
+            ctx.step_log.append(
+                f"[verify] ai verdict={ai_result.get('verdict')} "
+                f"session={ai_result.get('session_id')}"
+            )
+            ctx.step_log.append("=== AI verification ===")
+            ctx.step_log.append(str(ai_result.get("output") or ""))
+        if not ctx.verify_passed:
+            ctx.verify_error = f"Post-run verification failed: {verify_result}"
+    except Exception as exc:
+        logger.exception(
+            "action_group: verification failed for host %d: %s",
+            ctx.host_id,
+            exc,
+        )
+        ctx.verify_passed = False
+        ctx.verify_error = f"Verification error: {exc}"
+        ctx.step_log.append(f"[verify] ERROR: {exc}")
 
 
 async def _rollback_all(
     host_ctxs: list[_HostCtx],
     per_host_playbook_success: dict[int, bool],
-    channel: str,
-    r: Any,
 ) -> None:
     """Roll back the snapshot for every host whose action OR verify failed.
 
@@ -1220,16 +1453,10 @@ async def _rollback_all(
       possible for this host).
     * Succeeded hosts → no-op; their snapshots are deleted in Phase F.
 
-    Rollbacks run in parallel — each host's Proxmox client is independent
-    and the underlying ``rollback_to_snapshot`` helper waits for SSH
-    recovery before returning.
+    Rollbacks run one host at a time (see the loop below); the underlying
+    ``rollback_to_snapshot`` helper waits for SSH recovery before
+    returning.
     """
-    from sqlalchemy import select  # noqa: PLC0415
-
-    from app.db import task_session  # noqa: PLC0415
-    from app.models.host import Host  # noqa: PLC0415
-    from app.workflows.steps.rollback import rollback_to_snapshot  # noqa: PLC0415
-
     # Filter to hosts that actually need rollback.
     needs_rollback = [
         ctx
@@ -1241,77 +1468,7 @@ async def _rollback_all(
     if not needs_rollback:
         return
 
-    # Preload Host rows in ONE session — the underlying rollback helper
-    # uses ``db`` to mark the host out-of-sync. We give each parallel
-    # rollback its own short-lived session below, but serialise the
-    # commit so concurrent rollbacks don't trip the test session's
-    # state machine. In production each session is independent.
-    hosts_by_id: dict[int, Any] = {}
-    async with task_session() as db:
-        host_result = await db.execute(
-            select(Host).where(Host.id.in_([c.host_id for c in needs_rollback]))
-        )
-        for h in host_result.scalars().all():
-            hosts_by_id[h.id] = h
-
-    # Per-host rollback locks are sequential by design: while the
-    # Proxmox rollback call itself is the slow part, the SSH-recovery
-    # poll inside ``rollback_to_snapshot`` is also async-friendly. We
-    # still parallelise via gather — the DB write at the end is a
-    # single ``flush`` against a per-rollback session.
-    async def _rb(ctx: _HostCtx) -> None:
-        ctx.step_log.append(f"[rollback] restoring {ctx.snapshot_name}")
-        try:
-            host = hosts_by_id.get(ctx.host_id)
-            if host is None:
-                ctx.step_log.append("[rollback] ERROR: host row missing")
-                return
-            async with task_session() as db:
-                # rollback_to_snapshot writes to the session via ``flush``;
-                # we commit here for the persistent side-effect (host
-                # marked out_of_sync).
-                rb = await rollback_to_snapshot(
-                    ctx.proxmox_client,
-                    ctx.pve_node,
-                    ctx.vmid,
-                    ctx.snapshot_name,
-                    host,
-                    ctx.ssh_key_path,
-                    db,
-                    vm_type=ctx.vm_type,
-                )
-                await db.commit()
-            ctx.step_log.append(
-                f"[rollback] success={rb.get('success')} {rb.get('error', '')}".strip()
-            )
-            if rb.get("success") and ctx.snapshot_name is not None:
-                from app.workflows.steps.cleanup import delete_snapshot  # noqa: PLC0415
-
-                try:
-                    await delete_snapshot(
-                        ctx.proxmox_client,
-                        ctx.pve_node,
-                        ctx.vmid,
-                        ctx.snapshot_name,
-                        ctx.vm_type,
-                    )
-                    ctx.step_log.append(
-                        f"[cleanup] snapshot {ctx.snapshot_name} deleted after rollback"
-                    )
-                except Exception as clean_exc:
-                    logger.warning(
-                        "action_group: snapshot cleanup after rollback failed for host %d: %s",
-                        ctx.host_id,
-                        clean_exc,
-                    )
-                    ctx.step_log.append(f"[cleanup] WARN: {clean_exc}")
-        except Exception as exc:
-            logger.exception(
-                "action_group: rollback failed for host %d: %s",
-                ctx.host_id,
-                exc,
-            )
-            ctx.step_log.append(f"[rollback] ERROR: {exc}")
+    hosts_by_id = await _load_hosts_by_id([c.host_id for c in needs_rollback])
 
     # Run rollbacks sequentially — they each open a DB session and
     # commit, which doesn't play nicely with the shared test session
@@ -1319,14 +1476,92 @@ async def _rollback_all(
     # dominates the wall-clock cost; rollbacks for failed hosts in a
     # group dispatch are the exception, not the rule.
     for ctx in needs_rollback:
-        await _rb(ctx)
+        await _rollback_member(ctx, hosts_by_id)
+
+
+async def _load_hosts_by_id(host_ids: list[int]) -> dict[int, Any]:
+    """Load the given ``Host`` rows in one session, keyed by id.
+
+    The rollback helper uses ``db`` to mark the host out-of-sync. Each
+    rollback gets its own short-lived session (see ``_rollback_member``);
+    only the rows are shared.
+    """
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from app.db import task_session  # noqa: PLC0415
+    from app.models.host import Host  # noqa: PLC0415
+
+    hosts_by_id: dict[int, Any] = {}
+    async with task_session() as db:
+        host_result = await db.execute(select(Host).where(Host.id.in_(host_ids)))
+        for h in host_result.scalars().all():
+            hosts_by_id[h.id] = h
+    return hosts_by_id
+
+
+async def _rollback_member(ctx: _HostCtx, hosts_by_id: dict[int, Any]) -> None:
+    """Restore one member's snapshot, then delete it if the restore succeeded."""
+    from app.db import task_session  # noqa: PLC0415
+    from app.workflows.steps.rollback import rollback_to_snapshot  # noqa: PLC0415
+
+    ctx.step_log.append(f"[rollback] restoring {ctx.snapshot_name}")
+    try:
+        host = hosts_by_id.get(ctx.host_id)
+        if host is None:
+            ctx.step_log.append("[rollback] ERROR: host row missing")
+            return
+        async with task_session() as db:
+            # rollback_to_snapshot writes to the session via ``flush``;
+            # we commit here for the persistent side-effect (host
+            # marked out_of_sync).
+            rb = await rollback_to_snapshot(
+                ctx.proxmox_client,
+                ctx.pve_node,
+                ctx.vmid,
+                ctx.snapshot_name,
+                host,
+                ctx.ssh_key_path,
+                db,
+                vm_type=ctx.vm_type,
+            )
+            await db.commit()
+        ctx.step_log.append(f"[rollback] success={rb.get('success')} {rb.get('error', '')}".strip())
+        if rb.get("success") and ctx.snapshot_name is not None:
+            await _delete_snapshot_after_rollback(ctx)
+    except Exception as exc:
+        logger.exception(
+            "action_group: rollback failed for host %d: %s",
+            ctx.host_id,
+            exc,
+        )
+        ctx.step_log.append(f"[rollback] ERROR: {exc}")
+
+
+async def _delete_snapshot_after_rollback(ctx: _HostCtx) -> None:
+    """Delete the snapshot a successful rollback restored; a failure is only a warning."""
+    from app.workflows.steps.cleanup import delete_snapshot  # noqa: PLC0415
+
+    try:
+        await delete_snapshot(
+            ctx.proxmox_client,
+            ctx.pve_node,
+            ctx.vmid,
+            ctx.snapshot_name,
+            ctx.vm_type,
+        )
+        ctx.step_log.append(f"[cleanup] snapshot {ctx.snapshot_name} deleted after rollback")
+    except Exception as clean_exc:
+        logger.warning(
+            "action_group: snapshot cleanup after rollback failed for host %d: %s",
+            ctx.host_id,
+            clean_exc,
+        )
+        ctx.step_log.append(f"[cleanup] WARN: {clean_exc}")
 
 
 async def _cleanup_all(
     host_ctxs: list[_HostCtx],
     per_host_playbook_success: dict[int, bool],
-    channel: str,
-    r: Any,
 ) -> None:
     """Delete the pre-action snapshot on every succeeded host.
 
@@ -1364,15 +1599,22 @@ async def _cleanup_all(
     await asyncio.gather(*(_clean(ctx) for ctx in host_ctxs), return_exceptions=False)
 
 
-def _publish_global(r: Any, channel: str, text: str) -> None:
-    """Publish a run-scoped log line (no host_run_id binding)."""
+def _publish(redis_client: Any, channel: str, payload: dict, what: str) -> None:
+    """Publish one SSE event; a broker failure is logged at debug and dropped."""
     try:
-        r.publish(
-            channel,
-            json.dumps({"event": "output", "host_run_id": None, "text": text}),
-        )
+        redis_client.publish(channel, json.dumps(payload))
     except Exception:
-        logger.debug("action_group: SSE publish failed for run-scoped log", exc_info=True)
+        logger.debug("action_group: SSE publish failed for %s", what, exc_info=True)
+
+
+def _publish_global(redis_client: Any, channel: str, text: str) -> None:
+    """Publish a run-scoped log line (no host_run_id binding)."""
+    _publish(
+        redis_client,
+        channel,
+        {"event": "output", "host_run_id": None, "text": text},
+        "run-scoped log",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1380,7 +1622,7 @@ def _publish_global(r: Any, channel: str, text: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def _aggregate_and_finalise(action_run_id: int, channel: str, r) -> None:
+async def _aggregate_and_finalise(action_run_id: int, channel: str, redis_client: Any) -> None:
     """Walk ActionHostRun rows, set the run's terminal status, publish."""
     from sqlalchemy import select
 
@@ -1392,17 +1634,7 @@ async def _aggregate_and_finalise(action_run_id: int, channel: str, r) -> None:
             select(ActionHostRun).where(ActionHostRun.action_run_id == action_run_id)
         )
         host_runs = list(hr_result.scalars().all())
-
-        succeeded = sum(1 for hr in host_runs if hr.status == "succeeded")
-        failed = sum(1 for hr in host_runs if hr.status in ("failed", "skipped"))
-        total = len(host_runs)
-
-        if failed == 0:
-            final_status = "succeeded"
-        elif succeeded == 0:
-            final_status = "failed"
-        else:
-            final_status = "partial"
+        final_status, succeeded, total = _roll_up_host_runs(host_runs)
 
         run_result = await db.execute(select(ActionRun).where(ActionRun.id == action_run_id))
         run = run_result.scalar_one()
@@ -1422,99 +1654,144 @@ async def _aggregate_and_finalise(action_run_id: int, channel: str, r) -> None:
             total,
         )
 
-        # Post-run module sync fan-out: for group-dispatched actions
-        # (supports_host=false) one invocation produces N per-host
-        # outcomes; we queue post_run_sync for each host whose row is
-        # ``succeeded``, and the member release in the caller's
-        # ``finally`` starts them. Skipped on dry-run, on cancel, and on whole-
-        # run failure. Failures here are logged but never affect the
-        # action's terminal status -- the action itself already
-        # completed.
-        from app.actions.validation import DRY_RUN_PARAM  # noqa: PLC0415
+        await _queue_post_run_followups(db, run, host_runs, succeeded, action_run_id)
 
-        run_parameters = run.parameters or {}
-        dry_run = bool(run_parameters.get(DRY_RUN_PARAM, False))
-        if run.status not in ("cancelled", "failed") and not dry_run and succeeded > 0:
-            from app.actions.registry import ACTION_REGISTRY
+    _publish(redis_client, channel, {"event": "status", "status": run.status}, "terminal status")
 
-            action = ACTION_REGISTRY.get(run.action_key)
-            post_run_sync_modules: tuple[str, ...] = (
-                action.post_run_sync if action is not None else ()
+
+def _roll_up_host_runs(host_runs: list[Any]) -> tuple[str, int, int]:
+    """Return ``(run status, succeeded count, total)`` for a run's host rows."""
+    succeeded = sum(1 for hr in host_runs if hr.status == "succeeded")
+    failed = sum(1 for hr in host_runs if hr.status in ("failed", "skipped"))
+    total = len(host_runs)
+
+    if failed == 0:
+        final_status = "succeeded"
+    elif succeeded == 0:
+        final_status = "failed"
+    else:
+        final_status = "partial"
+    return final_status, succeeded, total
+
+
+async def _queue_post_run_followups(
+    db: Any,
+    run: Any,
+    host_runs: list[Any],
+    succeeded: int,
+    action_run_id: int,
+) -> None:
+    """Queue the action's post-run module syncs and registrations per succeeded host.
+
+    Post-run module sync fan-out: for group-dispatched actions
+    (supports_host=false) one invocation produces N per-host
+    outcomes; we queue post_run_sync for each host whose row is
+    ``succeeded``, and the member release in the caller's
+    ``finally`` starts them. Skipped on dry-run, on cancel, and on whole-
+    run failure. Failures here are logged but never affect the
+    action's terminal status -- the action itself already
+    completed.
+    """
+    from app.actions.validation import DRY_RUN_PARAM  # noqa: PLC0415
+
+    run_parameters = run.parameters or {}
+    dry_run = bool(run_parameters.get(DRY_RUN_PARAM, False))
+    if run.status in ("cancelled", "failed") or dry_run or succeeded == 0:
+        return
+
+    from app.actions.registry import ACTION_REGISTRY
+
+    action = ACTION_REGISTRY.get(run.action_key)
+    post_run_sync_modules: tuple[str, ...] = action.post_run_sync if action is not None else ()
+    post_run_register_decls: dict[str, tuple[dict, ...]] = (
+        dict(action.post_run_register) if action is not None else {}
+    )
+    if not (post_run_sync_modules or post_run_register_decls):
+        return
+
+    for hr in host_runs:
+        if hr.status != "succeeded":
+            continue
+        if hr.host_id is None:
+            # Host deleted while the play ran. The row keeps
+            # its transcript (BUG-77) but there is nothing
+            # left to sync or register against.
+            continue
+        if post_run_sync_modules:
+            await _queue_post_run_sync_for_host(db, run, hr, post_run_sync_modules, action_run_id)
+        if post_run_register_decls:
+            await _dispatch_post_run_register_for_host(
+                db, run, hr, post_run_register_decls, action_run_id
             )
-            post_run_register_decls: dict[str, tuple[dict, ...]] = (
-                dict(action.post_run_register) if action is not None else {}
-            )
-            if post_run_sync_modules or post_run_register_decls:
-                from app.sync.post_run import (
-                    dispatch_post_run_register,
-                    queue_post_run_sync,
-                )
 
-                for hr in host_runs:
-                    if hr.status != "succeeded":
-                        continue
-                    if hr.host_id is None:
-                        # Host deleted while the play ran. The row keeps
-                        # its transcript (BUG-77) but there is nothing
-                        # left to sync or register against.
-                        continue
-                    if post_run_sync_modules:
-                        try:
-                            queued_ids = await queue_post_run_sync(
-                                db,
-                                host_id=hr.host_id,
-                                modules=post_run_sync_modules,
-                                triggered_by_user_id=run.triggered_by_user_id,
-                            )
-                            if queued_ids:
-                                await db.commit()
-                                logger.info(
-                                    "action_group: queued post_run_sync for "
-                                    "action_run %d host %d -- modules=%s job_ids=%s",
-                                    action_run_id,
-                                    hr.host_id,
-                                    list(post_run_sync_modules),
-                                    queued_ids,
-                                )
-                        except Exception:
-                            logger.exception(
-                                "action_group: post_run_sync queueing failed for "
-                                "action_run %d host %d",
-                                action_run_id,
-                                hr.host_id,
-                            )
-                    if post_run_register_decls:
-                        try:
-                            inserted = await dispatch_post_run_register(
-                                db,
-                                host_id=hr.host_id,
-                                declarations=post_run_register_decls,
-                                triggered_by_user_id=run.triggered_by_user_id,
-                            )
-                            if inserted:
-                                await db.commit()
-                                logger.info(
-                                    "action_group: dispatched post_run_register for "
-                                    "action_run %d host %d -- inserted=%s",
-                                    action_run_id,
-                                    hr.host_id,
-                                    inserted,
-                                )
-                        except Exception:
-                            logger.exception(
-                                "action_group: post_run_register dispatch failed for "
-                                "action_run %d host %d",
-                                action_run_id,
-                                hr.host_id,
-                            )
+
+async def _queue_post_run_sync_for_host(
+    db: Any,
+    run: Any,
+    hr: Any,
+    post_run_sync_modules: tuple[str, ...],
+    action_run_id: int,
+) -> None:
+    """Queue the post-run module sync for one host; a failure is logged, not raised."""
+    from app.sync.post_run import queue_post_run_sync
 
     try:
-        r.publish(
-            channel,
-            json.dumps({"event": "status", "status": run.status}),
+        queued_ids = await queue_post_run_sync(
+            db,
+            host_id=hr.host_id,
+            modules=post_run_sync_modules,
+            triggered_by_user_id=run.triggered_by_user_id,
         )
+        if queued_ids:
+            await db.commit()
+            logger.info(
+                "action_group: queued post_run_sync for "
+                "action_run %d host %d -- modules=%s job_ids=%s",
+                action_run_id,
+                hr.host_id,
+                list(post_run_sync_modules),
+                queued_ids,
+            )
     except Exception:
-        logger.debug("action_group: SSE publish failed for terminal status", exc_info=True)
+        logger.exception(
+            "action_group: post_run_sync queueing failed for action_run %d host %d",
+            action_run_id,
+            hr.host_id,
+        )
+
+
+async def _dispatch_post_run_register_for_host(
+    db: Any,
+    run: Any,
+    hr: Any,
+    post_run_register_decls: dict[str, tuple[dict, ...]],
+    action_run_id: int,
+) -> None:
+    """Run the post-run registrations for one host; a failure is logged, not raised."""
+    from app.sync.post_run import dispatch_post_run_register
+
+    try:
+        inserted = await dispatch_post_run_register(
+            db,
+            host_id=hr.host_id,
+            declarations=post_run_register_decls,
+            triggered_by_user_id=run.triggered_by_user_id,
+        )
+        if inserted:
+            await db.commit()
+            logger.info(
+                "action_group: dispatched post_run_register for "
+                "action_run %d host %d -- inserted=%s",
+                action_run_id,
+                hr.host_id,
+                inserted,
+            )
+    except Exception:
+        logger.exception(
+            "action_group: post_run_register dispatch failed for action_run %d host %d",
+            action_run_id,
+            hr.host_id,
+        )
 
 
 async def _mark_run_failed(action_run_id: int, error_message: str, channel: str, r) -> None:
