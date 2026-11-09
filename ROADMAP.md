@@ -157,8 +157,8 @@ see [`docs/scaling-out.md`](docs/scaling-out.md). The single-container
 `all` install stays the default. Drift checks run on their own queue,
 fanned out per host.
 
-**Next.** An actions queue and worker role, so the per-host part of an
-action run stops waiting behind bulk syncs ([TODO.md](TODO.md)).
+**Shipped next.** An `actions` queue and `worker-actions` role, so the
+per-host part of an action run no longer waits behind bulk syncs.
 
 **Later.** Run `worker` containers (and their drift and actions
 counterparts) on more than one box against the same Postgres and Redis,

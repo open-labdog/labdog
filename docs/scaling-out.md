@@ -12,12 +12,13 @@ several roles in one container.
 
 | Role | Runs | Notes |
 | --- | --- | --- |
-| `all` (default) | API, `beat`, `work` worker (`default`, `long_running`, `drift`), `orchestrator` worker | The single-container install. Cannot be combined with other roles. |
+| `all` (default) | API, `beat`, `work` worker (`default`, `long_running`, `drift`, `actions`), `orchestrator` worker | The single-container install. Cannot be combined with other roles. |
 | `api` | uvicorn only | The only split role that runs database migrations. |
 | `beat` | the RedBeat scheduler | Exactly **one** per deployment. |
 | `orchestrator` | worker on `orchestrator` | Holds one slot per running action run. |
-| `worker` | worker on `default`, `long_running` | Syncs, the per-host part of action runs, discovery. Scales. |
+| `worker` | worker on `default`, `long_running` | Syncs, discovery. Scales. |
 | `worker-drift` | worker on `drift` | Drift checks, one task per host and module. Scales. |
+| `worker-actions` | worker on `actions` | The per-host (or group-wide) part of every action run, built-ins included. Scales. |
 
 Roles other than `api` wait at startup until the database schema is at the
 image's migration head, so start order does not matter. A Celery-only
@@ -29,7 +30,7 @@ ping for workers, and the scheduler lock for `beat`.
 `dev/docker-compose.split.yml` is a working example:
 
 ```sh
-docker compose -f dev/docker-compose.split.yml up -d --scale worker=2 --scale worker-drift=1
+docker compose -f dev/docker-compose.split.yml up -d --scale worker=2 --scale worker-drift=1 --scale worker-actions=1
 ```
 
 ## Settings per role
@@ -38,6 +39,7 @@ docker compose -f dev/docker-compose.split.yml up -d --scale worker=2 --scale wo
 | --- | --- | --- |
 | `celery.concurrency` (`LABDOG_CELERY__CONCURRENCY`) | `work` in `all`, `worker` | 4 |
 | `celery.drift_concurrency` | `worker-drift` | 4 |
+| `celery.actions_concurrency` | `worker-actions` | 4 |
 | `celery.orchestrator_concurrency` | `orchestrator` | 4 |
 
 Every container needs the same `LABDOG_DATABASE__URL`, `LABDOG_REDIS__URL`,
@@ -53,10 +55,20 @@ running is not enqueued again in the same tick. The per-host lock rules
 are unchanged: a host busy with a sync or action run is skipped for that
 tick, and a verdict gathered while a sync claimed the host is discarded.
 
+## Action runs
+
+The orchestrator publishes every host's part of an action run (or the
+single group-wide run) to the `actions` queue, which only `worker-actions`
+serves in a split deployment. A backlog of bulk syncs on `long_running`
+therefore no longer delays action runs, and `actions_concurrency` caps how
+many hosts run actions at once. Every queue needs a consumer: a split
+deployment without a `worker-actions` container runs no actions at all.
+
 ## Postgres connections
 
 Budget about six Postgres connections per worker slot, counting every
 role's slots (`concurrency` per `worker` container, `drift_concurrency`,
+`actions_concurrency`,
 `orchestrator_concurrency`), plus the API's pool; see
 [Sizing Postgres connections](production-deploy.md#sizing-postgres-connections).
 In load tests at 300 hosts, the split topology with 28 slots peaked at

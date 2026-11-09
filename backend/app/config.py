@@ -216,6 +216,10 @@ class CeleryConfig(BaseModel):
     #: Unused by the default ``all`` role, whose ``work`` worker consumes
     #: the ``drift`` queue alongside ``default`` and ``long_running``.
     drift_concurrency: int = 4
+    #: Slots on a ``worker-actions`` container (``--role worker-actions``):
+    #: how many hosts' action runs execute at once. Unused by the default
+    #: ``all`` role, whose ``work`` worker consumes ``actions`` too.
+    actions_concurrency: int = 4
     max_tasks_per_child: int = 100
 
 

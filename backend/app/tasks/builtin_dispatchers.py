@@ -256,7 +256,7 @@ async def _load_action_run_parameters(action_run_id: int) -> dict:
 
 @celery_app.task(
     name="app.tasks.builtin_dispatchers.run_builtin_collect_state",
-    queue="long_running",
+    queue="actions",
 )
 def run_builtin_collect_state(action_run_id: int, host_run_id: int) -> dict:
     """Refresh cached host facts for one host."""
@@ -374,7 +374,7 @@ async def _collect_state_async(action_run_id: int, host_run_id: int) -> None:
 
 @celery_app.task(
     name="app.tasks.builtin_dispatchers.run_builtin_drift_check",
-    queue="long_running",
+    queue="actions",
 )
 def run_builtin_drift_check(action_run_id: int, host_run_id: int) -> dict:
     """Drift-check one host using the same logic as the periodic sweep."""
@@ -430,7 +430,7 @@ async def _drift_check_async(action_run_id: int, host_run_id: int) -> None:
 
 @celery_app.task(
     name="app.tasks.builtin_dispatchers.run_builtin_sync",
-    queue="long_running",
+    queue="actions",
 )
 def run_builtin_sync(action_run_id: int, host_run_id: int) -> dict:
     """Coalesced per-host sync via the option-c orchestrator.

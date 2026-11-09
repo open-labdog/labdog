@@ -23,6 +23,12 @@ The format follows [Keep a Changelog]; LabDog follows
   `worker-drift` container). In a load test at 300 hosts with a bulk sync
   every 15 minutes, sweeps kept their 30-minute interval (up to 51 minutes
   before) and took about half as long.
+- **Action runs get their own queue.** The per-host (or group-wide) part
+  of every action run now goes to a new `actions` queue instead of
+  `long_running`, so a backlog of bulk syncs no longer holds action runs
+  back. A split deployment serves it with the new `worker-actions` role
+  (setting `celery.actions_concurrency`); the single container consumes it
+  as before.
 - **A load-test harness** in `dev/loadtest/`: N fake SSH hosts, scenarios
   for drift, bulk syncs and action schedules, on one or two Docker hosts.
 

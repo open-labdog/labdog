@@ -5,8 +5,8 @@
 #   docker compose -f dev/docker-compose.split.yml up -d --scale worker=2
 #
 # Only "api" migrates; the other roles wait until the schema is at head.
-# Exactly one "beat". Scale "worker" (syncs, actions' host runs) and
-# "worker-drift" (drift checks) independently.
+# Exactly one "beat". Scale "worker" (syncs), "worker-drift" (drift
+# checks) and "worker-actions" (action runs' host runs) independently.
 
 x-labdog: &labdog
   image: ${LABDOG_IMAGE:-labdog:latest}
@@ -18,6 +18,7 @@ x-labdog: &labdog
     LABDOG_SECURITY__LABDOG_SERVER_IP: ${LABDOG_SECURITY__LABDOG_SERVER_IP:-127.0.0.1}
     LABDOG_CELERY__CONCURRENCY: ${LABDOG_CELERY__CONCURRENCY:-4}
     LABDOG_CELERY__DRIFT_CONCURRENCY: ${LABDOG_CELERY__DRIFT_CONCURRENCY:-4}
+    LABDOG_CELERY__ACTIONS_CONCURRENCY: ${LABDOG_CELERY__ACTIONS_CONCURRENCY:-4}
     LABDOG_CELERY__ORCHESTRATOR_CONCURRENCY: ${LABDOG_CELERY__ORCHESTRATOR_CONCURRENCY:-4}
   # One pack checkout for every container. A pack added or synced in the UI
   # is synced by the api container only, and workers reload the action
@@ -78,6 +79,10 @@ services:
   worker-drift:
     <<: *labdog
     environment: { <<: *labdog-env, LABDOG_ROLE: worker-drift }
+
+  worker-actions:
+    <<: *labdog
+    environment: { <<: *labdog-env, LABDOG_ROLE: worker-actions }
 
 volumes:
   postgres_data:
