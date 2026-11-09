@@ -223,3 +223,92 @@ async def sweep_module(
             counters["checked" if ran else "skipped"] += 1
 
     return counters
+
+
+# ---------------------------------------------------------------------------
+# Steps the per-module check bodies share
+# ---------------------------------------------------------------------------
+#
+# Every collect-and-diff body loads the host's key, writes its verdict the
+# same way, probes LabDog's source IP while it has a key in hand, and
+# records an unreachable host or an unexpected error on the status row.
+# Each module keeps its own collect, diff, sample counts and log lines.
+
+
+async def load_private_key_pem(host: Host, db: AsyncSession) -> str | None:
+    """The host's decrypted SSH private key, or None when it has none to use.
+
+    A key that fails to decrypt raises, so call this inside the ``try``
+    that records unexpected errors on the status row.
+    """
+    from sqlalchemy import select
+
+    from app.crypto.encryption import decrypt_ssh_key
+    from app.crypto.key_management import get_master_key
+    from app.models.ssh_key import SSHKey
+
+    if not host.ssh_key_id:
+        return None
+    ssh_key = (
+        await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
+    ).scalar_one_or_none()
+    if not ssh_key:
+        return None
+
+    return decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
+
+
+def write_drift_verdict(hms: HostModuleStatus, *, drifted: bool, collected_state: object) -> None:
+    """Record a completed check: its verdict, what it collected, and no error."""
+    from datetime import UTC, datetime
+
+    hms.sync_status = "out_of_sync" if drifted else "in_sync"
+    hms.last_drift_check_at = datetime.now(UTC)
+    hms.collected_state = collected_state
+    hms.collected_at = datetime.now(UTC)
+    hms.error_message = None
+
+
+async def probe_source_ip_once(
+    host: Host, db: AsyncSession, private_key_pem: str, log: logging.Logger
+) -> None:
+    """Learn the address the host sees LabDog connect from, unless it is known.
+
+    Best-effort optimisation for the next merge, not part of the verdict.
+    A failure is logged on the module's *log* at debug level, because a
+    host that fails this fails it every tick.
+    """
+    import asyncssh
+
+    from app.ssh_utils import get_source_ip, ssh_connect_host
+
+    if host.labdog_source_ip:
+        return
+    try:
+        imported_key = asyncssh.import_private_key(private_key_pem)
+        async with ssh_connect_host(host, db, client_keys=[imported_key]) as probe:
+            host.labdog_source_ip = await get_source_ip(probe)
+    except Exception:
+        log.debug("source-IP probe failed for host %s", host.id, exc_info=True)
+
+
+def record_unreachable(hms: HostModuleStatus, error: BaseException) -> None:
+    """Record that the host could not be reached; the last verdict's state stays.
+
+    The fallback text never shows: an exception is always truthy, so a
+    bare timeout leaves the message empty (BUG-144).
+    """
+    from datetime import UTC, datetime
+
+    hms.sync_status = "unknown"
+    hms.last_drift_check_at = datetime.now(UTC)
+    hms.error_message = f"Host unreachable: {error or 'connection timed out'}"
+
+
+def record_check_error(hms: HostModuleStatus, error: BaseException) -> None:
+    """Record an error the module did not anticipate (log it at the call site)."""
+    from datetime import UTC, datetime
+
+    hms.sync_status = "error"
+    hms.last_drift_check_at = datetime.now(UTC)
+    hms.error_message = str(error)
