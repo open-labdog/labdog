@@ -13,19 +13,19 @@ content blocks inside a *user* turn rather than a dedicated role.
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import AsyncIterator
+from contextlib import aclosing
 from typing import Any
 
 import httpx
 
+from app.ai.providers._streaming import parse_tool_calls, stream_json_events
 from app.ai.providers.base import (
     LLMProviderError,
     NormalizedMessage,
     StreamEvent,
     TextDelta,
-    ToolCall,
     ToolCallEnd,
     ToolSpec,
     TurnEnd,
@@ -122,14 +122,9 @@ class AnthropicProvider:
 
         return ("\n\n".join(system_parts) or None), wire
 
-    async def stream_turn(
-        self,
-        messages: list[NormalizedMessage],
-        tools: list[ToolSpec],
-        *,
-        max_tokens: int,
-        temperature: float,
-    ) -> AsyncIterator[StreamEvent]:
+    def _payload(
+        self, messages: list[NormalizedMessage], tools: list[ToolSpec], max_tokens: int
+    ) -> dict[str, Any]:
         system, wire_messages = self._to_wire(messages)
         payload: dict[str, Any] = {
             "model": self.model,
@@ -151,6 +146,17 @@ class AnthropicProvider:
         # `temperature` is deliberately not sent: current Claude models reject
         # sampling parameters with a 400, and the older ones are fine at their
         # default. Steering happens through the system prompt instead.
+        return payload
+
+    async def stream_turn(
+        self,
+        messages: list[NormalizedMessage],
+        tools: list[ToolSpec],
+        *,
+        max_tokens: int,
+        temperature: float,
+    ) -> AsyncIterator[StreamEvent]:
+        payload = self._payload(messages, tools, max_tokens)
 
         url = f"{self.base_url}/v1/messages"
         # Tool-use blocks arrive as a start event plus a stream of JSON
@@ -160,86 +166,62 @@ class AnthropicProvider:
         completion_tokens = 0
         stop_reason = "end_turn"
 
-        try:
-            async with httpx.AsyncClient(verify=self._verify, timeout=REQUEST_TIMEOUT) as client:
-                async with client.stream(
-                    "POST", url, json=payload, headers=self._headers()
-                ) as response:
-                    if response.status_code >= 400:
-                        body = (await response.aread()).decode(errors="replace")[:500]
-                        raise LLMProviderError(
-                            f"Messages API returned HTTP {response.status_code}: {body}",
-                            response.status_code,
-                        )
-                    async for line in response.aiter_lines():
-                        if not line.startswith("data:"):
-                            continue
-                        data = line[5:].strip()
-                        if not data:
-                            continue
-                        try:
-                            event = json.loads(data)
-                        except json.JSONDecodeError:
-                            logger.warning("anthropic: skipping unparseable event")
-                            continue
+        events = stream_json_events(
+            url,
+            payload,
+            self._headers(),
+            verify=self._verify,
+            timeout=REQUEST_TIMEOUT,
+            api_name="Messages API",
+            log=logger,
+            unparseable_message="anthropic: skipping unparseable event",
+        )
+        async with aclosing(events):
+            async for event in events:
+                etype = event.get("type")
 
-                        etype = event.get("type")
+                if etype == "message_start":
+                    usage = (event.get("message") or {}).get("usage") or {}
+                    prompt_tokens = int(usage.get("input_tokens") or 0)
+                    completion_tokens = int(usage.get("output_tokens") or 0)
 
-                        if etype == "message_start":
-                            usage = (event.get("message") or {}).get("usage") or {}
-                            prompt_tokens = int(usage.get("input_tokens") or 0)
-                            completion_tokens = int(usage.get("output_tokens") or 0)
+                elif etype == "content_block_start":
+                    block = event.get("content_block") or {}
+                    if block.get("type") == "tool_use":
+                        pending[int(event.get("index") or 0)] = {
+                            "id": block.get("id", ""),
+                            "name": block.get("name", ""),
+                            "args": "",
+                        }
 
-                        elif etype == "content_block_start":
-                            block = event.get("content_block") or {}
-                            if block.get("type") == "tool_use":
-                                pending[int(event.get("index") or 0)] = {
-                                    "id": block.get("id", ""),
-                                    "name": block.get("name", ""),
-                                    "args": "",
-                                }
+                elif etype == "content_block_delta":
+                    delta = event.get("delta") or {}
+                    dtype = delta.get("type")
+                    if dtype == "text_delta":
+                        if text := delta.get("text"):
+                            yield TextDelta(text)
+                    elif dtype == "input_json_delta":
+                        slot = pending.get(int(event.get("index") or 0))
+                        if slot is not None:
+                            slot["args"] += delta.get("partial_json") or ""
 
-                        elif etype == "content_block_delta":
-                            delta = event.get("delta") or {}
-                            dtype = delta.get("type")
-                            if dtype == "text_delta":
-                                if text := delta.get("text"):
-                                    yield TextDelta(text)
-                            elif dtype == "input_json_delta":
-                                slot = pending.get(int(event.get("index") or 0))
-                                if slot is not None:
-                                    slot["args"] += delta.get("partial_json") or ""
+                elif etype == "message_delta":
+                    if reason := (event.get("delta") or {}).get("stop_reason"):
+                        stop_reason = reason
+                    usage = event.get("usage") or {}
+                    if (out := usage.get("output_tokens")) is not None:
+                        completion_tokens = int(out)
 
-                        elif etype == "message_delta":
-                            if reason := (event.get("delta") or {}).get("stop_reason"):
-                                stop_reason = reason
-                            usage = event.get("usage") or {}
-                            if (out := usage.get("output_tokens")) is not None:
-                                completion_tokens = int(out)
-
-                        elif etype == "error":
-                            err = event.get("error") or {}
-                            raise LLMProviderError(
-                                f"{err.get('type', 'error')}: {err.get('message', 'stream error')}"
-                            )
-        except httpx.HTTPError as exc:
-            raise LLMProviderError(f"Request failed: {exc}") from exc
+                elif etype == "error":
+                    err = event.get("error") or {}
+                    raise LLMProviderError(
+                        f"{err.get('type', 'error')}: {err.get('message', 'stream error')}"
+                    )
 
         wants_tools = False
-        for idx in sorted(pending):
-            slot = pending[idx]
-            if not slot["name"]:
-                continue
-            try:
-                arguments = json.loads(slot["args"]) if slot["args"].strip() else {}
-            except json.JSONDecodeError:
-                raise LLMProviderError(
-                    f"Model produced invalid JSON arguments for tool {slot['name']!r}"
-                ) from None
+        for call in parse_tool_calls(pending, "toolu_"):
             wants_tools = True
-            yield ToolCallEnd(
-                ToolCall(id=slot["id"] or f"toolu_{idx}", name=slot["name"], arguments=arguments)
-            )
+            yield ToolCallEnd(call)
 
         yield Usage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens)
         yield TurnEnd(stop_reason=stop_reason, wants_tools=wants_tools or stop_reason == "tool_use")
