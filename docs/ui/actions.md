@@ -58,7 +58,8 @@ There are three ways to start one:
 
 The run dialog picks the **action**, takes its parameters (if any) and,
 for a group, a **parallelism** — *All at once*, or *Rolling* 1, 2 or 5 at a
-time. **Preview (dry-run)** runs the same playbook with
+time. Rolling keeps that many hosts running and starts the next as soon
+as one finishes; a slow host holds only its own slot. **Preview (dry-run)** runs the same playbook with
 `ansible-playbook --check`: tasks report what they would change without
 changing it, and no snapshot is taken because nothing needs rolling back.
 **Run** runs it for real. A task a pack marks `check_mode: false` (a

@@ -119,35 +119,6 @@ Checked and not filed:
       Traced by reading; the pool exhaustion is the one BUG-152
       reproduces.
 
-- [ ] **BUG-155** `backend/app/tasks/action_orchestrator.py:837` — an
-      action run waits for its slowest host before it starts the next
-      batch, and each new batch joins the back of the queue
-
-      Symptom: a run over 30 hosts at `parallelism` 10, where one host
-      in each batch takes 10 minutes and the rest take one, takes about
-      30 minutes instead of about 13, with 9 of its 10 slots idle most
-      of the time. On a busy worker each batch is sent only after the
-      previous one finished, so it queues behind everything enqueued
-      since, three times over. That compounds the starvation the PR
-      #270 load test measured (0 of 7 par-10 runs finished in an hour).
-
-      Root cause: `_drive` sends a batch, then `_wait` polls until no
-      host in it is `queued` or `running`, then moves to the next batch
-      from `_batches`. `parallelism` is used as a batch size, not as a
-      limit on hosts in flight.
-
-      Fix direction: a sliding window. On each check-in (`_check_in`
-      already counts the hosts in flight), send
-      `parallelism - in_flight` more hosts from the remaining list
-      until it is empty, then wait for the last ones. `_resume_batches`
-      becomes "in flight plus the rest". Keep the stop and cancel
-      checks per check-in as now. Queue priority for action host runs
-      stays with the PR #270 plan (section 3.4).
-
-      Severity High: it slows every action run with more than one batch
-      on an idle system, and multiplies queue wait on a busy one. Traced
-      by reading.
-
 ### Performance — Medium
 
 - [ ] **BUG-156** `backend/app/db.py:37` — `task_session()` builds and

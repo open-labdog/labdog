@@ -156,7 +156,7 @@ class TestAPoolProcessThatNeverRebuilt:
                 "app.tasks.action_orchestrator.celery_app.send_task",
                 side_effect=lambda name, **_kw: sent.append(name),
             ),
-            patch("app.tasks.action_orchestrator._wait", new=AsyncMock(return_value="go")),
+            patch("app.tasks.action_orchestrator._wait", new=AsyncMock(return_value=("go", {}))),
             patch("redis.from_url", return_value=redis),
         ):
             await _run_action_async(run.id)

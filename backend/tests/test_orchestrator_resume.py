@@ -25,11 +25,7 @@ import pytest
 from sqlalchemy import select
 
 from app.models.action_run import ActionHostRun, ActionRun
-from app.tasks.action_orchestrator import (
-    _resume_batches,
-    _resume_run_async,
-    _run_action_async,
-)
+from app.tasks.action_orchestrator import _resume_run_async, _run_action_async
 from app.tasks.action_sweeper import _sweep_stale_action_runs_async
 from app.tasks.action_timeouts import ORCHESTRATOR_STALE_SECONDS
 from tests.conftest import create_group, create_host, create_ssh_key
@@ -56,15 +52,17 @@ class _Workers:
     """Stands in for Celery and the work pool.
 
     Records what the orchestrator sends, and on each of its polls finishes
-    whatever per-host task it has sent so far — so a batch takes exactly
-    one poll. ``on_poll`` runs first, to change the world under the
-    orchestrator between two of its polls.
+    whatever per-host task it has sent so far — so a host takes exactly
+    one poll, unless ``held`` keeps it running for that many more.
+    ``on_poll`` runs first, to change the world under the orchestrator
+    between two of its polls.
     """
 
     def __init__(self, db):
         self.db = db
         self.sent: list[tuple[str, list, dict]] = []
         self.sent_at_each_poll: list[int] = []
+        self.held: dict[int, int] = {}
         self.on_poll = None
 
     def send_task(self, name, args=None, **kwargs):
@@ -91,6 +89,10 @@ class _Workers:
             .all()
         )
         for row in rows:
+            if self.held.get(row.id, 0) > 0:
+                self.held[row.id] -= 1
+                row.status = "running"
+                continue
             row.status = "succeeded"
             row.finished_at = datetime.now(UTC)
         await self.db.commit()
@@ -244,7 +246,7 @@ class TestTheOrchestratorShowsItIsAlive:
         ("hosts", "parallelism", "sent_at_each_poll"),
         [(3, 1, [1, 2, 3]), (5, 2, [2, 4, 5]), (4, 0, [4])],
     )
-    async def test_it_still_runs_one_batch_at_a_time(
+    async def test_it_keeps_at_most_parallelism_hosts_in_flight(
         self, db, workers, hosts, parallelism, sent_at_each_poll
     ):
         group, _ = await _group_of(db, hosts)
@@ -254,6 +256,49 @@ class TestTheOrchestratorShowsItIsAlive:
 
         assert workers.sent_at_each_poll == sent_at_each_poll
         assert len(set(workers.host_runs_sent)) == hosts
+
+    async def test_a_slow_host_does_not_hold_back_the_others(self, db, workers):
+        """BUG-155: the run used to send a batch of ``parallelism`` hosts
+        and wait for the slowest. Here the first host takes three polls;
+        the next host goes as each of the others finishes, so the run
+        takes three polls where batches took four ([2, 2, 2, 4])."""
+        group, _ = await _group_of(db, 4)
+        run_id = await _queued_run(db, group.id, parallelism=2)
+
+        async def _slow_first(w):
+            if len(w.sent_at_each_poll) == 1:
+                w.held[w.host_runs_sent[0]] = 2
+
+        workers.on_poll = _slow_first
+        await _run_action_async(run_id)
+
+        assert workers.sent_at_each_poll == [2, 3, 4]
+        assert len(set(workers.host_runs_sent)) == 4
+        assert (await _run(db, run_id)).status == "succeeded"
+
+    async def test_a_deferred_host_frees_its_slot(self, db, workers):
+        """A host that defers (``pending``) is the host queue's to re-send,
+        not this loop's: it stops counting against the parallelism."""
+        group, _ = await _group_of(db, 3)
+        run_id = await _queued_run(db, group.id, parallelism=1)
+
+        async def _defer_first(w):
+            if len(w.sent_at_each_poll) == 1:
+                row = (
+                    await db.execute(
+                        select(ActionHostRun).where(ActionHostRun.id == w.host_runs_sent[0])
+                    )
+                ).scalar_one()
+                row.status = "pending"
+                await db.commit()
+
+        workers.on_poll = _defer_first
+        await _run_action_async(run_id)
+
+        assert workers.sent_at_each_poll == [1, 2, 3]
+        run = await _run(db, run_id)
+        # Still open: the deferred host has not run.
+        assert run.status == "running"
 
     @pytest.mark.parametrize("status", ["cancelled", "failed", "running", "succeeded"])
     async def test_it_only_starts_a_queued_run(self, db, workers, status):
@@ -337,7 +382,7 @@ class TestTheOrchestratorStopsWhenItShould:
 
 
 class TestAResumedRunCarriesOn:
-    async def test_it_sends_only_what_is_left_one_batch_at_a_time(self, db, workers):
+    async def test_it_sends_only_what_is_left_within_the_parallelism(self, db, workers):
         """The 2026-10-01 shape: some hosts done, one in flight when the
         container went down, the rest never reached."""
         group, hosts = await _group_of(db, 5)
@@ -416,20 +461,41 @@ class TestAResumedRunCarriesOn:
         assert workers.sent == []
 
     @pytest.mark.parametrize(
-        ("in_flight", "to_run", "parallelism", "expected"),
+        ("statuses", "parallelism", "sent_at_each_poll"),
         [
-            ([3], [4, 5], 1, [[3], [4], [5]]),
-            ([3], [4, 5, 6, 7], 3, [[3, 4, 5], [6, 7]]),
-            ([3, 4], [5], 1, [[3, 4], [5]]),
-            ([], [4, 5], 1, [[4], [5]]),
-            ([3], [4, 5], 0, [[3, 4, 5]]),
-            ([], [], 2, []),
+            # One in flight at parallelism 1: nothing goes until it is done.
+            (["running", "queued", "queued"], 1, [0, 1, 2]),
+            # Room for two more beside the one in flight.
+            (["running", "queued", "queued", "queued", "queued"], 3, [2, 4]),
+            # More in flight than the parallelism: wait for all of them.
+            (["running", "running", "queued"], 1, [0, 1]),
+            (["running", "queued", "queued"], 0, [2]),
         ],
     )
-    def test_hosts_in_flight_count_against_the_first_batch(
-        self, in_flight, to_run, parallelism, expected
+    async def test_hosts_in_flight_count_against_the_parallelism(
+        self, db, workers, statuses, parallelism, sent_at_each_poll
     ):
-        assert _resume_batches(in_flight, to_run, parallelism) == expected
+        group, hosts = await _group_of(db, len(statuses))
+        run_id, ids = await _run_left_by_a_dead_orchestrator(
+            db, hosts, group.id, statuses, parallelism=parallelism
+        )
+        in_flight = {i for i, st in zip(ids, statuses, strict=True) if st == "running"}
+
+        async def _finish_in_flight(w):
+            rows = (
+                (await db.execute(select(ActionHostRun).where(ActionHostRun.id.in_(in_flight))))
+                .scalars()
+                .all()
+            )
+            for row in rows:
+                row.status = "succeeded"
+            await db.commit()
+
+        workers.on_poll = _finish_in_flight
+        await _resume_run_async(run_id, "dead-orchestrator")
+
+        assert workers.sent_at_each_poll == sent_at_each_poll
+        assert sorted(workers.host_runs_sent) == sorted(set(ids) - in_flight)
 
 
 # ---------------------------------------------------------------------------

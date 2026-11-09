@@ -52,7 +52,7 @@ def sent():
 
     with (
         patch("app.tasks.action_orchestrator.celery_app.send_task", side_effect=_send_task),
-        patch("app.tasks.action_orchestrator._wait", new=AsyncMock(return_value="go")),
+        patch("app.tasks.action_orchestrator._wait", new=AsyncMock(return_value=("go", {}))),
         patch("redis.from_url", return_value=_FakeRedis()),
     ):
         yield calls
