@@ -178,6 +178,40 @@ host at all.
 
 ---
 
+## Stateful hosts — rollback policy (phase 1)
+
+**Context:** phase 1 of "Safe rollback for stateful hosts" in
+[ROADMAP.md](ROADMAP.md). A VM revert discards every write since the
+snapshot and can split a replicated cluster, and today LabDog reverts a
+database exactly like a stateless web host.
+
+**Sketch:**
+
+- **Model:** `stateful` boolean and `rollback_mode`
+  (`auto | confirm | never`) on `HostGroup` and `Host`. The host value
+  wins; otherwise the strictest of its groups. `stateful` defaults
+  `rollback_mode` to `confirm`.
+- **Action envelopes:** Phase E in `action_host.py` and
+  `action_group.py` honours the mode. `confirm` leaves the snapshot,
+  marks the host run `failed — rollback awaiting confirmation`, and
+  offers a button on the run page that shows the snapshot's age. `never`
+  keeps the snapshot for a person to use in Proxmox. The group path
+  reverts members sequentially today; with `confirm` it must not revert
+  any stateful member on its own.
+- **AI rollback:** `check_rollback` refuses `never` hosts, asks a typed
+  confirmation on `confirm` hosts, and refuses past
+  `rollback.max_age_hours` on stateful hosts (BUG-178).
+  `alert_auto_rollback` never reverts a stateful host.
+- **Snapshot quality:** read `agent` from `get_vm_config` and log a
+  crash-consistent snapshot (BUG-179).
+- **UI:** a badge on the host list and header, the two settings on host
+  and group settings, an audit row when they change.
+
+Open: whether `stateful` should also be settable from a pack (an action
+that knows it targets a database) or only by the operator.
+
+---
+
 ## Terminal and log windows — follow-ups
 
 Shipped in 1.0.0: resize, maximize, minimize and text size on both

@@ -33,11 +33,87 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-176`, `SEC-51`,
+ID counter as of last housekeeping pass: `BUG-179`, `SEC-51`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry. (`BUG-127` to `BUG-133` are taken on the
 PR #270 branch, not yet on `dev`. `BUG-168` to `BUG-171` were filed
 on the PR #270 branch and are fixed on the PR #279 branch.)
+
+---
+
+## Open — 2026-11-09 stateful-host rollback investigation
+
+Filed 2026-11-09 by a read-only investigation of whether LabDog can roll
+back databases and other stateful hosts safely (design and options in
+"Safe rollback for stateful hosts" in [ROADMAP.md](ROADMAP.md)). Traced
+by reading `dev` at `9a18161`; none was reproduced. None is fixed here.
+
+### High
+
+- [ ] **BUG-177** `backend/app/tasks/action_group.py:1468` — a group
+      action can VM-revert an etcd member
+
+      Symptom: when `k8s-upgrade` (labdog-playbooks) upgrades a
+      control-plane node and that node then fails `verify.yml`, Phase E
+      (`_rollback_all`) reverts its VM to the pre-run disk snapshot. On a
+      kubeadm cluster with stacked etcd that restores an etcd member from
+      a disk image: the member forgets log entries it acknowledged and
+      votes it cast, so it can vote twice in one term, and a second fault
+      can lose a commit the cluster counted as durable. etcd's guidance is
+      to remove and re-add a member, never to restore one from an image.
+      The action's pre-upgrade etcd snapshot defaults to
+      `/var/lib/labdog/etcd-backups` on that same node, so the rollback
+      also erases the backup. `verify.yml` already passes untouched nodes,
+      so this needs an upgraded control-plane node to fail verify.
+
+      Root cause: the envelope reverts any failed member with a snapshot,
+      with no notion of a member whose state other machines replicate.
+
+      Fix direction: stopgap in labdog-playbooks — `verify.yml` passes on
+      a control-plane node that runs a static-pod etcd and reports the
+      failure in the run instead, so LabDog never reverts it, and the
+      backup default moves off the node's own disk. Real fix: the
+      consensus-member rule (phase 3 of the roadmap section), which
+      rejoins a failed member instead of reverting it.
+
+      Severity High: silent loss of consensus guarantees in the cluster
+      that runs every other workload, on the path meant to make upgrades
+      safe.
+
+### Medium
+
+- [ ] **BUG-178** `backend/app/ai/remediation.py:686` — the AI rollback
+      button has no maximum age
+
+      Symptom: `check_rollback` allows rolling a session back for as long
+      as its snapshot exists, which is `ai.snapshot_retention_days`
+      (default 7). Pressed on a database or file-server host days later,
+      it discards every write since the session's first change, and the
+      button says nothing about how much time that is. The automatic
+      `made_worse` path is bounded by `GRACE`; the manual path is not.
+
+      Fix direction: show the age of the snapshot ("discards writes from
+      the last 3 days 4 h") in the confirmation, and refuse past a
+      configurable maximum, or ask for a typed confirmation, on hosts
+      marked stateful once that flag exists.
+
+### Low
+
+- [ ] **BUG-179** `backend/app/workflows/steps/snapshot.py:51` —
+      snapshots are crash-consistent unless the guest agent is enabled,
+      and LabDog never checks
+
+      Symptom: `create_snapshot` takes a disk-only snapshot (no
+      `vmstate`). Proxmox freezes the guest filesystems first only when
+      the VM config has the QEMU guest agent enabled; otherwise the image
+      is what a power cut would leave. Databases usually recover from
+      that, but an app that keeps files beside its database (Nextcloud
+      data, GitLab repositories) can come back inconsistent with it.
+      Nothing in the run log says which kind of snapshot was taken.
+
+      Fix direction: read `agent` from `get_vm_config` before the
+      snapshot and log `[snapshot] crash-consistent: guest agent not
+      enabled` when it is off; surface it on the host's VM mapping.
 
 ---
 

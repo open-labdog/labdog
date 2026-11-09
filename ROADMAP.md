@@ -181,6 +181,66 @@ so worker capacity grows with hardware. What it needs:
 
 ---
 
+## Safe rollback for stateful hosts
+
+**Finding (2026-11-09 investigation).** LabDog has one rollback
+primitive: revert the whole Proxmox VM to a disk snapshot and start it.
+The per-host and group action envelopes (`app/tasks/action_host.py`,
+`app/tasks/action_group.py`) and AI sessions (`app/ai/remediation.py`)
+all use it, and none of them knows what the VM holds. That revert is
+only safe under two conditions:
+
+1. **Nothing worth keeping was written after the snapshot.** Every
+   commit, upload, push and delivered mail in between is discarded
+   silently, and whatever already acted on that data (a sent email, a
+   webhook, a backup) now disagrees with the host. The window is the run
+   plus verify for an action (up to about 100 min for gitlab-upgrade),
+   and up to `ai.snapshot_retention_days` (7) for the AI rollback button.
+2. **No other machine remembers the state being undone.** A primary
+   reverted behind its replicas leaves them ahead of it (Postgres
+   timeline divergence, MySQL errant GTIDs), and a restarted old primary
+   can come back as a second primary if a replica was promoted in the
+   meantime. A Raft/etcd member restored from an image forgets entries
+   it acknowledged and votes it cast. Reverting members one by one can
+   also drop a cluster below quorum, and the group path's per-host policy
+   (failed members reverted, successful ones kept) leaves a cluster whose
+   members disagree.
+
+The snapshot is also only crash-consistent unless the VM has the QEMU
+guest agent enabled, and a whole-VM revert cannot keep the data disk:
+after a schema migration the old binaries could not read it anyway.
+The one existing guard of this kind is `check_rollback` refusing to
+revert the host LabDog itself runs on, which is the same problem solved
+by refusal for one host. Concrete exposures today are BUG-177 to BUG-179
+in [BUGS.md](BUGS.md).
+
+**Options considered.** They stack rather than compete.
+
+| Option | What it is | Covers | Main tradeoff |
+|--------|-----------|--------|---------------|
+| **A. Rollback policy** | `stateful` flag and `rollback: auto \| confirm \| never` on hosts and groups. A stateful host never auto-reverts; a person confirms, seeing how much write time the revert discards, and a maximum age refuses stale reverts | Single node; clusters by refusal | Safe but passive: a failed upgrade waits for a human |
+| **B. Quiesce hooks** | Manifest `quiesce_playbook` / `unquiesce_playbook`, run before the snapshot and after verify or rollback (maintenance mode, stop writers, checkpoint). No writes in the window, so a revert loses nothing | Single node | Planned downtime for the whole run; only as good as the pack's quiesce |
+| **C. Application rollback** | Manifest `rollback_playbook` used instead of the VM revert (restore a pre-run dump, re-pin the old image, `pg_rewind`). The VM snapshot stays as a last resort for a person | Single node and clusters | Most correct; per-app work, can be slower |
+| **D. Cluster-aware rules** | Declared or probed member roles (etcd member, PG primary/replica, Galera node). Never VM-revert a consensus member or a primary; *rejoin* a failed member (revert, wipe local data, resync from peers via a `rejoin_playbook`); check quorum before each step; never more than (N-1)/2 members down | Clusters | The only correct option for clusters; per-technology knowledge |
+| **E. Whole-cluster coordinated snapshot** | Quiesce the cluster, snapshot every member at one point, revert all or none | Small clusters that tolerate full downtime | Turns a rolling upgrade into full downtime; undoes the members that succeeded |
+| **F. OS-disk-only revert** | Keep the data disk, revert the OS disk below the Proxmox API | Nothing reliably | Rejected: old binaries vs migrated data, and it bypasses Proxmox's snapshot tracking |
+
+**Direction.**
+
+1. **Phase 1 — rollback policy (A).** Tracked in [TODO.md](TODO.md).
+   Makes LabDog safe by default on databases at the cost of
+   auto-recovery.
+2. **Phase 2 — quiesce hooks (B)** in both executors, then in
+   gitlab-upgrade and nextcloud-vm-update. A quiesced window lets a
+   stateful host keep automatic rollback.
+3. **Phase 3 — application rollback and rejoin (C + D)**, starting with
+   etcd for `k8s-upgrade` (BUG-177). A Postgres primary/replica rule set
+   follows once there is a real cluster to test against.
+
+E and F are not planned.
+
+---
+
 ## Ideas — exploration welcome
 
 Direction signals, not commitments. To pursue any of these, branch
