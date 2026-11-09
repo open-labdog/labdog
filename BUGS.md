@@ -33,10 +33,173 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-142`, `SEC-51`,
+ID counter as of last housekeeping pass: `BUG-151`, `SEC-51`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry. (`BUG-127` to `BUG-133` are taken on the
 PR #270 branch, not yet on `dev`.)
+
+---
+
+## Open — 2026-11-09 found during the Phase 2 refactor
+
+Filed 2026-11-09 by the Phase 2 readability pass (PR #276), which moved
+code without changing what it does. These are bugs that pass ran into in
+the code it moved, and kept as they are. Each was checked against
+`d63308b` (the PR #275 head that PR #276 starts from), so none comes from
+the refactor. *Reproduced* entries were run through the API in the test
+suite, or in a browser for the frontend one. The rest were traced by
+reading. Each carries a fix direction for a fix thread. None is fixed
+here.
+
+### Medium
+
+- [ ] **BUG-147** `backend/app/api/rules.py` — firewall rule changes
+      leave no audit row
+
+      Symptom: creating, editing, deleting or reordering a firewall rule,
+      on a group or a host, writes nothing to the audit log. Every other
+      configuration module (packages, repositories, services, cron jobs,
+      hosts entries, CA certificates, Linux users and groups) audits its
+      create, update and delete through `RuleAudit` in
+      `app/api/_scoped_rules.py`. `rules.py` has no `log_action` call at
+      all.
+
+      Fix direction: give `rules.py` a `RuleAudit("firewall_rule", ...)`
+      and end its endpoints with `commit_created` / `commit_updated` /
+      `delete_and_commit`, and write one row for a reorder.
+
+      Severity Medium: every account has the same rights, so the audit
+      log is the only record of who opened a port, and firewall rules are
+      where that record matters most.
+
+### Low
+
+- [ ] **BUG-143** `backend/app/api/packages.py:368` — renaming a package
+      repository to a name the group already has returns 500, not 409
+
+      Symptom: `PUT /api/groups/{id}/package-repos/{repo_id}` with the
+      `name` of another repository in the group fails with
+      `MissingGreenlet`. *Reproduced.*
+
+      Root cause: `flush_or_409` rolls the session back and then builds
+      the detail, and this endpoint's detail reads `repo.name`. The
+      rollback expired the row, so reading it starts a lazy load outside
+      the async context.
+
+      Fix direction: build the detail from `body.name`. The same
+      after-rollback read sits in the package rule and cron job updates,
+      but neither can reach it: `PackageRuleUpdate` has no
+      `package_name`, and `cron_jobs` has no unique constraint
+      (BUG-146).
+
+- [ ] **BUG-144** `backend/app/tasks/drift_sweep.py:305` — a drift check
+      that times out reports "Host unreachable: " with nothing after it
+
+      Symptom: `record_unreachable` formats `{error or 'connection timed
+      out'}`. An exception object is always truthy, so the fallback never
+      shows, and `str(TimeoutError())` is empty. The cron, hosts,
+      package, resolver, service and user drift checks all go through it.
+
+      Fix direction: `str(error) or 'connection timed out'`, as
+      `app/api/host_state.py:312` and `app/tasks/action_host.py:151`
+      already do.
+
+- [ ] **BUG-145** `backend/app/schemas/rules.py:46` — a firewall port sent
+      as a JSON string, list or object returns 500, not 422
+
+      Symptom: `port_start` or `port_end` given as `"22"`, `["22"]` or
+      `{}` raises `TypeError: '<=' not supported` from `_check_port`.
+      Pydantic turns only `ValueError` and `AssertionError` into a
+      validation error, so the request fails with a 500. `true` is taken
+      as port 1. *Reproduced* on the group rule create.
+
+      Root cause: the check runs in `mode="before"`, on the raw input,
+      before pydantic has parsed it as an integer.
+
+      Fix direction: check the range after parsing (`mode="after"`, or
+      `Annotated[int, Field(ge=1, le=65535)]`). Decide at the same time
+      whether a string `"22"` should be accepted, as lax parsing would,
+      and whether to refuse booleans (`StrictInt`).
+
+- [ ] **BUG-146** `backend/app/cron/models.py:28` (and services, Linux
+      users, Linux groups) — a duplicate rule is accepted and then never
+      applied
+
+      Symptom: two cron jobs with the same name and user in one group,
+      two services with the same `service_name`, two Linux users with the
+      same `username`, or two Linux groups with the same `groupname` are
+      both created with 201, and both are listed. The merge keeps the
+      first (`first_wins` on that key), so the host gets one and the
+      second is silently dropped. *Reproduced* for all four at group
+      scope. The host-scoped tables have no unique constraint either.
+
+      Root cause: these tables have no unique constraint on their merge
+      key, unlike `package_rules` and `ca_cert_rules`. The
+      `IntegrityError` → 409 handling in `app/api/cron_jobs.py` can
+      never run.
+
+      Fix direction: unique constraints on `(group_id, key)` and
+      `(host_id, key)`, with a migration that first reports or merges
+      existing duplicates. That makes the cron 409 path live. The other
+      three need the same `flush_or_409`.
+
+- [ ] **BUG-148** `backend/app/api/rules.py:68` — creating a firewall rule
+      for a group that does not exist returns 500, not 404
+
+      Symptom: `POST /api/groups/999999/rules` fails with a foreign-key
+      `IntegrityError`. *Reproduced.* `check_gitops_lock` returns quietly
+      when the group is missing, and the endpoint never calls
+      `require_group`, as the other modules' group creates do. Related:
+      the six module group syncs answer a missing group with 400 "No
+      hosts in this group" (`app/api/_group_sync.py:34`), because an
+      empty member list and a missing group look the same there.
+
+      Fix direction: `require_group` before the insert, and a 404 for a
+      missing group in `group_member_ids_or_400`.
+
+- [ ] **BUG-149** `backend/app/ai/loop.py:788` — a session that hits a cap
+      partway through a turn ends without its summary
+
+      Symptom: when one tool call in a turn of several uses up a cap
+      (commands, tokens, iterations or time), `_run_turn_tools` returns
+      at once, and the turn's remaining calls get no result. The wrap-up
+      turn in `_summarize_partial` then sends a transcript with those
+      unanswered calls. Both wire formats refuse that (the comment on the
+      parked branch just above says so), so the wrap-up fails, is logged
+      at info, and the session ends "failed" with no summary. A resume
+      would replay the same transcript. Traced by reading.
+
+      Fix direction: fill the remaining calls with a "not run, the
+      session reached its limit" result before returning, as the parked
+      branch does with `SKIPPED_RESULT`.
+
+- [ ] **BUG-150** `frontend/app/(dashboard)/plans/_hooks/use-plan-computation.ts:58`
+      — the plan page starts a dry run as soon as a scope is picked
+
+      Symptom: on a fresh `/plans`, picking a group or a host computes
+      the plan at once, over every module, before the operator has chosen
+      modules or pressed Compute. The effect is meant for plans opened
+      from a URL (its comment says so), but it fires the first time the
+      scope is defined, however that happened. *Reproduced* in a browser
+      against the static export, on the page before and after its split.
+
+      Fix direction: arm the effect only when the URL defined the scope
+      on first render.
+
+- [ ] **BUG-151** `backend/app/main.py:687,704` — the middleware comments
+      describe the opposite of the order the middleware runs in
+
+      Symptom: the comments say the HTTPS redirect "must be outermost"
+      and that CSRF "runs after CORS". Starlette runs the middleware
+      added last first. The real order, outermost first, is login rate
+      limit, API rate limit, CSRF, CORS, security headers, HTTPS
+      redirect. So with `tls.force_https` on, a plain-HTTP request goes
+      through both rate limiters and the CSRF check before it is
+      redirected, and CSRF runs before CORS.
+
+      Fix direction: decide which order is wanted, then make the code or
+      the comments match. Moving the redirect outermost changes
+      behaviour, which is why the refactor left both alone.
 
 ---
 
