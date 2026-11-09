@@ -19,6 +19,10 @@ import pytest
 from app.celery_manager import CeleryManager
 from app.metrics import broker
 
+#: One depth per queue, distinct so a misaligned zip shows up. Derived from
+#: the tuple so adding a queue doesn't break the fakes.
+_DEPTHS = [3, 0, 2, 7, 5, 1, 4, 6][: len(CeleryManager.QUEUES)]
+
 
 class _FakePipeline:
     def __init__(self, lengths: list[int], delay: float = 0.0):
@@ -58,7 +62,7 @@ def _patch_redis(monkeypatch, fake: _FakeRedis) -> None:
 
 class TestAHealthyBroker:
     async def test_it_reports_every_queue_a_worker_consumes(self, monkeypatch):
-        fake = _FakeRedis([3, 0, 2, 7])
+        fake = _FakeRedis(_DEPTHS)
         _patch_redis(monkeypatch, fake)
 
         snap = await broker.probe()
@@ -70,18 +74,18 @@ class TestAHealthyBroker:
         )
 
     async def test_depths_line_up_with_the_queues_asked_for(self, monkeypatch):
-        fake = _FakeRedis([3, 0, 2, 7])
+        fake = _FakeRedis(_DEPTHS)
         _patch_redis(monkeypatch, fake)
 
         snap = await broker.probe()
 
-        assert snap.depths == dict(zip(CeleryManager.QUEUES, [3, 0, 2, 7], strict=True))
+        assert snap.depths == dict(zip(CeleryManager.QUEUES, _DEPTHS, strict=True))
         assert fake.pipe is not None
         assert fake.pipe.calls == list(CeleryManager.QUEUES)
 
     async def test_it_uses_one_round_trip(self, monkeypatch):
         """Reading queues one at a time would multiply the timeout budget."""
-        fake = _FakeRedis([1, 1, 1, 1])
+        fake = _FakeRedis([1] * len(CeleryManager.QUEUES))
         _patch_redis(monkeypatch, fake)
 
         await broker.probe()
@@ -90,7 +94,7 @@ class TestAHealthyBroker:
         assert len(fake.pipe.calls) == len(CeleryManager.QUEUES)
 
     async def test_the_connection_is_closed(self, monkeypatch):
-        fake = _FakeRedis([0, 0, 0, 0])
+        fake = _FakeRedis([0] * len(CeleryManager.QUEUES))
         _patch_redis(monkeypatch, fake)
 
         await broker.probe()
@@ -100,7 +104,7 @@ class TestAHealthyBroker:
 
 class TestAnUnreachableBroker:
     async def test_a_slow_broker_times_out_rather_than_blocking(self, monkeypatch):
-        fake = _FakeRedis([1, 1, 1, 1], delay=5.0)
+        fake = _FakeRedis([1] * len(CeleryManager.QUEUES), delay=5.0)
         _patch_redis(monkeypatch, fake)
 
         snap = await asyncio.wait_for(broker.probe(timeout=0.05), timeout=2.0)
@@ -123,7 +127,7 @@ class TestAnUnreachableBroker:
         assert snap == broker.BrokerSnapshot(reachable=False, depths=None)
 
     async def test_the_connection_is_closed_even_when_the_read_fails(self, monkeypatch):
-        fake = _FakeRedis([0, 0, 0, 0])
+        fake = _FakeRedis([0] * len(CeleryManager.QUEUES))
 
         async def _boom():
             raise ConnectionError("gone mid-read")
