@@ -47,6 +47,13 @@ Currently in it:
   endpoint entry. Remaining follow-ups (per-host metrics backend
   routing, Loki log surfacing) are tracked in [TODO.md](TODO.md).
 
+### VM layer (planned, name open)
+
+A separate project, not started, that would create and destroy
+short-lived VMs for LabDog and on its own: backup restore tests and
+leased VMs such as a `k8s-upgrade` surge node. See
+[Hypervisor context](#hypervisor-context--a-companion-vm-layer).
+
 ---
 
 ## Agentic administration
@@ -87,60 +94,129 @@ not built. Nothing here is a substitute for reading what it did.
 
 ---
 
-## Hypervisor context — automatic backup testing
+## Hypervisor context — a companion VM layer
 
-**Goal.** A scheduled action that proves a VM's backups restore: pick
-the VM (or a group of them), and LabDog restores its newest backup as a
-throwaway copy, boots it with networking cut off, runs checks
-inside it, and destroys it — reporting a pass/fail per VM in the run
-history. A backup nobody has restored is a hope, not a backup.
+**Status.** Explored, nothing built. The direction below replaces the
+earlier plan to pass hypervisor credentials to packs.
 
-**Why packs can't do this today.** An action runs over SSH against a
-managed host, and LabDog's Proxmox credentials never reach a playbook.
-The only route is to make the Proxmox node itself a managed host and
-drive `qmrestore` over SSH — which hands LabDog a root key to every VM
-on the node, loses the link to the VM being tested, puts the hypervisor
-one group membership away from a config sync, and does not extend to
-hypervisors that are only reachable through an API (ESXi, Hyper-V,
-Nutanix, cloud).
+**Goal.** Two things LabDog cannot do today because it never creates
+or destroys a VM:
 
-**Direction.** Give actions the *hypervisor* as context instead of
-making it a target:
+- **Automatic backup testing.** Restore a VM's newest backup as a
+  throwaway copy, boot it with networking cut off, check it, destroy
+  it, and keep a pass/fail history per VM. A backup nobody has
+  restored is a hope, not a backup.
+- **Short-lived VMs for actions.** For example a surge node that
+  `k8s-upgrade` leases for one run instead of a spare host someone
+  built by hand.
 
-- **Core: a hypervisor abstraction.** Generalise `ProxmoxNode` /
-  `VMMapping` into a connection with a `kind` (Proxmox first; libvirt,
-  XCP-ng, VMware later) and an opaque VM reference, with a provider
-  interface for what LabDog itself does — snapshot, rollback, status,
-  power, VM discovery. The snapshot/verify/rollback envelope then works
-  on any supported hypervisor. (The `/hypervisors` page already exists;
-  today it is the Proxmox screen.)
-- **Packs: context, not logic.** A manifest declares
-  `hypervisor_context: required`; LabDog injects the target's VM mapping
-  and connection as `labdog_hv_*` vars, and can skip SSH to the target
-  entirely (`host_access: none`), so a dead VM can still have its backup
-  tested. API-based kinds get credentials; SSH-based kinds (libvirt) get
-  the hypervisor as a delegate host. The pack branches per
-  `labdog_hv_kind`. Backup systems (PBS, vzdump, Veeam, …) vary even
-  more than hypervisors, so restore logic stays in packs.
-- **Credential guard rails.** A separate, narrower credential per
-  connection for pack use — on Proxmox, a token scoped to a resource
-  pool, so even a broken playbook can only destroy throwaway VMs; an
-  audited per-pack opt-in, so a new commit to a tracked pack cannot
-  quietly acquire it; secrets redacted from run output and kept off disk.
+**Why not in packs.** An action runs over SSH against a managed host,
+and LabDog's Proxmox credentials never reach a playbook. Driving
+`qmrestore` over SSH means making the Proxmox node a managed host,
+which hands LabDog a root key to every VM on it and puts the
+hypervisor one group membership away from a config sync. Passing an
+API token to packs instead (the earlier `hypervisor_context` /
+`labdog_hv_*` idea) needs a guard-rail system of its own, and a
+killed ansible-runner still skips the playbook's `always:` cleanup.
 
-**Prerequisites** that matter more for an unattended test than for
-anything run by hand:
-- **Action-failure notifications.** A weekly restore test that fails
-  silently is worse than none. Listed under the email follow-ups in
-  [TODO.md](TODO.md).
-- **Cleanup after timeout or cancel.** Killing ansible-runner skips the
-  playbook's `always:` block and leaves the restored VM behind; LabDog
-  needs a cleanup hook that runs regardless, plus a sweep for tagged
-  leftovers.
+**Direction: a separate project under `open-labdog`** (name to be
+decided) that sits between LabDog and the hypervisor and owns every VM
+whose life is short and planned. It must be useful without LabDog,
+with its own UI, API tokens and notifications, and LabDog is one of
+its clients.
 
-**Not planned:** modelling backup jobs or schedules in LabDog. It tests
-that backups restore; the backup system stays the source of truth for
-making them.
+What it owns:
+
+- **Connections** to Proxmox clusters, several in the data model from
+  the start (as LabDog's `ProxmoxNode` already allows), with a token
+  scoped to one resource pool. A bug can only destroy VMs in that pool.
+- **Restore tests.** Policies (which VMs, how often, which checks)
+  and run history. Pure Proxmox API calls: restore with `archive=`
+  into the pool with `unique=1`, rewrite every NIC to an isolated
+  sandbox bridge before first boot, start, check through the QEMU
+  guest agent (`agent/exec`, which needs no network), destroy in a
+  `finally`. Both Proxmox Backup Server and vzdump file storage go
+  through the same restore call; only listing and free-space checks
+  differ. A backup is always restored on the cluster it came from.
+- **Leases.** A VM made from a named blueprint (an OpenTofu module
+  using the `bpg/proxmox` provider) with an owner, a purpose and an
+  expiry. OpenTofu rather than Terraform for the licence; state in
+  Postgres through the `pg` backend. OpenTofu fits leases, not restore
+  tests, which are a sequence of API calls with nothing to declare.
+- **A sweeper** that lists the pool on Proxmox and destroys anything
+  expired or without a lease. It trusts Proxmox tags, not OpenTofu
+  state, so a killed worker, a lost state file or a crashed LabDog
+  all end the same way. This is the "cleanup after timeout or
+  cancel" the old plan listed as a prerequisite.
+
+Out of scope for it: managing long-lived VMs (Proxmox's UI and
+Proxmox Datacenter Manager do that), making backups or modelling
+backup schedules, and building templates.
+
+**Boundary with LabDog.** REST calls from LabDog with an API token,
+signed webhooks back. Neither reads the other's database, and a VM is
+named by `(cluster, vmid)` on both sides, which `VMMapping` already
+stores.
+
+- `POST /api/leases` with blueprint, TTL, callback URL and the LabDog
+  run id as idempotency key; `lease.ready` carries IP and SSH host key.
+  Extend, release, and list by owner after a restart.
+- `POST /api/restore-tests/runs` and `GET /api/restore-tests?vm=…`
+  for a "last restore test" badge on the host page and an optional
+  schedulable `_builtin.restore_test`.
+- Every integration is optional in LabDog and appears only when a
+  connection to the VM layer is configured.
+
+**What stays in LabDog.** Snapshot, verify and rollback stay direct
+against Proxmox. That path runs inside every destructive action,
+already retries on locked VMs, and a second service there adds a
+failure point without a new capability. It may move behind a
+hypervisor provider interface later, once the VM layer has proved
+reliable. The stateful-host rollback rules are LabDog's too: they
+decide when to revert, not how.
+
+**Surge nodes for `k8s-upgrade`** need two things in LabDog: a
+manifest parameter type (say `lease`) that LabDog resolves to a host
+before it builds the inventory, and temporary hosts that are left out
+of drift and dashboards. One rule matters more than the rest: a failed
+run leaves the surge node in the cluster carrying pods, and a re-run
+reuses it, so on failure LabDog must extend the lease and mark it
+held. A held lease never expires without a person releasing it.
+
+**Other hypervisors** go in the same project, behind a narrow
+provider interface (restore, set network, start, run in guest,
+destroy, list pool), added only when someone needs one. What justifies
+the project — leases, restore policies and history, the sweeper, the
+UI, the API LabDog calls — does not depend on the hypervisor, and a
+project per hypervisor would copy all of it. Backup sources (PBS,
+vzdump, Veeam, …) are a second interface, separate from the
+hypervisor one.
+
+**Existing tools.** Proxmox Datacenter Manager covers multi-cluster
+management, not restore tests or expiring VMs. PBS verify jobs check
+chunk checksums, not that a backup boots. Veeam supports Proxmox VE
+through a plug-in, but its SureBackup restore check is not documented
+for it. Community restore-test scripts exist and are early. Cluster
+API with the Proxmox provider has surge built in, but only for
+clusters it created, not an existing kubeadm cluster.
+
+**Phasing.** Each step ships something usable; LabDog changes only in
+step 4.
+
+1. Spike: one restore test end to end against a real cluster.
+2. The VM layer with restore tests, sweeper, UI and API tokens. No
+   OpenTofu yet.
+3. Leases: blueprints, the OpenTofu runner, the sandbox network as
+   code, webhooks.
+4. LabDog integration: connection settings, the host-page badge, the
+   `lease` parameter type, temporary hosts, the held-lease rule.
+5. Later, only if it has proved reliable: a provider behind LabDog's
+   snapshot path.
+
+**Prerequisite in LabDog either way:** action-failure notifications.
+A weekly restore test or a held surge lease that fails silently is
+worse than none. Listed under the email follow-ups in
+[TODO.md](TODO.md).
 
 ---
 
