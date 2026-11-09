@@ -63,7 +63,7 @@ export default function PlanPage() {
     clearJobs()
     disarm()
   }, [clearJobs, disarm])
-  const { plans, computedAt, open, setOpen, sel, setSel, compute, clearPlan } = usePlanComputation({
+  const { plans, computedAt, open, setOpen, sel, setSel, compute, clearPlan, previewed } = usePlanComputation({
     scopeHosts,
     moduleFilter,
     defined,
@@ -207,7 +207,10 @@ export default function PlanPage() {
 
       {phase === "computing" && (
         <div className="flex flex-1 flex-col">
-          <Empty title={`Dry run on ${scopeHosts.length} host${scopeHosts.length === 1 ? "" : "s"}…`} note="Each host is read over SSH and compared to what its groups declare. Large fleets take a moment." />
+          <Empty
+            title={`Dry run on ${scopeHosts.length} host${scopeHosts.length === 1 ? "" : "s"}…`}
+            note={`Each host is read over SSH and compared to what its groups declare, a few at a time. ${previewed} of ${scopeHosts.length} read so far.`}
+          />
         </div>
       )}
 

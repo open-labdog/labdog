@@ -78,47 +78,6 @@ Checked and not filed:
   preview and output fan-outs below and the shell's 30 s pollers each
   get their own bucket and cannot reach 100/minute.
 
-### Performance — High
-
-- [ ] **BUG-153** `frontend/app/(dashboard)/plans/_hooks/use-plan-computation.ts:36`
-      — computing a plan sends one preview per host at once, and each
-      holds a database connection across seven SSH collections
-
-      Symptom: on the Plans page, a plan over many hosts takes all 15
-      API pool connections for as long as the previews run, so the rest
-      of the UI and API queue behind it. A preview of a host that does
-      not answer holds its connection for up to 80 s (eight SSH connects
-      at the default 10 s `ssh.connect_timeout`, see BUG-159), so 15
-      powered-off or firewalled hosts in scope are enough for every other
-      request to wait out the 30 s `pool_timeout` and fail, along with
-      the previews still queued. The documented deployment puts Caddy in
-      front (`docs/production-deploy.md`), which speaks HTTP/2, so the
-      browser's six-connections-per-host cap does not hold the burst
-      back.
-
-      Root cause: `compute` runs `Promise.all` over every host in scope
-      with no limit. Each `POST /api/sync/hosts/{id}/preview`
-      (`app/api/sync.py:175`) reads the host through `get_db` and then
-      runs `plan_host_modules` (`app/sync/plan.py:362`), which collects
-      the seven modules one after another, each over its own SSH
-      connection (BUG-159), while the request's session keeps its
-      connection. `plan_group` (`app/api/sync.py:114`) has the same
-      hold and also walks the group's hosts one by one inside one
-      request.
-
-      Fix direction: release the session before the SSH work (load the
-      host, key and desired state, close the session, then collect), or
-      collect first and open a session only for the diff. Cap the
-      client's concurrency (a small worker pool of 4 to 6 in `compute`)
-      so a large scope streams in rather than arriving at once.
-      Collecting the modules concurrently within one host, over one
-      connection (BUG-159), shortens each preview as well.
-
-      Severity High: the page exists to preview a fleet, and a lab fleet
-      with some hosts switched off takes the API down while it runs.
-      Traced by reading; the pool exhaustion is the one BUG-152
-      reproduces.
-
 ### Performance — Medium
 
 - [ ] **BUG-157** `backend/app/packages/generator.py:88` — the packages

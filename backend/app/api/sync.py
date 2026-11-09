@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -13,7 +14,7 @@ from app.api._group_sync import (
 )
 from app.audit.logger import log_action
 from app.auth.users import current_active_user
-from app.db import get_db
+from app.db import get_db, release_connection
 from app.enum_utils import enum_str
 from app.models.host import Host, HostGroupMembership
 from app.models.host_group import HostGroup
@@ -22,8 +23,14 @@ from app.models.sync_job import SyncJob
 from app.models.user import User
 from app.rules.desired_state import get_desired_state
 from app.rules.model import ChainPolicies, FirewallRuleSpec
-from app.sync.diff import SSHFetchError, compute_diff, fetch_current_firewall_state
-from app.sync.plan import ModuleDiff, plan_host_modules
+from app.sync.diff import (
+    SSHFetchError,
+    compute_diff,
+    fetch_current_firewall_state,
+    firewall_ssh_key,
+    read_firewall_state,
+)
+from app.sync.plan import ModuleDiff, prepare_host_plan
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 
@@ -111,53 +118,72 @@ async def plan_host(
     )
 
 
+#: Hosts a group plan reads over SSH at once.
+PLAN_GROUP_CONCURRENCY = 8
+
+
 @router.post("/groups/{group_id}/plan", response_model=list[HostDiff])
 async def plan_group(
     group_id: int,
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Preview changes for all hosts in a group (does NOT apply)."""
-    host_ids = await group_member_ids(db, group_id)
+    """Preview changes for all hosts in a group (does NOT apply).
 
-    results = []
+    BUG-153: this read each host one after another while the request kept
+    its database connection, so a group with unreachable members held a
+    pooled connection for a connect timeout per member. It now reads the
+    database first, hands the connection back, and reads the hosts a few
+    at a time.
+    """
+    host_ids = await group_member_ids(db, group_id)
+    hosts = {
+        h.id: h for h in (await db.execute(select(Host).where(Host.id.in_(host_ids)))).scalars()
+    }
+
+    prepared = []
     for hid in host_ids:
-        host_result = await db.execute(select(Host).where(Host.id == hid))
-        host = host_result.scalar_one()
+        host = hosts[hid]
         desired, desired_policies = await _get_desired_state(
             hid, db, host_source_ip=host.labdog_source_ip
         )
+        prepared.append((host, desired, desired_policies, await firewall_ssh_key(host, db)))
+
+    await release_connection(db)
+    slots = asyncio.Semaphore(PLAN_GROUP_CONCURRENCY)
+
+    async def _one(host, desired, desired_policies, private_key_pem) -> HostDiff:
         try:
-            state = await fetch_current_firewall_state(hid, db)
+            async with slots:
+                # No session: hosts are read at once, and one session can
+                # run one query at a time. A host key seen for the first
+                # time is set on the row and committed below.
+                state = await read_firewall_state(host, private_key_pem)
         except SSHFetchError as exc:
-            results.append(
-                HostDiff(
-                    host_id=hid,
-                    hostname=host.hostname,
-                    has_changes=False,
-                    rules_to_add=[],
-                    rules_to_remove=[],
-                    rules_unchanged=[],
-                    error=f"Cannot reach host: {exc.detail}",
-                )
+            return HostDiff(
+                host_id=host.id,
+                hostname=host.hostname,
+                has_changes=False,
+                rules_to_add=[],
+                rules_to_remove=[],
+                rules_unchanged=[],
+                error=f"Cannot reach host: {exc.detail}",
             )
-            continue
         diff = compute_diff(
             state.rules, desired, current_policies=state.policies, desired_policies=desired_policies
         )
-        policy_changes = {k: list(v) for k, v in diff.policy_changes.items()}
-        results.append(
-            HostDiff(
-                host_id=hid,
-                hostname=host.hostname,
-                has_changes=diff.has_changes,
-                rules_to_add=[_spec_to_diff_item(r) for r in diff.rules_to_add],
-                rules_to_remove=[_spec_to_diff_item(r) for r in diff.rules_to_remove],
-                rules_unchanged=[_spec_to_diff_item(r) for r in diff.rules_unchanged],
-                policy_changes=policy_changes,
-            )
+        return HostDiff(
+            host_id=host.id,
+            hostname=host.hostname,
+            has_changes=diff.has_changes,
+            rules_to_add=[_spec_to_diff_item(r) for r in diff.rules_to_add],
+            rules_to_remove=[_spec_to_diff_item(r) for r in diff.rules_to_remove],
+            rules_unchanged=[_spec_to_diff_item(r) for r in diff.rules_unchanged],
+            policy_changes={k: list(v) for k, v in diff.policy_changes.items()},
         )
 
+    results = await asyncio.gather(*(_one(*p) for p in prepared))
+    await db.commit()
     return results
 
 
@@ -185,13 +211,20 @@ async def preview_host(
     manual sync (per-module or "sync all") would apply, before applying.
     Unlike the per-module ``drift-check`` endpoints this does not write
     ``HostModuleStatus``.
+
+    BUG-153: the database is read first and the session's connection
+    handed back before any SSH, which can take a connect timeout on a host
+    that does not answer. The Plans page sends one of these per host in
+    scope, and each used to hold a pooled connection all the way through.
     """
     try:
-        return await plan_host_modules(host_id, body.module_filter, db)
+        plan = await prepare_host_plan(host_id, body.module_filter, db)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await release_connection(db)
+    return await plan.collect(db)
 
 
 # ---------------------------------------------------------------------------
