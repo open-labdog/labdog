@@ -80,20 +80,6 @@ Checked and not filed:
 
 ### Performance — Low
 
-- [ ] **BUG-165** `frontend/app/(dashboard)/hosts/[id]/client-page.tsx:19`
-      — every host page downloads the terminal emulator
-
-      Symptom: the host detail page imports `TerminalTab` statically,
-      which imports `@xterm/xterm` (`components/ssh-terminal.tsx:4`). In
-      the static export that chunk is 337 KB, 84 KB gzipped, loaded by
-      the host page and the terminal page whether or not the Terminal
-      tab is opened. *Measured* from `npm run build`. Nothing in the
-      frontend uses `next/dynamic`.
-
-      Fix direction: load `SshTerminal` with `next/dynamic(() =>
-      import("@/components/ssh-terminal"), { ssr: false })` in
-      `_tabs/terminal.tsx`.
-
 - [ ] **BUG-166** `frontend/lib/sync-tray.tsx:170` — two job pollers keep
       polling in hidden tabs
 
