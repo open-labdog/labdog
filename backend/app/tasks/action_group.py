@@ -91,7 +91,7 @@ MAX_OUTPUT_BYTES = 1_048_576  # 1 MB — same cap as action_host.py
 @celery_app.task(
     bind=True,
     name="app.tasks.action_group.run_action_group",
-    queue="long_running",
+    queue="actions",
 )
 def run_action_group(self, action_run_id: int) -> dict:
     """Run an ansible-playbook against every member of a group as one invocation.

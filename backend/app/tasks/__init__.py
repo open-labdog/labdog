@@ -61,9 +61,13 @@ celery_app.conf.update(
         # pool is a self-deadlock at concurrency=4. See
         # app/celery_manager.py.
         "app.tasks.action_orchestrator.*": {"queue": "orchestrator"},
-        "app.tasks.action_host.*": {"queue": "long_running"},
-        "app.tasks.action_group.*": {"queue": "long_running"},
-        "app.tasks.builtin_dispatchers.*": {"queue": "long_running"},
+        # The per-host and group-wide halves of an action run, and the
+        # built-in actions' per-host wrappers. Their own queue, so a bulk
+        # sync backlog in long_running cannot hold an action run back.
+        # The orchestrator publishes to it explicitly (CHILD_QUEUE).
+        "app.tasks.action_host.*": {"queue": "actions"},
+        "app.tasks.action_group.*": {"queue": "actions"},
+        "app.tasks.builtin_dispatchers.*": {"queue": "actions"},
         "app.tasks.scheduled_action_schedule.*": {"queue": "long_running"},
         "app.tasks.facts.*": {"queue": "long_running"},
         "app.tasks.ai_task.*": {"queue": "long_running"},
@@ -147,7 +151,7 @@ def _sibling_syncs_packs() -> bool:
     import os  # noqa: PLC0415
 
     roles = {r.strip() for r in os.environ.get("LABDOG_ROLE", "all").split(",")}
-    return bool(roles & {"all", "worker", "worker-drift"})
+    return bool(roles & {"all", "worker", "worker-drift", "worker-actions"})
 
 
 @worker_ready.connect

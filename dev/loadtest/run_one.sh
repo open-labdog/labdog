@@ -8,8 +8,9 @@ out=results/$sid-n$n-$cfg; rm -rf "$out"; mkdir -p "$out"
 extra_scale=()
 case "$cfg" in
   raised*) export CELERY_CONCURRENCY=16 ORCHESTRATOR_CONCURRENCY=12 PG_MAX_CONNECTIONS=${PG_MAX_CONNECTIONS:-400} ;;
-  # Step 3: role containers, same 28 slots as raised (2x6 work + 4 drift + 12 orch).
-  split*) export CELERY_CONCURRENCY=6 DRIFT_CONCURRENCY=4 ORCHESTRATOR_CONCURRENCY=12 \
+  # Step 3: role containers, same 28 slots as raised
+  # (2x4 work + 4 drift + 4 actions + 12 orch).
+  split*) export CELERY_CONCURRENCY=4 DRIFT_CONCURRENCY=4 ACTIONS_CONCURRENCY=4 ORCHESTRATOR_CONCURRENCY=12 \
               PG_MAX_CONNECTIONS=${PG_MAX_CONNECTIONS:-400} COMPOSE_FILE=docker-compose.yml:docker-compose.split.yml
           extra_scale=(--scale worker=2) ;;
   *) export CELERY_CONCURRENCY=4 ORCHESTRATOR_CONCURRENCY=4 PG_MAX_CONNECTIONS=${PG_MAX_CONNECTIONS:-100} ;;

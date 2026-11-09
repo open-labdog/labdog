@@ -60,7 +60,7 @@ _DEFAULT_GROUP_TASK = "app.tasks.action_group.run_action_group"
 #: blocks until these children finish, so sharing a pool with them is a
 #: self-deadlock. ``tests/test_orchestrator_queue.py`` asserts the
 #: separation rather than the names.
-CHILD_QUEUE = "long_running"
+CHILD_QUEUE = "actions"
 
 
 # ---------------------------------------------------------------------------

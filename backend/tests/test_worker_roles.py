@@ -60,6 +60,7 @@ class TestWhatEachRoleRuns:
     def test_worker_and_drift_worker_split_the_work_queues(self):
         assert processes_for(("worker",)) == {"work": ("default", "long_running")}
         assert processes_for(("worker-drift",)) == {"drift": ("drift",)}
+        assert processes_for(("worker-actions",)) == {"actions": ("actions",)}
 
     def test_the_orchestrator_keeps_its_node_name_prefix(self):
         """``_is_orchestrator_worker`` keys off ``orchestrator@``."""
@@ -111,7 +112,7 @@ class TestDriftHasItsOwnQueue:
         ("task_name", "queue"),
         [
             # On-demand pseudo-action: part of an action run, not a sweep.
-            ("app.tasks.builtin_dispatchers.run_builtin_drift_check", "long_running"),
+            ("app.tasks.builtin_dispatchers.run_builtin_drift_check", "actions"),
             ("app.tasks.drift_retention.prune_old_drift_samples", "default"),
         ],
     )
@@ -122,6 +123,40 @@ class TestDriftHasItsOwnQueue:
 
     def test_prefetch_is_one(self):
         assert celery_app.conf.worker_prefetch_multiplier == 1
+
+
+class TestActionsHaveTheirOwnQueue:
+    """An action run's children must not wait behind bulk syncs on
+    long_running (load test in PR #270: no parallelism-10 run finished
+    within an hour while syncs filled that queue)."""
+
+    @pytest.mark.parametrize(
+        "task_name",
+        [
+            "app.tasks.action_host.run_action_host",
+            "app.tasks.action_group.run_action_group",
+            "app.tasks.builtin_dispatchers.run_builtin_sync",
+            "app.tasks.builtin_dispatchers.run_builtin_collect_state",
+        ],
+    )
+    def test_action_children_route_to_actions(self, task_name):
+        if task_name not in celery_app.tasks:
+            pytest.skip(f"{task_name} not registered under this name")
+        assert _queue_for(task_name) == "actions"
+        assert celery_app.tasks[task_name].queue in (None, "actions")
+
+    def test_the_orchestrator_publishes_its_children_there(self):
+        from app.tasks.action_orchestrator import CHILD_QUEUE
+
+        assert CHILD_QUEUE == "actions"
+
+    def test_syncs_stay_on_long_running(self):
+        assert _queue_for("app.tasks.host_sync_orchestrator.run_host_sync") == "long_running"
+
+    def test_only_the_actions_role_serves_it_in_a_split(self):
+        split = [r for r in ROLE_PROCESSES if r != "all"]
+        serving = [r for r in split for q in ROLE_PROCESSES[r].values() if q and "actions" in q]
+        assert serving == ["worker-actions"]
 
 
 class TestTheManagerSpawnsThePlan:
@@ -156,6 +191,18 @@ class TestTheManagerSpawnsThePlan:
         assert cmd[cmd.index("-Q") + 1] == "drift"
         assert cmd[cmd.index("-n") + 1] == "drift@%h"
         assert kw["env"]["LABDOG_ROLE"] == "worker-drift"
+
+    def test_an_actions_worker_uses_actions_concurrency(self, popen, monkeypatch):
+        from app.config import settings
+
+        monkeypatch.setattr(settings.celery, "actions_concurrency", 7)
+        CeleryManager(processes_for(("worker-actions",)), roles=("worker-actions",)).start()
+
+        ((cmd, kw),) = popen
+        assert "--concurrency=7" in cmd
+        assert cmd[cmd.index("-Q") + 1] == "actions"
+        assert cmd[cmd.index("-n") + 1] == "actions@%h"
+        assert kw["env"]["LABDOG_ROLE"] == "worker-actions"
 
     def test_the_default_manager_still_runs_everything(self, popen):
         CeleryManager().start()

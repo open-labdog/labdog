@@ -49,8 +49,14 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 #: it too; a split deployment gives it its own ``worker-drift`` container
 #: so a sync backlog in ``long_running`` cannot delay drift, and the
 #: other way round.
+#:
+#: ``actions`` carries the per-host (and group-wide) half of every action
+#: run, published by the orchestrator (``CHILD_QUEUE`` in
+#: ``app.tasks.action_orchestrator``). Same reasoning as ``drift``: in a
+#: split deployment the ``worker-actions`` role serves it, so a bulk-sync
+#: backlog in ``long_running`` cannot hold action runs back.
 WORKER_QUEUES: dict[str, tuple[str, ...]] = {
-    "work": ("default", "long_running", "drift"),
+    "work": ("default", "long_running", "drift", "actions"),
     "orchestrator": ("orchestrator",),
 }
 
@@ -89,6 +95,7 @@ ROLE_PROCESSES: dict[str, dict[str, tuple[str, ...] | None]] = {
     "orchestrator": {"orchestrator": WORKER_QUEUES["orchestrator"]},
     "worker": {"work": ("default", "long_running")},
     "worker-drift": {"drift": ("drift",)},
+    "worker-actions": {"actions": ("actions",)},
 }
 
 #: Roles that serve HTTP. Only these may run migrations.
@@ -208,6 +215,7 @@ class CeleryManager:
         concurrency = {
             "orchestrator": settings.celery.orchestrator_concurrency,
             "drift": settings.celery.drift_concurrency,
+            "actions": settings.celery.actions_concurrency,
         }.get(name, settings.celery.concurrency)
         cmd += [
             f"--max-tasks-per-child={settings.celery.max_tasks_per_child}",

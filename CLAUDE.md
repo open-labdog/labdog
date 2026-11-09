@@ -188,9 +188,9 @@ the labdog source tree.
 Three subprocesses, all children of the main process
 (`app/celery_manager.py`):
 
-- **`work`** — `-Q default,long_running,drift`. Everything except the run
-  orchestrator: syncs, drift, discovery, and the per-host half of every
-  action run.
+- **`work`** — `-Q default,long_running,drift,actions`. Everything except
+  the run orchestrator: syncs, drift, discovery, and the per-host half of
+  every action run.
 - **`orchestrator`** — `-Q orchestrator`. Runs only
   `app.tasks.action_orchestrator.run_action`.
 - **`beat`** — the RedBeat scheduler, standalone. It used to be embedded
@@ -201,15 +201,19 @@ Three subprocesses, all children of the main process
 
 That is the default `all` role. `python -m app --role` (or
 `LABDOG_ROLE`) runs a subset instead — `api`, `beat`, `orchestrator`,
-`worker` (`default,long_running`) or `worker-drift` (`drift`) — so a
+`worker` (`default,long_running`), `worker-drift` (`drift`) or
+`worker-actions` (`actions`) — so a
 deployment can run each in its own container from the same image and
 scale workers with `--scale` (`app/celery_manager.py::ROLE_PROCESSES`,
 `docs/scaling-out.md`). Only `api`/`all` migrate; the rest wait for the
 schema. Drift sweeps fan out one `drift_sweep.check_host_module` task per
-host on the `drift` queue rather than walking hosts serially.
+host on the `drift` queue rather than walking hosts serially. An action
+run's children (`action_host`, `action_group`, `builtin_dispatchers`) go
+to `actions` (`CHILD_QUEUE`), so a bulk-sync backlog on `long_running`
+cannot hold them back.
 
 The orchestrator split is load-bearing, not tidiness. `run_action` dispatches per-host
-children to `long_running` and then blocks in `result.join()` until they
+children to `actions` and then blocks in `result.join()` until they
 finish, so an orchestrator sharing that pool competes with the very work
 it is waiting for. Do not route anything else to `orchestrator`, and do
 not remove the `-n <name>@%h` node names — the `worker_ready` handlers use

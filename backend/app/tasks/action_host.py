@@ -59,7 +59,7 @@ MAX_OUTPUT_BYTES = 1_048_576  # 1 MB
 @celery_app.task(
     bind=True,
     name="app.tasks.action_host.run_action_host",
-    queue="long_running",
+    queue="actions",
 )
 def run_action_host(self, action_run_id: int, host_run_id: int) -> dict:
     """Run ansible-runner for a single host within an action run.

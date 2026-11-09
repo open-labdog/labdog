@@ -206,7 +206,7 @@ async def test_group_dispatch_of_an_empty_group_sizes_limits_for_one_member(db, 
             "app.tasks.action_group.run_action_group",
             [run_id],
             {
-                "queue": "long_running",
+                "queue": "actions",
                 "soft_time_limit": soft,
                 "time_limit": soft + HARD_LIMIT_MARGIN_SECONDS,
             },
