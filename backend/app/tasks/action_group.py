@@ -845,24 +845,48 @@ def _route_runner_events_to_hosts(
 
     Derives each member's playbook outcome (succeeded / failed) from the
     failure and unreachable events keyed by inventory hostname.
+
+    BUG-167: a failed task the playbook ignores (``ignore_errors``) or
+    rescues (a ``block`` with ``rescue``) still sends ``runner_on_failed``.
+    Neither failed the host, and each used to: a pack's playbook that
+    rescued a step had the member marked failed and, for a destructive
+    action, rolled back. An ignored failure carries
+    ``event_data.ignore_errors``; a rescued one looks like any other, so
+    the end-of-run ``playbook_on_stats``, which counts rescued failures
+    apart from real ones, has the last word when it is there. A host stops
+    at a real failure, so the last failure message is the one kept.
     """
     per_host_failure: dict[str, str] = {}
     per_host_unreachable: set[str] = set()
     per_host_seen: set[str] = set()
+    stats_failed: set[str] | None = None
 
     for event in events:
         event_type = event.get("event")
         event_data = event.get("event_data") or {}
+        if event_type == "playbook_on_stats":
+            stats_failed = {
+                host
+                for key in ("failures", "dark")
+                for host, count in (event_data.get(key) or {}).items()
+                if count
+            }
+            continue
         host_name = event_data.get("host")
         if not host_name:
             continue
         per_host_seen.add(host_name)
         if event_type == "runner_on_failed":
+            if event_data.get("ignore_errors"):
+                continue
             msg = (event_data.get("res") or {}).get("msg") or "task failed"
-            per_host_failure.setdefault(host_name, str(msg))
+            per_host_failure[host_name] = str(msg)
         elif event_type == "runner_on_unreachable":
             per_host_unreachable.add(host_name)
-            per_host_failure.setdefault(host_name, "host unreachable")
+            per_host_failure[host_name] = "host unreachable"
+
+    if stats_failed is not None:
+        per_host_failure = {h: m for h, m in per_host_failure.items() if h in stats_failed}
 
     outcomes = _MemberOutcomes(succeeded={}, error_message={})
     for ctx in host_ctxs:

@@ -116,6 +116,14 @@ def _runner_events_to_task_events(runner_events: Any) -> list[dict[str, Any]]:
     (defence against playbooks the orchestrator didn't compose, or play
     renames the map hasn't been updated for — caught by the
     same-commit invariant on ``PLAY_NAME_TO_MODULE``).
+
+    BUG-167: a task with ``ignore_errors`` that fails still sends
+    ``runner_on_failed``, with ``event_data.ignore_errors`` true. Ansible
+    counts it as ``ok`` and ``ignored``, not as a failure, and so does
+    this. It used to count as a failure, so the generators' own best-effort
+    steps (the dual-stack teardown, the first-sync config backup, the
+    iptables persistence installs on an RPM host) marked a module that had
+    applied cleanly as ``error``.
     """
     out: list[dict[str, Any]] = []
     for event in runner_events or []:
@@ -130,7 +138,7 @@ def _runner_events_to_task_events(runner_events: Any) -> list[dict[str, Any]]:
         out.append(
             {
                 "tags": [module],
-                "failed": et == "runner_on_failed",
+                "failed": et == "runner_on_failed" and not event_data.get("ignore_errors"),
                 "unreachable": et == "runner_on_unreachable",
             }
         )
