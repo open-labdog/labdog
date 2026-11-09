@@ -154,21 +154,6 @@ Checked and not filed:
       `_modules_by_host`, and declare `limit: int = Query(20, ge=1,
       le=500)`.
 
-- [ ] **BUG-163** `backend/app/ansible_runtime/generator.py:362` — every
-      iptables sync runs two package installs for persistence
-
-      Symptom: the iptables play ends with `ansible.builtin.package` for
-      `iptables-persistent` and then `netfilter-persistent`, both with
-      `ignore_errors`, on every sync, whether or not they are installed.
-      Each is a package-manager call, and on a host that has no such
-      packages (any RPM host) both are failures that Ansible prints and
-      then ignores.
-
-      Fix direction: check for `netfilter-persistent` once (a
-      `command -v` with `changed_when: false`), and install only when it
-      is missing on a Debian-family host. The play gathers no facts, so
-      take the family from `Host.os_family` as in BUG-157.
-
 - [ ] **BUG-164** `backend/app/user_mgmt/generator.py:107` — the users
       play looks up each user's home directory in a task of its own
 
