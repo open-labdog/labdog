@@ -45,10 +45,20 @@ durable before step 3 can discard them. It fires only on the first
 successful connection to a host LabDog has never reached, where there
 is no established status to clobber.
 
-Concurrency is unchanged — the sweep is still one serial pass. Since
-BUG-66 gave every remote command a deadline, a hung host costs the
-sweep one ``ssh.command_timeout`` rather than stopping it dead, which
-is what took the second half of BUG-67 off the critical list.
+Fan-out. The periodic task no longer walks the hosts itself: it picks
+the candidates and enqueues one :func:`check_host_module` task per host
+on the ``drift`` queue (:func:`fan_out_module`), and returns without
+waiting for them — waiting on children from inside a worker slot is the
+trap the orchestrator queue split exists to avoid. Each per-host task
+runs exactly the lock / check / re-check / commit sequence above
+(:func:`check_host`), so BUG-67's guarantees are per host as before. A
+sweep at 300 hosts used to hold one slot for the whole pass (about 400 s
+for the package module); now it spreads over every ``drift`` slot. A
+Redis ``SET NX`` per module and host keeps a slow tick from piling up a
+second check of a host whose first is still queued or running.
+
+:func:`sweep_module` keeps the old serial pass over :func:`check_host`
+for callers that want the counters in one place.
 """
 
 from __future__ import annotations
@@ -63,7 +73,49 @@ if TYPE_CHECKING:
     from app.models.host import Host
     from app.models.host_module_status import HostModuleStatus
 
+from app.tasks import celery_app
+
 logger = logging.getLogger(__name__)
+
+
+#: The per-host check each module contributes, by ``module_type``, as
+#: ``"module:function"`` so this module does not import all seven (and
+#: they can keep importing this one).
+CHECKS: dict[str, str] = {
+    "firewall": "app.tasks.drift:_sweep_one",
+    "service": "app.tasks.service_drift:check_service_drift_for_one_host",
+    "hosts_file": "app.tasks.hosts_drift:check_hosts_drift_for_one_host",
+    "linux_user": "app.tasks.user_drift:check_user_drift_for_one_host",
+    "cron": "app.tasks.cron_drift:check_cron_drift_for_one_host",
+    "package": "app.tasks.package_drift:check_package_drift_for_one_host",
+    "resolver": "app.tasks.resolver_drift:check_resolver_drift_for_one_host",
+}
+
+#: Modules that select candidates from ``Host.drift_check_enabled``.
+HOST_GATED: frozenset[str] = frozenset({"firewall"})
+
+
+def _resolve_check(module_type: str) -> CheckOne:
+    import importlib  # noqa: PLC0415
+
+    module_name, func = CHECKS[module_type].split(":")
+    return getattr(importlib.import_module(module_name), func)
+
+
+def _inflight_key(module_type: str, host_id: int) -> str:
+    return f"labdog:drift:inflight:{module_type}:{host_id}"
+
+
+def _inflight_ttl_seconds() -> int:
+    """How long a queued check holds its host's slot if it never finishes.
+
+    Just under the interval, so a check lost to a worker crash frees the
+    host before the next tick wants it, while a merely slow one is not
+    enqueued twice in the same tick.
+    """
+    from app.config import settings  # noqa: PLC0415
+
+    return max(60, settings.drift.check_interval_minutes * 60 - 30)
 
 
 #: What each module contributes to the sweep: collect the host's live
@@ -137,89 +189,175 @@ async def sweep_module(
         mid-sweep), ``deferred`` (the host was claimed, before or
         during the check) and ``failed`` (the module raised).
     """
-    from sqlalchemy import select
-
     from app.db import task_session
-    from app.models.host import Host
-    from app.models.host_module_status import HostModuleStatus
 
     counters = {"checked": 0, "skipped": 0, "deferred": 0, "failed": 0}
 
     async with task_session() as db:
-        if host_gated:
-            candidates = select(Host.id).where(Host.drift_check_enabled).order_by(Host.id)
-        else:
-            candidates = (
-                select(HostModuleStatus.host_id)
-                .where(
-                    HostModuleStatus.module_type == module_type,
-                    HostModuleStatus.drift_check_enabled,
-                )
-                .order_by(HostModuleStatus.host_id)
-            )
-        host_ids = list((await db.execute(candidates)).scalars().all())
-        # Close the read snapshot the candidate scan opened so the first
-        # per-host transaction starts clean.
-        await db.rollback()
+        host_ids = await _candidates(db, module_type, host_gated)
 
         for host_id in host_ids:
-            reason = await _blocker_reason(db, host_id, wait=True)
-            if reason is not None:
-                await db.rollback()
-                counters["deferred"] += 1
-                logger.info(
-                    "drift sweep (%s): skipping host %d this tick — %s",
-                    module_type,
-                    host_id,
-                    reason,
-                )
-                continue
-            # Release the lock before the SSH work. A drift check takes
-            # as long as the host takes to answer and nothing has been
-            # written yet, so there is nothing to protect until step 3.
-            await db.rollback()
-
-            try:
-                host = (
-                    await db.execute(select(Host).where(Host.id == host_id))
-                ).scalar_one_or_none()
-                if host is None:
-                    # Deleted between the candidate scan and now.
-                    await db.rollback()
-                    counters["skipped"] += 1
-                    continue
-                hms = (
-                    await db.execute(
-                        select(HostModuleStatus).where(
-                            HostModuleStatus.host_id == host_id,
-                            HostModuleStatus.module_type == module_type,
-                        )
-                    )
-                ).scalar_one_or_none()
-                ran = await check_one(host, hms, db)
-            except Exception:
-                # Each module records its own expected failures on the
-                # status row; reaching here means something the module
-                # did not anticipate, and losing it silently is what
-                # made these sweeps so hard to diagnose.
-                logger.exception("drift sweep (%s): check raised for host %d", module_type, host_id)
-                await db.rollback()
-                counters["failed"] += 1
-                continue
-
-            reason = await _blocker_reason(db, host_id, wait=False)
-            if reason is not None:
-                await db.rollback()
-                counters["deferred"] += 1
-                logger.info(
-                    "drift sweep (%s): discarding verdict for host %d — claimed mid-check (%s)",
-                    module_type,
-                    host_id,
-                    reason,
-                )
-                continue
-
-            await db.commit()
-            counters["checked" if ran else "skipped"] += 1
+            outcome = await check_host(db, module_type, check_one, host_id)
+            counters[outcome] += 1
 
     return counters
+
+
+async def check_host(
+    db: AsyncSession,
+    module_type: str,
+    check_one: CheckOne,
+    host_id: int,
+) -> str:
+    """Lock, check, re-check and commit one host (the BUG-67 sequence).
+
+    Returns which counter the host lands in: ``checked``, ``skipped``,
+    ``deferred`` or ``failed``. *db* must have no transaction open; it
+    has none open on return either.
+    """
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from app.models.host import Host  # noqa: PLC0415
+    from app.models.host_module_status import HostModuleStatus  # noqa: PLC0415
+
+    reason = await _blocker_reason(db, host_id, wait=True)
+    if reason is not None:
+        await db.rollback()
+        logger.info(
+            "drift sweep (%s): skipping host %d this tick — %s",
+            module_type,
+            host_id,
+            reason,
+        )
+        return "deferred"
+    # Release the lock before the SSH work. A drift check takes as long as
+    # the host takes to answer and nothing has been written yet, so there
+    # is nothing to protect until the re-check.
+    await db.rollback()
+
+    try:
+        host = (await db.execute(select(Host).where(Host.id == host_id))).scalar_one_or_none()
+        if host is None:
+            # Deleted between the candidate scan and now.
+            await db.rollback()
+            return "skipped"
+        hms = (
+            await db.execute(
+                select(HostModuleStatus).where(
+                    HostModuleStatus.host_id == host_id,
+                    HostModuleStatus.module_type == module_type,
+                )
+            )
+        ).scalar_one_or_none()
+        ran = await check_one(host, hms, db)
+    except Exception:
+        # Each module records its own expected failures on the status row;
+        # reaching here means something the module did not anticipate, and
+        # losing it silently is what made these sweeps so hard to diagnose.
+        logger.exception("drift sweep (%s): check raised for host %d", module_type, host_id)
+        await db.rollback()
+        return "failed"
+
+    reason = await _blocker_reason(db, host_id, wait=False)
+    if reason is not None:
+        await db.rollback()
+        logger.info(
+            "drift sweep (%s): discarding verdict for host %d — claimed mid-check (%s)",
+            module_type,
+            host_id,
+            reason,
+        )
+        return "deferred"
+
+    await db.commit()
+    return "checked" if ran else "skipped"
+
+
+async def _candidates(db: AsyncSession, module_type: str, host_gated: bool) -> list[int]:
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from app.models.host import Host  # noqa: PLC0415
+    from app.models.host_module_status import HostModuleStatus  # noqa: PLC0415
+
+    if host_gated:
+        candidates = select(Host.id).where(Host.drift_check_enabled).order_by(Host.id)
+    else:
+        candidates = (
+            select(HostModuleStatus.host_id)
+            .where(
+                HostModuleStatus.module_type == module_type,
+                HostModuleStatus.drift_check_enabled,
+            )
+            .order_by(HostModuleStatus.host_id)
+        )
+    host_ids = list((await db.execute(candidates)).scalars().all())
+    await db.rollback()
+    return host_ids
+
+
+async def fan_out_module(module_type: str, *, redis_client=None) -> dict[str, int]:
+    """Enqueue one :func:`check_host_module` per candidate host; don't wait.
+
+    Returns ``enqueued`` and ``in_flight`` (a check of that host for this
+    module was still queued or running, so none was added).
+    """
+    from app.db import task_session  # noqa: PLC0415
+
+    if redis_client is None:
+        import redis as redis_lib  # noqa: PLC0415
+
+        from app.config import settings  # noqa: PLC0415
+
+        redis_client = redis_lib.from_url(settings.redis.url)
+
+    async with task_session() as db:
+        host_ids = await _candidates(db, module_type, module_type in HOST_GATED)
+
+    ttl = _inflight_ttl_seconds()
+    counters = {"enqueued": 0, "in_flight": 0}
+    for host_id in host_ids:
+        if not redis_client.set(_inflight_key(module_type, host_id), "1", nx=True, ex=ttl):
+            counters["in_flight"] += 1
+            continue
+        check_host_module.apply_async(args=[module_type, host_id])
+        counters["enqueued"] += 1
+    if counters["in_flight"]:
+        logger.warning(
+            "drift sweep (%s): %d host(s) still had a check queued or running; not re-enqueued",
+            module_type,
+            counters["in_flight"],
+        )
+    return counters
+
+
+async def _check_host_module_async(module_type: str, host_id: int) -> str:
+    from app.db import task_session  # noqa: PLC0415
+
+    async with task_session() as db:
+        return await check_host(db, module_type, _resolve_check(module_type), host_id)
+
+
+@celery_app.task(name="app.tasks.drift_sweep.check_host_module", queue="drift")
+def check_host_module(module_type: str, host_id: int) -> dict:
+    """One host, one module: the unit a sweep fans out to."""
+    import asyncio  # noqa: PLC0415
+
+    try:
+        outcome = asyncio.run(_check_host_module_async(module_type, host_id))
+    finally:
+        try:
+            import redis as redis_lib  # noqa: PLC0415
+
+            from app.config import settings  # noqa: PLC0415
+
+            redis_lib.from_url(settings.redis.url).delete(_inflight_key(module_type, host_id))
+        except Exception:  # noqa: BLE001 — the key expires on its own
+            logger.warning("drift: could not clear in-flight key for %s/%d", module_type, host_id)
+    return {"module": module_type, "host_id": host_id, "outcome": outcome}
+
+
+def run_sweep(module_type: str) -> dict[str, int]:
+    """Body of each module's periodic task: fan out and return."""
+    import asyncio  # noqa: PLC0415
+
+    return asyncio.run(fan_out_module(module_type))

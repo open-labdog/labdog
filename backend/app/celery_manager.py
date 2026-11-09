@@ -35,15 +35,22 @@ logger = logging.getLogger(__name__)
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 
 
-#: Which queues each worker consumes, keyed by worker name.
+#: Which queues each worker consumes, keyed by worker name, for the
+#: default ``all`` role (one container runs everything).
 #:
 #: ``work`` runs everything except the orchestrator. ``orchestrator``
 #: exists only so ``run_action`` never waits on a pool it is itself
 #: occupying — see the module docstring. Nothing else may be routed to
 #: it: an orchestrator slot held by unrelated work reintroduces exactly
 #: the starvation the split removes.
+#:
+#: ``drift`` carries the per-host drift checks the periodic sweeps fan
+#: out (``app.tasks.drift_sweep``). In the ``all`` role ``work`` consumes
+#: it too; a split deployment gives it its own ``worker-drift`` container
+#: so a sync backlog in ``long_running`` cannot delay drift, and the
+#: other way round.
 WORKER_QUEUES: dict[str, tuple[str, ...]] = {
-    "work": ("default", "long_running"),
+    "work": ("default", "long_running", "drift"),
     "orchestrator": ("orchestrator",),
 }
 
@@ -62,6 +69,58 @@ WORKER_QUEUES: dict[str, tuple[str, ...]] = {
 #: (BUG-83). Running beat as its own supervised subprocess is what puts
 #: it under the same ``poll()`` as the workers.
 BEAT = "beat"
+
+
+#: Every role ``python -m app --role`` accepts, and the Celery processes
+#: each one runs (worker name -> queues; ``None`` is the scheduler).
+#:
+#: ``all`` is the default and is exactly the single-container install:
+#: both workers plus beat, next to the API. The others split those same
+#: processes across containers that run the same image, so worker
+#: capacity scales with ``docker compose up --scale``. ``api`` runs no
+#: Celery process at all. Node names stay ``<worker>@%h``; ``%h`` is the
+#: container hostname, so replicas never collide, and the
+#: ``orchestrator@`` prefix that ``_is_orchestrator_worker`` keys off is
+#: kept.
+ROLE_PROCESSES: dict[str, dict[str, tuple[str, ...] | None]] = {
+    "all": {**WORKER_QUEUES, BEAT: None},
+    "api": {},
+    "beat": {BEAT: None},
+    "orchestrator": {"orchestrator": WORKER_QUEUES["orchestrator"]},
+    "worker": {"work": ("default", "long_running")},
+    "worker-drift": {"drift": ("drift",)},
+}
+
+#: Roles that serve HTTP. Only these may run migrations.
+API_ROLES = frozenset({"all", "api"})
+
+
+def parse_roles(value: str | None) -> tuple[str, ...]:
+    """Split a ``--role`` / ``LABDOG_ROLE`` value into known roles.
+
+    Empty means ``all``. ``all`` cannot be combined with anything, since
+    it already runs every process; two schedulers against one RedBeat
+    keyspace would double-fire every periodic task.
+    """
+    roles = tuple(dict.fromkeys(r.strip() for r in (value or "all").split(",") if r.strip()))
+    if not roles:
+        return ("all",)
+    unknown = [r for r in roles if r not in ROLE_PROCESSES]
+    if unknown:
+        raise ValueError(
+            f"unknown role(s) {', '.join(unknown)}; expected any of {', '.join(ROLE_PROCESSES)}"
+        )
+    if "all" in roles and len(roles) > 1:
+        raise ValueError("role 'all' already runs every process and cannot be combined")
+    return roles
+
+
+def processes_for(roles: tuple[str, ...]) -> dict[str, tuple[str, ...] | None]:
+    """The Celery processes a container running *roles* supervises."""
+    out: dict[str, tuple[str, ...] | None] = {}
+    for role in roles:
+        out.update(ROLE_PROCESSES[role])
+    return out
 
 
 #: The manager this process owns, or None.
@@ -93,9 +152,26 @@ class CeleryManager:
     #: published to a queue absent from this tuple is accepted by the broker
     #: and never executed. `tests/test_task_routing.py` imports this to check
     #: the other half — that every registered task routes into it.
-    QUEUES: tuple[str, ...] = tuple(q for queues in WORKER_QUEUES.values() for q in queues)
+    QUEUES: tuple[str, ...] = tuple(
+        dict.fromkeys(
+            q
+            for procs in ROLE_PROCESSES.values()
+            for queues in procs.values()
+            if queues
+            for q in queues
+        )
+    )
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        processes: dict[str, tuple[str, ...] | None] | None = None,
+        *,
+        roles: tuple[str, ...] = ("all",),
+    ) -> None:
+        #: Worker name -> queues (``None`` = beat) this manager spawns.
+        #: Defaults to the ``all`` role.
+        self._plan = dict(processes) if processes is not None else processes_for(("all",))
+        self._roles = roles
         self._processes: dict[str, subprocess.Popen[bytes]] = {}
 
     def _beat_command(self) -> list[str]:
@@ -129,11 +205,10 @@ class CeleryManager:
             "app.tasks",
             "worker",
         ]
-        concurrency = (
-            settings.celery.orchestrator_concurrency
-            if name == "orchestrator"
-            else settings.celery.concurrency
-        )
+        concurrency = {
+            "orchestrator": settings.celery.orchestrator_concurrency,
+            "drift": settings.celery.drift_concurrency,
+        }.get(name, settings.celery.concurrency)
         cmd += [
             f"--max-tasks-per-child={settings.celery.max_tasks_per_child}",
             f"--concurrency={concurrency}",
@@ -149,16 +224,22 @@ class CeleryManager:
         return cmd
 
     def _spawn(self, name: str, cmd: list[str]) -> None:
+        import os  # noqa: PLC0415
+
         logger.info("Starting Celery %r: %s", name, " ".join(cmd))
+        # The worker_ready handlers read LABDOG_ROLE to know which siblings
+        # share this container (and so this disk): see app.tasks.
+        env = {**os.environ, "LABDOG_ROLE": ",".join(self._roles)}
         self._processes[name] = subprocess.Popen(
             cmd,
             cwd=BACKEND_DIR,
             stderr=subprocess.STDOUT,
+            env=env,
         )
         logger.info("Celery %r started (pid=%d)", name, self._processes[name].pid)
 
     def start(self) -> None:
-        """Spawn one worker per entry in WORKER_QUEUES, plus the scheduler.
+        """Spawn the planned workers, plus the scheduler if the role has it.
 
         Exactly one beat: two schedulers against one RedBeat keyspace
         would double-fire every periodic task. It is a peer of the
@@ -169,9 +250,11 @@ class CeleryManager:
         """
         global _active_manager
         _active_manager = self
-        for name, queues in WORKER_QUEUES.items():
-            self._spawn(name, self._command(name, queues))
-        self._spawn(BEAT, self._beat_command())
+        for name, queues in self._plan.items():
+            if queues is None:
+                self._spawn(name, self._beat_command())
+            else:
+                self._spawn(name, self._command(name, queues))
 
     def stop(self, timeout: int = 60) -> None:
         """SIGTERM every subprocess, wait up to *timeout* seconds each, then SIGKILL.
@@ -208,6 +291,21 @@ class CeleryManager:
         ever fires. Neither is a healthy process.
         """
         return bool(self._processes) and all(p.poll() is None for p in self._processes.values())
+
+    def wait_for_exit(self, poll_seconds: float = 2.0) -> str:
+        """Block until any subprocess exits; return its name.
+
+        For the Celery-only roles, where nothing else keeps the main
+        process alive. One child dying ends the container (and lets the
+        orchestrator restart it) rather than leaving a half-alive one.
+        """
+        import time  # noqa: PLC0415
+
+        while True:
+            dead = self.dead_workers()
+            if dead:
+                return dead[0]
+            time.sleep(poll_seconds)
 
     def dead_workers(self) -> list[str]:
         """Names of subprocesses that have exited. Empty when healthy."""

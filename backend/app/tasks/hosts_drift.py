@@ -127,14 +127,14 @@ async def check_hosts_drift_for_one_host(host, hms, db) -> bool:
         return True
 
 
-@celery_app.task(name="app.tasks.hosts_drift.check_all_hosts_drift", queue="long_running")
+@celery_app.task(name="app.tasks.hosts_drift.check_all_hosts_drift", queue="drift")
 def check_all_hosts_drift():
     """Periodic task: hosts-file drift for every host with it enabled."""
-    import asyncio
 
-    from app.tasks.drift_sweep import sweep_module
+    from app.tasks.drift_sweep import run_sweep
 
-    return asyncio.run(sweep_module("hosts_file", check_hosts_drift_for_one_host))
+    # Fans out one check per host on the drift queue; see app.tasks.drift_sweep.
+    return run_sweep("hosts_file")
 
 
 # Register periodic hosts drift check via RedBeat

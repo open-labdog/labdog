@@ -145,7 +145,7 @@ async def check_resolver_drift_for_one_host(host, hms, db) -> bool:
 @celery_app.task(
     bind=True,
     name="app.tasks.resolver_drift.run_resolver_drift_check",
-    queue="long_running",
+    queue="drift",
 )
 def run_resolver_drift_check(self, host_id: int) -> dict:
     """Check DNS resolver drift on a single host via SSH, on demand."""
@@ -178,15 +178,15 @@ def run_resolver_drift_check(self, host_id: int) -> dict:
 
 @celery_app.task(
     name="app.tasks.resolver_drift.check_all_resolver_drift",
-    queue="long_running",
+    queue="drift",
 )
 def check_all_resolver_drift():
     """Periodic task: resolver drift for every host with resolver drift enabled."""
-    import asyncio
 
-    from app.tasks.drift_sweep import sweep_module
+    from app.tasks.drift_sweep import run_sweep
 
-    return asyncio.run(sweep_module("resolver", check_resolver_drift_for_one_host))
+    # Fans out one check per host on the drift queue; see app.tasks.drift_sweep.
+    return run_sweep("resolver")
 
 
 def _register_resolver_drift_schedule():

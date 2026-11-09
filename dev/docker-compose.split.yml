@@ -1,0 +1,77 @@
+# LabDog split by runtime role: same image, one container per role.
+# See docs/scaling-out.md. The default single-container install
+# (dev/docker-compose.yml, role "all") is unchanged.
+#
+#   docker compose -f dev/docker-compose.split.yml up -d --scale worker=2
+#
+# Only "api" migrates; the other roles wait until the schema is at head.
+# Exactly one "beat". Scale "worker" (syncs, actions' host runs) and
+# "worker-drift" (drift checks) independently.
+
+x-labdog: &labdog
+  image: ${LABDOG_IMAGE:-labdog:latest}
+  environment: &labdog-env
+    LABDOG_DATABASE__URL: postgresql+asyncpg://labdog:${POSTGRES_PASSWORD:-labdog_test_pw}@postgres:5432/labdog
+    LABDOG_REDIS__URL: redis://redis:6379/0
+    LABDOG_SECURITY__SECRET_KEY: "${LABDOG_SECURITY__SECRET_KEY}"
+    LABDOG_SECURITY__ENCRYPTION_KEY: "${LABDOG_SECURITY__ENCRYPTION_KEY}"
+    LABDOG_SECURITY__LABDOG_SERVER_IP: ${LABDOG_SECURITY__LABDOG_SERVER_IP:-127.0.0.1}
+    LABDOG_CELERY__CONCURRENCY: ${LABDOG_CELERY__CONCURRENCY:-4}
+    LABDOG_CELERY__DRIFT_CONCURRENCY: ${LABDOG_CELERY__DRIFT_CONCURRENCY:-4}
+    LABDOG_CELERY__ORCHESTRATOR_CONCURRENCY: ${LABDOG_CELERY__ORCHESTRATOR_CONCURRENCY:-4}
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    # Budget about six connections per worker slot: see docs/scaling-out.md.
+    command: ["postgres", "-c", "max_connections=${POSTGRES_MAX_CONNECTIONS:-200}"]
+    environment:
+      POSTGRES_USER: labdog
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-labdog_test_pw}
+      POSTGRES_DB: labdog
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U labdog"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:8-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  api:
+    <<: *labdog
+    environment: { <<: *labdog-env, LABDOG_ROLE: api }
+    ports:
+      - "8000:8000"
+
+  beat:
+    <<: *labdog
+    environment: { <<: *labdog-env, LABDOG_ROLE: beat }
+
+  orchestrator:
+    <<: *labdog
+    environment: { <<: *labdog-env, LABDOG_ROLE: orchestrator }
+
+  worker:
+    <<: *labdog
+    environment: { <<: *labdog-env, LABDOG_ROLE: worker }
+
+  worker-drift:
+    <<: *labdog
+    environment: { <<: *labdog-env, LABDOG_ROLE: worker-drift }
+
+volumes:
+  postgres_data:

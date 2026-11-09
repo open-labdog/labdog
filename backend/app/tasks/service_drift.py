@@ -96,14 +96,14 @@ async def check_service_drift_for_one_host(host, hms, db) -> bool:
         return True
 
 
-@celery_app.task(name="app.tasks.service_drift.check_all_service_drift", queue="long_running")
+@celery_app.task(name="app.tasks.service_drift.check_all_service_drift", queue="drift")
 def check_all_service_drift():
     """Periodic task: service drift for every host with service drift enabled."""
-    import asyncio
 
-    from app.tasks.drift_sweep import sweep_module
+    from app.tasks.drift_sweep import run_sweep
 
-    return asyncio.run(sweep_module("service", check_service_drift_for_one_host))
+    # Fans out one check per host on the drift queue; see app.tasks.drift_sweep.
+    return run_sweep("service")
 
 
 # Register periodic service drift check via RedBeat

@@ -108,14 +108,14 @@ async def check_user_drift_for_one_host(host, hms, db) -> bool:
         return True
 
 
-@celery_app.task(name="app.tasks.user_drift.check_all_user_drift", queue="long_running")
+@celery_app.task(name="app.tasks.user_drift.check_all_user_drift", queue="drift")
 def check_all_user_drift():
     """Periodic task: user/group drift for every host with it enabled."""
-    import asyncio
 
-    from app.tasks.drift_sweep import sweep_module
+    from app.tasks.drift_sweep import run_sweep
 
-    return asyncio.run(sweep_module("linux_user", check_user_drift_for_one_host))
+    # Fans out one check per host on the drift queue; see app.tasks.drift_sweep.
+    return run_sweep("linux_user")
 
 
 user_drift_task = check_all_user_drift

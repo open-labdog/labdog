@@ -114,14 +114,14 @@ async def check_cron_drift_for_one_host(host, hms, db) -> bool:
         return True
 
 
-@celery_app.task(name="app.tasks.cron_drift.check_all_cron_drift", queue="long_running")
+@celery_app.task(name="app.tasks.cron_drift.check_all_cron_drift", queue="drift")
 def check_all_cron_drift():
     """Periodic task: cron drift for every host with cron drift enabled."""
-    import asyncio
 
-    from app.tasks.drift_sweep import sweep_module
+    from app.tasks.drift_sweep import run_sweep
 
-    return asyncio.run(sweep_module("cron", check_cron_drift_for_one_host))
+    # Fans out one check per host on the drift queue; see app.tasks.drift_sweep.
+    return run_sweep("cron")
 
 
 cron_drift_task = check_all_cron_drift

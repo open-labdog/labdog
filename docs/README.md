@@ -68,6 +68,7 @@ summary see the [top-level README](https://github.com/open-labdog/labdog/blob/ma
 | [encryption-key-rotation.md](./encryption-key-rotation.md) | When and how to rotate `security.encryption_key`: pre-rotation checklist, step-by-step procedure, rollback, and failure modes. |
 | [upgrade.md](./upgrade.md) | Upgrade and rollback procedure for new releases. |
 | [production-deploy.md](./production-deploy.md) | Docker Compose production reference (TLS, volumes, secrets). |
+| [scaling-out.md](./scaling-out.md) | Running the API, scheduler and workers as separate containers. |
 | [security-hardening.md](./security-hardening.md) | Reverse-proxy TLS, cookie/CSP/rate-limit configuration, restricting `/metrics`, DB security, superuser policy. |
 | [metrics-export.md](./metrics-export.md) | Exposing LabDog's own fleet state and health for Prometheus to scrape — enabling the opt-in `/metrics` endpoint, full metric reference, counter semantics, cardinality, and the shipped Grafana dashboard + alert rules. |
 | [trivy-rationale.md](./trivy-rationale.md) | Per-CVE rationale for entries in `.trivyignore`. |

@@ -570,8 +570,11 @@ def _redis():
 
 
 def _batches(host_run_ids: list[int], parallelism: int) -> list[list[int]]:
-    """Split the hosts into batches: ``parallelism <= 0`` means all at once."""
-    size = len(host_run_ids) if parallelism <= 0 else max(1, parallelism)
+    """Split the hosts into batches: ``parallelism <= 0`` means all at once,
+    up to ``celery.all_at_once_cap`` (see ``action_timeouts.batch_size``)."""
+    from app.tasks.action_timeouts import batch_size  # noqa: PLC0415
+
+    size = batch_size(len(host_run_ids), parallelism)
     return [host_run_ids[i : i + size] for i in range(0, len(host_run_ids), size)]
 
 
@@ -582,11 +585,12 @@ def _resume_batches(in_flight: list[int], to_run: list[int], parallelism: int) -
     has more hosts running at once than ``parallelism`` allows; the first
     batch fills its remaining room from the queued hosts.
     """
-    if parallelism <= 0:
-        return [in_flight + to_run] if in_flight or to_run else []
-    room = max(0, parallelism - len(in_flight))
+    from app.tasks.action_timeouts import batch_size  # noqa: PLC0415
+
+    size = batch_size(len(in_flight) + len(to_run), parallelism)
+    room = max(0, size - len(in_flight))
     first = in_flight + to_run[:room]
-    return ([first] if first else []) + _batches(to_run[room:], parallelism)
+    return ([first] if first else []) + _batches(to_run[room:], size)
 
 
 def _batch_wait_seconds(child_soft_limit: int) -> int:

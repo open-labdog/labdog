@@ -146,8 +146,11 @@ EXPOSE 8000
 # while nothing executed a single task (BUG-72). start-period covers
 # startup migrations and the worker boot; a 503 names the failing
 # component in its body.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-    CMD python -c "import urllib.request, sys; r = urllib.request.urlopen('http://localhost:8000/health/ready', timeout=4); sys.exit(0 if r.status == 200 else 1)" || exit 1
+# app.healthcheck does exactly that for the default "all" and the "api"
+# role, and the matching check for the split worker / beat roles
+# (LABDOG_ROLE), which serve no HTTP.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python -m app.healthcheck || exit 1
 
 # BUG-55: an init as PID 1, so orphaned grandchildren get reaped.
 #

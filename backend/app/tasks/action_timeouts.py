@@ -144,12 +144,30 @@ def per_host_deadline_seconds(action_key: str) -> int:
     return effective_playbook_timeout(floor) + verify + ENVELOPE_GRACE_SECONDS + lock_wait
 
 
+def batch_size(host_count: int, parallelism: int) -> int:
+    """Hosts per batch for a run with *parallelism* over *host_count* hosts.
+
+    ``parallelism <= 0`` means "all at once", capped at
+    ``celery.all_at_once_cap`` (``0`` = no cap): one uncapped run on 300
+    hosts puts 300 host runs at the head of ``long_running`` and
+    everything scheduled after it waits behind them.
+    """
+    from app.config import settings  # noqa: PLC0415
+
+    hosts = max(1, host_count)
+    if parallelism > 0:
+        return parallelism
+    cap = settings.celery.all_at_once_cap
+    return min(hosts, cap) if cap > 0 else hosts
+
+
 def run_deadline_seconds(action_key: str, host_count: int, parallelism: int) -> int:
     """Upper bound on a whole ActionRun: sequential batches of
     ``parallelism`` hosts, each bounded by the per-host deadline,
-    plus slack. ``parallelism <= 0`` means "all at once" (one batch).
+    plus slack. ``parallelism <= 0`` means "all at once" (one batch,
+    or batches of ``celery.all_at_once_cap``; see :func:`batch_size`).
     """
     hosts = max(1, host_count)
-    batch_size = hosts if parallelism <= 0 else max(1, parallelism)
-    batches = math.ceil(hosts / batch_size)
+    batch_size_ = batch_size(hosts, parallelism)
+    batches = math.ceil(hosts / batch_size_)
     return batches * per_host_deadline_seconds(action_key) + RUN_DEADLINE_SLACK_SECONDS
