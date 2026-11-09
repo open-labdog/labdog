@@ -29,7 +29,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.resolver.schemas import ALLOWED_OPTIONS, _validate_dns_name, _validate_ip
+from app.resolver.schemas import ResolverConfigCreate
 
 _USER_RE = re.compile(r"^[a-zA-Z0-9_][a-zA-Z0-9_.-]*\Z")
 
@@ -113,59 +113,18 @@ class HostsEntryYAML(BaseModel):
         return self
 
 
-class ResolverYAML(BaseModel):
+class ResolverYAML(ResolverConfigCreate):
     """YAML model for DNS resolver configuration.
 
-    Mirrors :class:`app.resolver.schemas.ResolverConfigCreate` exactly —
-    same fields, same validators.  Validator helpers are imported from that
-    module to avoid duplicating logic.
+    Is :class:`app.resolver.schemas.ResolverConfigCreate` — same fields,
+    same validators — under its own name, so validation errors still say
+    ``ResolverYAML``.
 
     Missing-section semantics for this module are **leave-alone**: if the
     ``resolver:`` key is absent or ``null`` in the YAML file the current DB
     state is preserved unchanged.  Explicit deletion requires the UI /
     DELETE endpoint.
     """
-
-    nameservers: list[str]
-    search_domains: list[str] = []
-    options: dict[str, int | str] = {}
-    resolver_type: Literal["resolv_conf", "systemd_resolved", "networkmanager"] = "resolv_conf"
-    dns_over_tls: bool = False
-
-    @field_validator("nameservers")
-    @classmethod
-    def validate_nameservers(cls, v: list[str]) -> list[str]:
-        if not v:
-            raise ValueError("At least one nameserver is required")
-        if len(v) > 3:
-            raise ValueError("Maximum 3 nameservers allowed (resolv.conf limit)")
-        return [_validate_ip(ns) for ns in v]
-
-    @field_validator("search_domains")
-    @classmethod
-    def validate_search_domains(cls, v: list[str]) -> list[str]:
-        if len(v) > 6:
-            raise ValueError("Maximum 6 search domains allowed (resolv.conf limit)")
-        return [_validate_dns_name(d) for d in v]
-
-    @field_validator("options")
-    @classmethod
-    def validate_options(cls, v: dict[str, int | str]) -> dict[str, int | str]:
-        for key, val in v.items():
-            if key not in ALLOWED_OPTIONS:
-                raise ValueError(
-                    f"Unknown option '{key}'. Allowed: {', '.join(sorted(ALLOWED_OPTIONS))}"
-                )
-            if key in ("ndots", "timeout", "attempts"):
-                if not isinstance(val, int) or val < 0 or val > 15:
-                    raise ValueError(f"Option '{key}' must be int 0-15, got {val}")
-        return v
-
-    @model_validator(mode="after")
-    def check_dns_over_tls(self) -> "ResolverYAML":
-        if self.dns_over_tls and self.resolver_type != "systemd_resolved":
-            self.dns_over_tls = False  # silently ignore for non-systemd-resolved
-        return self
 
 
 class CronJobYAML(BaseModel):
