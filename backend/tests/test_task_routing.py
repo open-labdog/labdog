@@ -17,7 +17,9 @@ These tests import both halves of the contract rather than restating
 either, so they keep holding when a queue is renamed or a task is added.
 """
 
+import ast
 import fnmatch
+from pathlib import Path
 
 import pytest
 
@@ -89,6 +91,8 @@ def test_default_queue_is_consumed():
         "app.tasks.audit_retention.prune_old_ssh_transcripts",
         "app.tasks.action_sweeper.sweep_stale_action_runs",
         "app.tasks.sync_sweeper.sweep_stale_syncs",
+        # BUG-127: dispatched by name, never imported by a worker.
+        "app.tasks.action_group.run_action_group",
     ],
 )
 def test_previously_stranded_tasks_are_registered_and_routed(task_name):
@@ -101,3 +105,51 @@ def test_previously_stranded_tasks_are_registered_and_routed(task_name):
     """
     assert task_name in celery_app.tasks, f"{task_name} is not registered on the worker"
     assert _queue_for(task_name) in CeleryManager.QUEUES
+
+
+def _send_task_literals() -> set[str]:
+    """Every task name passed to ``send_task`` as a string literal in ``app/``."""
+    app_dir = Path(__file__).resolve().parents[1] / "app"
+    names: set[str] = set()
+    for path in app_dir.rglob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text(), filename=str(path))):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "send_task"
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
+            ):
+                names.add(node.args[0].value)
+    return names
+
+
+def _orchestrator_dispatch_names() -> set[str]:
+    """The task names the orchestrator picks from its dispatch tables."""
+    from app.tasks import action_orchestrator as orch
+
+    return {
+        orch._DEFAULT_PER_HOST_TASK,
+        orch._DEFAULT_GROUP_TASK,
+        *orch.PER_HOST_TASK_FOR_BUILTIN.values(),
+        *orch.GROUP_TASK_FOR_BUILTIN.values(),
+    }
+
+
+def test_every_task_sent_by_name_is_registered():
+    """``send_task`` by name skips the import that would register the task.
+
+    A task sent by name whose module is not in ``conf.include`` reaches
+    the worker as "Received unregistered task" and is dropped, so the
+    run it belonged to never starts (BUG-127: every group-dispatch
+    action). The routing sweep above cannot see it, because it only
+    checks tasks that are already registered.
+    """
+    names = _send_task_literals() | _orchestrator_dispatch_names()
+    assert names, "found no send_task calls; the AST scan is broken"
+    missing = sorted(n for n in names if n not in celery_app.tasks)
+    assert not missing, (
+        f"These tasks are sent by name but no worker registers them: {missing}. "
+        "Add their modules to celery_app.conf.include in app/tasks/__init__.py."
+    )
