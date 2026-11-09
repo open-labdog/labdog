@@ -131,6 +131,21 @@ async def create_run(
     db: AsyncSession = Depends(get_db),
 ):
     """Create an action run and dispatch the Celery task."""
+    action = _runnable_action(body)
+    stored_parameters = await _stored_parameters(db, body, action)
+    await _require_target(db, body)
+    await _refuse_duplicate_run(db, body)
+    run_id = await _insert_run(db, body, action, stored_parameters, user)
+    _dispatch_run(run_id)
+
+    # Reload to return fresh state (host_runs will be empty at this point)
+    run = await db.get(ActionRun, run_id)
+    return ActionRunOut.model_validate(run)
+
+
+def _runnable_action(body: RunCreateBody):
+    """The registered action the request names, refused when it cannot run
+    against the request's target."""
     # Exactly one of host_id / group_id must be set
     if (body.host_id is None) == (body.group_id is None):
         raise HTTPException(
@@ -183,7 +198,12 @@ async def create_run(
             status_code=422,
             detail="This action does not support group-scoped runs.",
         )
+    return action
 
+
+async def _stored_parameters(db: AsyncSession, body: RunCreateBody, action) -> dict:
+    """The run's ``parameters``: the validated submission plus the
+    dry-run flag and metrics destinations, which travel with them."""
     # Validate parameters against the action's manifest schema. Catches
     # missing-required, type-mismatch, and unknown-key errors uniformly.
     #
@@ -221,8 +241,11 @@ async def create_run(
                     detail=f"No {kind} destination with id {instance_id}.",
                 )
         stored_parameters[METRICS_DESTINATIONS_PARAM] = dict(body.metrics_destinations)
+    return stored_parameters
 
-    # Validate that the target host/group actually exists
+
+async def _require_target(db: AsyncSession, body: RunCreateBody) -> None:
+    """404 unless the target host/group actually exists."""
     if body.host_id is not None:
         host_exists = await db.scalar(select(Host.id).where(Host.id == body.host_id))
         if host_exists is None:
@@ -232,11 +255,13 @@ async def create_run(
         if group_exists is None:
             raise HTTPException(status_code=404, detail="Group not found")
 
-    # BUG-139: one run of an action per target at a time. The advisory
-    # lock only serialises requests (it is released at this request's
-    # commit), so the check for a run already queued, pending or running
-    # happens under it every time, not only when the lock is busy. The key
-    # names the target kind, so host 5 and group 5 do not share it.
+
+async def _refuse_duplicate_run(db: AsyncSession, body: RunCreateBody) -> None:
+    """BUG-139: one run of an action per target at a time. The advisory
+    lock only serialises requests (it is released at this request's
+    commit), so the check for a run already queued, pending or running
+    happens under it every time, not only when the lock is busy. The key
+    names the target kind, so host 5 and group 5 do not share it."""
     if body.host_id is not None:
         lock_key = f"actions.{body.action_key}.host.{body.host_id}"
         same_target = ActionRun.host_id == body.host_id
@@ -263,7 +288,11 @@ async def create_run(
             },
         )
 
-    # Create the ActionRun record
+
+async def _insert_run(
+    db: AsyncSession, body: RunCreateBody, action, stored_parameters: dict, user: User
+) -> int:
+    """Store the ``queued`` ActionRun and commit; returns its id."""
     target_kind, target_label = await describe_target(
         db, host_id=body.host_id, group_id=body.group_id
     )
@@ -285,18 +314,18 @@ async def create_run(
 
     run_id = run.id
     await db.commit()
+    return run_id
 
-    # Dispatch Celery task
+
+def _dispatch_run(run_id: int) -> None:
+    """Send the run to its orchestrator. A failure is logged, not raised:
+    the run is stored, and the sweeper fails one that is never picked up."""
     try:
         from app.tasks import celery_app
 
         celery_app.send_task("app.tasks.action_orchestrator.run_action", args=[run_id])
     except Exception as exc:
         logger.warning("Failed to dispatch actions.run task for run %d: %s", run_id, exc)
-
-    # Reload to return fresh state (host_runs will be empty at this point)
-    run = await db.get(ActionRun, run_id)
-    return ActionRunOut.model_validate(run)
 
 
 # ---------------------------------------------------------------------------
