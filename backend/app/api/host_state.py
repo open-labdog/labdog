@@ -842,9 +842,6 @@ async def _detect_firewall_backend(
     the reason the backend was chosen, any competing-store warning, and the
     firewalld/ufw wrapper notices (those also mark the wrapper for disabling).
     """
-    from app.packages.models import PackageRule, PackageState
-    from app.services.models import ServiceRule, ServiceState
-
     backend: str | None = None
     messages: list[str] = []
 
@@ -860,108 +857,10 @@ async def _detect_firewall_backend(
                 client_keys=[key],
             )
         async with _connect_ctx as conn:
-            # --- Capability + footprint probes (see module-level docs) ---
-            nft_present = await _probe_ok(conn, _PROBE_NFT_PRESENT)
-            iptables_present = await _probe_ok(conn, _PROBE_IPT_PRESENT)
-
-            # A container runtime that hardcodes iptables forces the iptables
-            # backend (step 3). Only meaningful when iptables is installed.
-            async def _container_forces_iptables() -> str | None:
-                if not iptables_present:
-                    return None
-                # Docker: defaults to iptables; its nftables support is
-                # experimental (v29+).
-                if await _probe_ok(
-                    conn,
-                    "test -S /run/docker.sock || systemctl is-active --quiet docker 2>/dev/null",
-                ):
-                    return "Docker detected; using iptables backend (Docker defaults to iptables)."
-                # kube-proxy in iptables mode manages KUBE-* chains.
-                if await _probe_ok(
-                    conn,
-                    "systemctl is-active --quiet kubelet 2>/dev/null && "
-                    "iptables -S 2>/dev/null | grep -q KUBE-",
-                ):
-                    return (
-                        "Kubernetes kube-proxy (iptables mode) detected; using iptables "
-                        "backend to avoid rule conflicts."
-                    )
-                # nerdctl with rootful CNI networking; CNI plugins default to iptables.
-                if await _probe_ok(
-                    conn,
-                    "command -v nerdctl >/dev/null 2>&1 && test -d /etc/cni/net.d && "
-                    "ls /etc/cni/net.d/nerdctl-*.conflist >/dev/null 2>&1",
-                ):
-                    return (
-                        "nerdctl with CNI networking detected; using iptables backend "
-                        "(CNI plugins default to iptables)."
-                    )
-                return None
-
-            # --- Decision ladder (first match wins) ---
-            if nft_present and not iptables_present:
-                backend = "nftables"
-                messages.append("Only nftables is installed; using the nftables backend.")
-            elif iptables_present and not nft_present:
-                backend = "iptables"
-                messages.append("Only iptables is installed; using the iptables backend.")
-            elif nft_present and iptables_present:
-                nft_labdog = await _probe_ok(conn, _PROBE_NFT_LABDOG)
-                ipt_labdog = await _probe_ok(conn, _PROBE_IPT_LABDOG)
-
-                # 2. Marker stickiness — keep whichever backend LabDog already manages.
-                if nft_labdog and not ipt_labdog:
-                    backend = "nftables"
-                    messages.append(
-                        "Both firewalls installed; keeping nftables (an existing "
-                        "LabDog-managed nftables ruleset was found)."
-                    )
-                elif ipt_labdog and not nft_labdog:
-                    backend = "iptables"
-                    messages.append(
-                        "Both firewalls installed; keeping iptables (an existing "
-                        "LabDog-managed iptables ruleset was found)."
-                    )
-                else:
-                    # Either both carry a LabDog ruleset (competing store — warn and
-                    # pick via the tiebreakers) or neither does (a fresh host).
-                    if nft_labdog and ipt_labdog:
-                        messages.append(
-                            "LabDog-managed rules found in BOTH nftables and iptables — "
-                            "the inactive backend's copy will be removed on the next sync."
-                        )
-                    container_reason = await _container_forces_iptables()
-                    if container_reason:
-                        # 3. Container-runtime constraint (hard).
-                        backend = "iptables"
-                        messages.append(container_reason)
-                    else:
-                        # 4. Active-ruleset tiebreaker, else 5. default nftables.
-                        nft_active = await _probe_ok(conn, _PROBE_NFT_ACTIVE)
-                        ipt_active = await _probe_ok(conn, _PROBE_IPT_ACTIVE)
-                        if nft_active and not ipt_active:
-                            backend = "nftables"
-                            messages.append(
-                                "Both firewalls installed; using nftables "
-                                "(an active nftables ruleset was found)."
-                            )
-                        elif ipt_active and not nft_active:
-                            backend = "iptables"
-                            messages.append(
-                                "Both firewalls installed; using iptables "
-                                "(an active iptables ruleset was found)."
-                            )
-                        else:
-                            backend = "nftables"
-                            messages.append(
-                                "Both firewalls installed; defaulting to the nftables backend."
-                            )
+            backend, messages = await _choose_firewall_backend(conn)
 
             # Check for firewalld wrapper
-            r = await conn.run(
-                "command -v firewall-cmd || test -x /usr/sbin/firewall-cmd", check=False
-            )
-            if r.exit_status == 0:
+            if await _probe_ok(conn, "command -v firewall-cmd || test -x /usr/sbin/firewall-cmd"):
                 if backend is None:
                     # firewalld uses nft under the hood
                     backend = "nftables"
@@ -969,82 +868,17 @@ async def _detect_firewall_backend(
                     "firewalld detected but LabDog manages nftables directly. "
                     "firewalld has been marked for disabling."
                 )
-                # Auto-add package rule to remove firewalld
-                existing_pkg = await db.execute(
-                    select(PackageRule).where(
-                        PackageRule.host_id == host_id,
-                        PackageRule.package_name == "firewalld",
-                    )
-                )
-                if not existing_pkg.scalar_one_or_none():
-                    db.add(
-                        PackageRule(
-                            host_id=host_id,
-                            package_name="firewalld",
-                            state=PackageState.absent,
-                            comment="Auto-disabled by LabDog: manages nftables directly",
-                        )
-                    )
-                # Auto-add service rule to stop firewalld
-                existing_svc = await db.execute(
-                    select(ServiceRule).where(
-                        ServiceRule.host_id == host_id,
-                        ServiceRule.service_name == "firewalld",
-                    )
-                )
-                if not existing_svc.scalar_one_or_none():
-                    db.add(
-                        ServiceRule(
-                            host_id=host_id,
-                            service_name="firewalld",
-                            state=ServiceState.stopped,
-                            enabled=False,
-                            comment="Auto-disabled by LabDog: manages nftables directly",
-                        )
-                    )
+                await _mark_wrapper_for_disabling(db, host_id, "firewalld", manages="nftables")
 
             # Check for ufw wrapper
-            r = await conn.run("command -v ufw || test -x /usr/sbin/ufw", check=False)
-            if r.exit_status == 0:
+            if await _probe_ok(conn, "command -v ufw || test -x /usr/sbin/ufw"):
                 messages.append(
                     "ufw detected but LabDog manages iptables directly. "
                     "ufw has been marked for disabling."
                 )
                 if backend is None:
                     backend = "iptables"
-                # Auto-add package rule to remove ufw
-                existing_pkg = await db.execute(
-                    select(PackageRule).where(
-                        PackageRule.host_id == host_id,
-                        PackageRule.package_name == "ufw",
-                    )
-                )
-                if not existing_pkg.scalar_one_or_none():
-                    db.add(
-                        PackageRule(
-                            host_id=host_id,
-                            package_name="ufw",
-                            state=PackageState.absent,
-                            comment="Auto-disabled by LabDog: manages iptables directly",
-                        )
-                    )
-                # Auto-add service rule to stop ufw
-                existing_svc = await db.execute(
-                    select(ServiceRule).where(
-                        ServiceRule.host_id == host_id,
-                        ServiceRule.service_name == "ufw",
-                    )
-                )
-                if not existing_svc.scalar_one_or_none():
-                    db.add(
-                        ServiceRule(
-                            host_id=host_id,
-                            service_name="ufw",
-                            state=ServiceState.stopped,
-                            enabled=False,
-                            comment="Auto-disabled by LabDog: manages iptables directly",
-                        )
-                    )
+                await _mark_wrapper_for_disabling(db, host_id, "ufw", manages="iptables")
 
             if messages:
                 await db.flush()
@@ -1053,6 +887,157 @@ async def _detect_firewall_backend(
         logger.exception("Firewall backend detection failed for host %s", host_ip)
         return None, ["Detection failed — check server logs"]
     return backend, messages
+
+
+async def _choose_firewall_backend(conn) -> tuple[str | None, list[str]]:
+    """Run the decision ladder (first match wins). Returns the backend, or
+    None when neither is installed, and the messages explaining the choice."""
+    # --- Capability + footprint probes (see module-level docs) ---
+    nft_present = await _probe_ok(conn, _PROBE_NFT_PRESENT)
+    iptables_present = await _probe_ok(conn, _PROBE_IPT_PRESENT)
+
+    # 1. Only one backend installed.
+    if nft_present and not iptables_present:
+        return "nftables", ["Only nftables is installed; using the nftables backend."]
+    if iptables_present and not nft_present:
+        return "iptables", ["Only iptables is installed; using the iptables backend."]
+    if nft_present and iptables_present:
+        return await _choose_between_installed_backends(conn)
+    return None, []
+
+
+async def _choose_between_installed_backends(conn) -> tuple[str, list[str]]:
+    """Ladder steps 2–5, for a host with both nftables and iptables."""
+    nft_labdog = await _probe_ok(conn, _PROBE_NFT_LABDOG)
+    ipt_labdog = await _probe_ok(conn, _PROBE_IPT_LABDOG)
+
+    # 2. Marker stickiness — keep whichever backend LabDog already manages.
+    if nft_labdog and not ipt_labdog:
+        return "nftables", [
+            "Both firewalls installed; keeping nftables (an existing "
+            "LabDog-managed nftables ruleset was found)."
+        ]
+    if ipt_labdog and not nft_labdog:
+        return "iptables", [
+            "Both firewalls installed; keeping iptables (an existing "
+            "LabDog-managed iptables ruleset was found)."
+        ]
+
+    # Either both carry a LabDog ruleset (competing store — warn and
+    # pick via the tiebreakers) or neither does (a fresh host).
+    messages: list[str] = []
+    if nft_labdog and ipt_labdog:
+        messages.append(
+            "LabDog-managed rules found in BOTH nftables and iptables — "
+            "the inactive backend's copy will be removed on the next sync."
+        )
+    container_reason = await _container_forces_iptables(conn)
+    if container_reason:
+        # 3. Container-runtime constraint (hard).
+        messages.append(container_reason)
+        return "iptables", messages
+
+    # 4. Active-ruleset tiebreaker, else 5. default nftables.
+    backend, reason = await _choose_by_active_ruleset(conn)
+    messages.append(reason)
+    return backend, messages
+
+
+async def _container_forces_iptables(conn) -> str | None:
+    """A container runtime that hardcodes iptables forces the iptables
+    backend (step 3). Returns the reason, or None.
+
+    Only called with iptables installed (both backends are), which is the
+    only case where the constraint means anything.
+    """
+    # Docker: defaults to iptables; its nftables support is
+    # experimental (v29+).
+    if await _probe_ok(
+        conn,
+        "test -S /run/docker.sock || systemctl is-active --quiet docker 2>/dev/null",
+    ):
+        return "Docker detected; using iptables backend (Docker defaults to iptables)."
+    # kube-proxy in iptables mode manages KUBE-* chains.
+    if await _probe_ok(
+        conn,
+        "systemctl is-active --quiet kubelet 2>/dev/null && "
+        "iptables -S 2>/dev/null | grep -q KUBE-",
+    ):
+        return (
+            "Kubernetes kube-proxy (iptables mode) detected; using iptables "
+            "backend to avoid rule conflicts."
+        )
+    # nerdctl with rootful CNI networking; CNI plugins default to iptables.
+    if await _probe_ok(
+        conn,
+        "command -v nerdctl >/dev/null 2>&1 && test -d /etc/cni/net.d && "
+        "ls /etc/cni/net.d/nerdctl-*.conflist >/dev/null 2>&1",
+    ):
+        return (
+            "nerdctl with CNI networking detected; using iptables backend "
+            "(CNI plugins default to iptables)."
+        )
+    return None
+
+
+async def _choose_by_active_ruleset(conn) -> tuple[str, str]:
+    """Steps 4 and 5: the backend with real input filtering wins, else
+    nftables. Returns the backend and the message saying why."""
+    nft_active = await _probe_ok(conn, _PROBE_NFT_ACTIVE)
+    ipt_active = await _probe_ok(conn, _PROBE_IPT_ACTIVE)
+    if nft_active and not ipt_active:
+        return "nftables", (
+            "Both firewalls installed; using nftables (an active nftables ruleset was found)."
+        )
+    if ipt_active and not nft_active:
+        return "iptables", (
+            "Both firewalls installed; using iptables (an active iptables ruleset was found)."
+        )
+    return "nftables", "Both firewalls installed; defaulting to the nftables backend."
+
+
+async def _mark_wrapper_for_disabling(
+    db: AsyncSession, host_id: int, wrapper: str, *, manages: str
+) -> None:
+    """Add host-level rules that remove the ``wrapper`` package and stop its
+    service, unless the host already has a rule for either."""
+    from app.packages.models import PackageRule, PackageState
+    from app.services.models import ServiceRule, ServiceState
+
+    comment = f"Auto-disabled by LabDog: manages {manages} directly"
+    # Auto-add package rule to remove the wrapper
+    existing_pkg = await db.execute(
+        select(PackageRule).where(
+            PackageRule.host_id == host_id,
+            PackageRule.package_name == wrapper,
+        )
+    )
+    if not existing_pkg.scalar_one_or_none():
+        db.add(
+            PackageRule(
+                host_id=host_id,
+                package_name=wrapper,
+                state=PackageState.absent,
+                comment=comment,
+            )
+        )
+    # Auto-add service rule to stop the wrapper
+    existing_svc = await db.execute(
+        select(ServiceRule).where(
+            ServiceRule.host_id == host_id,
+            ServiceRule.service_name == wrapper,
+        )
+    )
+    if not existing_svc.scalar_one_or_none():
+        db.add(
+            ServiceRule(
+                host_id=host_id,
+                service_name=wrapper,
+                state=ServiceState.stopped,
+                enabled=False,
+                comment=comment,
+            )
+        )
 
 
 async def _get_or_create_hms(db: AsyncSession, host_id: int, module_type: str) -> HostModuleStatus:
