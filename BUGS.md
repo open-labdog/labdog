@@ -145,31 +145,6 @@ Checked and not filed:
       Severity Medium: package changes are the most common sync, and
       the cost grows with each package an operator adds.
 
-- [ ] **BUG-159** `backend/app/ssh_utils.py:178` — each module collector
-      opens its own SSH connection, so one preview of a host makes eight
-      handshakes
-
-      Symptom: an asyncssh connect and authenticate took 89.7 ms on
-      loopback; a command on an open connection took 3.3 ms.
-      *Measured*. `plan_host_modules` (`app/sync/plan.py:362`) calls the
-      collectors one after another, and each enters `ssh_connect_host`,
-      which also writes a temporary `known_hosts` file per connect: one
-      per module, two for users and groups (`app/sync/plan.py:258`,
-      `:259`). Collect-state for packages connects twice as well
-      (`app/api/host_state.py:731`, `:732`). For a host that does not
-      answer, every one of them waits out the connect timeout in turn.
-
-      Fix direction: open one connection per host for a preview or a
-      collect, and pass it to the collectors (each takes an optional
-      `conn` and opens its own only when given none, so the drift
-      sweeps keep working unchanged). With one connection the modules
-      can also be collected with `asyncio.gather`, as asyncssh
-      multiplexes channels.
-
-      Severity Medium: about 0.7 s of handshakes per host preview before
-      any latency, and 80 s for an unreachable host instead of 10, which
-      BUG-153 then multiplies by the fleet.
-
 - [ ] **BUG-160** `backend/app/metrics/aggregates.py:393` — each metrics
       scrape scans `drift_samples` three times and `sync_jobs` twice
 

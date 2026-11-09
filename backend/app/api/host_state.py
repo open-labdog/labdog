@@ -3,6 +3,7 @@
 import logging
 import shlex
 from collections.abc import Iterable
+from contextlib import AsyncExitStack, nullcontext
 from datetime import UTC, datetime
 from functools import partial
 
@@ -231,16 +232,21 @@ async def collect_module_state(
     # firewall competing-store warning; recomputed each collect, never persisted.
     warnings_by_module: dict[str, list[str]] = {}
 
-    # Connectivity check: probe SSH before running any collectors.
+    # One connection for the probe and every collector (BUG-159): each
+    # collector used to open its own, eight handshakes for a full collect.
     # If the host is unreachable, mark ALL modules and return immediately.
-    try:
-        await _probe_host(host, db, private_pem, collectors, warnings_by_module)
-    except HostKeyMismatchError:
-        raise
-    except (TimeoutError, OSError, asyncssh.Error) as e:
-        return await _mark_unreachable(db, host, collectors, now, e), []
+    async with AsyncExitStack() as stack:
+        try:
+            conn = await stack.enter_async_context(
+                ssh_connect_host(host, db, client_keys=[asyncssh.import_private_key(private_pem)])
+            )
+            await _probe_host(host, conn, collectors, warnings_by_module)
+        except HostKeyMismatchError:
+            raise
+        except (TimeoutError, OSError, asyncssh.Error) as e:
+            return await _mark_unreachable(db, host, collectors, now, e), []
 
-    await _run_collectors(db, host_id, collectors, now)
+        await _run_collectors(db, host_id, collectors, now, conn)
 
     # Run inline drift checks on successfully collected modules
     await _run_inline_drift(host, db, collectors.keys())
@@ -276,32 +282,25 @@ async def _host_and_key(db: AsyncSession, host_id: int) -> tuple[Host, SSHKey]:
 
 async def _probe_host(
     host: Host,
-    db: AsyncSession,
-    private_pem: str,
+    probe,
     collectors: dict,
     warnings_by_module: dict[str, list[str]],
 ) -> None:
-    """Connect once before any collector runs: record the source address
-    LabDog reaches the host from, and the firewall competing-store notice.
-    Raises what the connection raises."""
-    imported_key = asyncssh.import_private_key(private_pem)
-    async with ssh_connect_host(
-        host,
-        db,
-        client_keys=[imported_key],
-    ) as probe:
-        host.labdog_source_ip = await get_source_ip(probe)
-        # While we hold a connection, check whether LabDog-managed rules
-        # linger in the backend we are NOT managing (dual-stack hosts). Skip
-        # when the backend is still unknown — detection runs later in the
-        # firewall collector and emits its own competing-store notice.
-        if "firewall" in collectors:
-            active_backend = getattr(host.firewall_backend, "value", host.firewall_backend)
-            if str(active_backend) in ("nftables", "iptables"):
-                competing = await _probe_competing_firewall_store(probe, str(active_backend))
-                if competing:
-                    warnings_by_module["firewall"] = [competing]
-                    logger.info("Host %d: %s", host.id, competing)
+    """Before any collector runs: record the source address LabDog reaches
+    the host from, and the firewall competing-store notice. Raises what the
+    connection raises."""
+    host.labdog_source_ip = await get_source_ip(probe)
+    # Check whether LabDog-managed rules linger in the backend we are NOT
+    # managing (dual-stack hosts). Skip when the backend is still unknown —
+    # detection runs later in the firewall collector and emits its own
+    # competing-store notice.
+    if "firewall" in collectors:
+        active_backend = getattr(host.firewall_backend, "value", host.firewall_backend)
+        if str(active_backend) in ("nftables", "iptables"):
+            competing = await _probe_competing_firewall_store(probe, str(active_backend))
+            if competing:
+                warnings_by_module["firewall"] = [competing]
+                logger.info("Host %d: %s", host.id, competing)
 
 
 async def _mark_unreachable(
@@ -324,13 +323,17 @@ async def _mark_unreachable(
     return results
 
 
-async def _run_collectors(db: AsyncSession, host_id: int, collectors: dict, now: datetime) -> None:
-    """Run each collector in order; one that raises is recorded on its own
-    module and the rest still run."""
+async def _run_collectors(
+    db: AsyncSession, host_id: int, collectors: dict, now: datetime, conn
+) -> None:
+    """Run each collector in order over ``conn``; one that raises is
+    recorded on its own module and the rest still run.
+
+    In order, not at once: the collectors read and write the session."""
     for module_type, collect_fn in collectors.items():
         hms = await _get_or_create_hms(db, host_id, module_type)
         try:
-            state = await collect_fn()
+            state = await collect_fn(conn=conn)
             hms.collected_state = state
             hms.collected_at = now
             hms.error_message = None
@@ -589,7 +592,8 @@ async def _drift_resolver(host_id: int, hms: HostModuleStatus, db: AsyncSession)
 
 
 def _build_collectors(host: Host, private_pem: str, ssh_user: str, db: AsyncSession) -> dict:
-    """Build a dict of module_type -> async collect function."""
+    """Build a dict of module_type -> async collect function, each called
+    with the open connection as ``conn=``."""
     return {
         "firewall": partial(_collect_firewall, host, db, private_pem, ssh_user),
         "service": partial(_collect_services, host, db, private_pem),
@@ -601,40 +605,32 @@ def _build_collectors(host: Host, private_pem: str, ssh_user: str, db: AsyncSess
     }
 
 
-async def _collect_services(host: Host, db: AsyncSession, private_pem: str):
+async def _collect_services(host: Host, db: AsyncSession, private_pem: str, *, conn):
     from app.services.collector import list_all_services
 
-    return await list_all_services(host, db, private_pem)
+    return await list_all_services(host, db, private_pem, conn=conn)
 
 
-async def _collect_hosts_file(host: Host, db: AsyncSession, private_pem: str):
+async def _collect_hosts_file(host: Host, db: AsyncSession, private_pem: str, *, conn):
     from app.hosts_mgmt.collector import collect_hosts_file, hosts_entry_dict
 
-    current = await collect_hosts_file(host, db, private_pem)
+    current = await collect_hosts_file(host, db, private_pem, conn=conn)
     return [hosts_entry_dict(e) for e in current]
 
 
-async def _collect_users(host: Host, db: AsyncSession, private_pem: str):
-    import asyncssh as _asyncssh
+async def _collect_users(host: Host, db: AsyncSession, private_pem: str, *, conn):
+    # Collect all real users (uid >= 1000 or uid 0) and groups
+    user_result = await conn.run(
+        "getent passwd | awk -F: '$3 == 0 || $3 >= 1000 {print $1, $3, $6, $7}'",
+        check=False,
+    )
+    users = _parse_passwd(user_result.stdout)
 
-    private_key = _asyncssh.import_private_key(private_pem)
-    async with ssh_connect_host(
-        host,
-        db,
-        client_keys=[private_key],
-    ) as conn:
-        # Collect all real users (uid >= 1000 or uid 0) and groups
-        user_result = await conn.run(
-            "getent passwd | awk -F: '$3 == 0 || $3 >= 1000 {print $1, $3, $6, $7}'",
-            check=False,
-        )
-        users = _parse_passwd(user_result.stdout)
-
-        group_result = await conn.run(
-            "getent group | awk -F: '$3 == 0 || $3 >= 1000 {print $1, $3}'",
-            check=False,
-        )
-        groups = _parse_groups(group_result.stdout)
+    group_result = await conn.run(
+        "getent group | awk -F: '$3 == 0 || $3 >= 1000 {print $1, $3}'",
+        check=False,
+    )
+    groups = _parse_groups(group_result.stdout)
 
     return {"users": users, "groups": groups}
 
@@ -666,36 +662,25 @@ def _parse_groups(stdout: str | None) -> list[dict]:
     return groups
 
 
-async def _collect_cron(host: Host, db: AsyncSession, private_pem: str):
-    import asyncssh as _asyncssh
+async def _collect_cron(host: Host, db: AsyncSession, private_pem: str, *, conn):
+    # List all user crontabs
+    jobs = []
+    users_result = await conn.run(
+        "ls /var/spool/cron/crontabs/ 2>/dev/null || ls /var/spool/cron/ 2>/dev/null || echo ''",
+        check=False,
+    )
+    cron_users = [u.strip() for u in (users_result.stdout or "").strip().splitlines() if u.strip()]
+    if not cron_users:
+        cron_users = ["root"]
 
-    private_key = _asyncssh.import_private_key(private_pem)
-    async with ssh_connect_host(
-        host,
-        db,
-        client_keys=[private_key],
-    ) as conn:
-        # List all user crontabs
-        jobs = []
-        users_result = await conn.run(
-            "ls /var/spool/cron/crontabs/ 2>/dev/null"
-            " || ls /var/spool/cron/ 2>/dev/null || echo ''",
-            check=False,
+    for user in cron_users:
+        # user is derived from the remote host's /var/spool/cron listing
+        # — quote it so a compromised host can't inject via the username.
+        result = await conn.run(
+            f"crontab -u {shlex.quote(user)} -l 2>/dev/null || true", check=False
         )
-        cron_users = [
-            u.strip() for u in (users_result.stdout or "").strip().splitlines() if u.strip()
-        ]
-        if not cron_users:
-            cron_users = ["root"]
-
-        for user in cron_users:
-            # user is derived from the remote host's /var/spool/cron listing
-            # — quote it so a compromised host can't inject via the username.
-            result = await conn.run(
-                f"crontab -u {shlex.quote(user)} -l 2>/dev/null || true", check=False
-            )
-            jobs.extend(_parse_crontab(user, result.stdout))
-        return jobs
+        jobs.extend(_parse_crontab(user, result.stdout))
+    return jobs
 
 
 def _parse_crontab(user: str, stdout: str | None) -> list[dict]:
@@ -722,18 +707,20 @@ def _parse_crontab(user: str, stdout: str | None) -> list[dict]:
     return jobs
 
 
-async def _collect_packages(host: Host, db: AsyncSession, private_pem: str):
+async def _collect_packages(host: Host, db: AsyncSession, private_pem: str, *, conn):
     from app.packages.collector import collect_package_states, collect_repo_sources
     from app.packages.merge import get_effective_packages
 
     desired = await get_effective_packages(host.id, db)
     names = [p.package_name for p in desired]
-    packages = await collect_package_states(host, db, private_pem, names) if names else []
-    repos = await collect_repo_sources(host, db, private_pem)
+    packages = (
+        await collect_package_states(host, db, private_pem, names, conn=conn) if names else []
+    )
+    repos = await collect_repo_sources(host, db, private_pem, conn=conn)
     return {"packages": packages, "repos": repos}
 
 
-async def _collect_resolver(host: Host, db: AsyncSession, private_pem: str):
+async def _collect_resolver(host: Host, db: AsyncSession, private_pem: str, *, conn):
     from app.resolver.collector import collect_resolver_state
     from app.resolver.merge import get_effective_resolver
 
@@ -744,10 +731,11 @@ async def _collect_resolver(host: Host, db: AsyncSession, private_pem: str):
         db,
         private_pem,
         resolver_type=resolver_type,
+        conn=conn,
     )
 
 
-async def _collect_firewall(host: Host, db: AsyncSession, private_pem: str, ssh_user: str):
+async def _collect_firewall(host: Host, db: AsyncSession, private_pem: str, ssh_user: str, *, conn):
     from dataclasses import asdict
 
     from app.sync.collector import collect_current_rules
@@ -764,6 +752,7 @@ async def _collect_firewall(host: Host, db: AsyncSession, private_pem: str, ssh_
             host_id=host.id,
             db=db,
             host=host,
+            conn=conn,
         )
         if detected:
             backend = detected
@@ -772,12 +761,7 @@ async def _collect_firewall(host: Host, db: AsyncSession, private_pem: str, ssh_
             return {"error": "No supported firewall detected (nftables or iptables)"}
     for msg in info_messages:
         logger.info("Host %d: %s", host.id, msg)
-    rules = await collect_current_rules(
-        host,
-        db,
-        private_pem,
-        backend,
-    )
+    rules = await collect_current_rules(host, db, private_pem, backend, conn=conn)
     return [asdict(r) for r in rules]
 
 
@@ -864,6 +848,7 @@ async def _detect_firewall_backend(
     host_id: int,
     db: AsyncSession,
     host: Host | None = None,
+    conn=None,
 ) -> tuple[str | None, list[str]]:
     """Auto-detect the firewall backend for a host with no backend pinned yet.
 
@@ -893,15 +878,20 @@ async def _detect_firewall_backend(
     Returns (backend, info_messages). ``info_messages`` are user-facing notices:
     the reason the backend was chosen, any competing-store warning, and the
     firewalld/ufw wrapper notices (those also mark the wrapper for disabling).
+
+    ``conn``: an open connection to probe over, instead of opening one.
     """
     backend: str | None = None
     messages: list[str] = []
 
     try:
-        key = asyncssh.import_private_key(private_pem)
-        if host is not None:
+        if conn is not None:
+            _connect_ctx = nullcontext(conn)
+        elif host is not None:
+            key = asyncssh.import_private_key(private_pem)
             _connect_ctx = ssh_connect_host(host, db, client_keys=[key])
         else:
+            key = asyncssh.import_private_key(private_pem)
             _connect_ctx = ssh_connect(
                 host_ip,
                 port=ssh_port,

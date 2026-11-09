@@ -75,8 +75,8 @@ def _fake_host_connection(monkeypatch, outputs: dict[str, str]) -> None:
     async def connect(host, db, client_keys=None):
         yield Conn()
 
-    monkeypatch.setattr("app.services.collector.ssh_connect_host", connect)
-    monkeypatch.setattr("app.services.collector.asyncssh.import_private_key", lambda pem: pem)
+    monkeypatch.setattr("app.ssh_utils.ssh_connect_host", connect)
+    monkeypatch.setattr("app.ssh_utils.asyncssh.import_private_key", lambda pem: pem)
 
 
 async def test_list_all_services_records_enablement(monkeypatch):

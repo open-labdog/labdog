@@ -5,9 +5,7 @@ import re
 import shlex
 from typing import TYPE_CHECKING
 
-import asyncssh
-
-from app.ssh_utils import ssh_connect_host
+from app.ssh_utils import host_connection
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +18,7 @@ async def collect_package_states(
     db: "AsyncSession",
     private_key_pem: str,
     package_names: list[str],
+    conn=None,
 ) -> list[dict]:
     """Return [{"name", "state": "present"|"absent", "version", "hold": bool}].
 
@@ -28,18 +27,19 @@ async def collect_package_states(
     list. It used to run one ``dpkg -l`` pipeline per package, a round trip
     each: 241 ms against 10 ms for 20 packages over one connection, before
     any network latency.
+
+    ``conn``: an open connection to use (see ``app.ssh_utils.host_connection``).
     """
     if not package_names:
         return []
 
     try:
-        private_key = asyncssh.import_private_key(private_key_pem)
 
         async def _run() -> list[dict]:
-            async with ssh_connect_host(host, db, client_keys=[private_key]) as conn:
-                manager = await _package_manager(conn)
-                installed = await _query_installed(conn, manager, package_names)
-                held = await _collect_held(conn, package_names, manager == "dpkg", manager == "rpm")
+            async with host_connection(host, db, private_key_pem, conn) as c:
+                manager = await _package_manager(c)
+                installed = await _query_installed(c, manager, package_names)
+                held = await _collect_held(c, package_names, manager == "dpkg", manager == "rpm")
             return [
                 {
                     "name": name,
@@ -170,6 +170,7 @@ async def collect_repo_sources(
     host: "Host",
     db: "AsyncSession",
     private_key_pem: str,
+    conn=None,
 ) -> list[dict]:
     """Collect configured package repository sources from a remote host.
 
@@ -177,14 +178,13 @@ async def collect_repo_sources(
     "distribution": str|None, "components": str|None, "enabled": bool}.
     """
     try:
-        private_key = asyncssh.import_private_key(private_key_pem)
 
         async def _run() -> list[dict]:
-            async with ssh_connect_host(host, db, client_keys=[private_key]) as conn:
+            async with host_connection(host, db, private_key_pem, conn) as c:
                 repos: list[dict] = []
 
                 # Try APT
-                apt_result = await conn.run(
+                apt_result = await c.run(
                     "cat /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null || true",
                     check=False,
                 )
@@ -193,7 +193,7 @@ async def collect_repo_sources(
 
                 # Try YUM/DNF
                 if not repos:
-                    yum_result = await conn.run(
+                    yum_result = await c.run(
                         "cat /etc/yum.repos.d/*.repo 2>/dev/null || true",
                         check=False,
                     )

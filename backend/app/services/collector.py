@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import asyncssh
 
-from app.ssh_utils import ssh_connect_host
+from app.ssh_utils import host_connection, ssh_connect_host
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +27,7 @@ async def collect_service_states(
     db: "AsyncSession",
     private_key_pem: str,
     service_names: list[str],
+    conn=None,
 ) -> list[ServiceCurrentState]:
     """
     SSH into host and check service states via systemctl.
@@ -44,11 +45,12 @@ async def collect_service_states(
     never counted as enabled). If systemctl rejects the call as a whole —
     a template name such as ``getty@`` does that — each service is asked
     about on its own, as before.
+
+    ``conn``: an open connection to use (see ``app.ssh_utils.host_connection``).
     """
     try:
-        private_key = asyncssh.import_private_key(private_key_pem)
-        async with ssh_connect_host(host, db, client_keys=[private_key]) as conn:
-            return await _service_states(conn, service_names)
+        async with host_connection(host, db, private_key_pem, conn) as c:
+            return await _service_states(c, service_names)
     except Exception:
         # Connection failure — all services in error state
         return [_service_error(name) for name in service_names]
@@ -165,6 +167,7 @@ async def list_all_services(
     host: "Host",
     db: "AsyncSession",
     private_key_pem: str,
+    conn=None,
 ) -> list[dict]:
     """
     SSH into host and list all systemd services via systemctl.
@@ -176,11 +179,10 @@ async def list_all_services(
     Returns empty list on any error (connection failure, timeout, parse error).
     """
     try:
-        private_key = asyncssh.import_private_key(private_key_pem)
 
         async def _run() -> list[dict]:
-            async with ssh_connect_host(host, db, client_keys=[private_key]) as conn:
-                result = await conn.run(
+            async with host_connection(host, db, private_key_pem, conn) as c:
+                result = await c.run(
                     "systemctl list-units --type=service --all --no-pager --plain",
                     check=False,
                 )
@@ -216,7 +218,7 @@ async def list_all_services(
                         }
                     )
 
-                files = await conn.run(
+                files = await c.run(
                     "systemctl list-unit-files --type=service --no-pager --plain",
                     check=False,
                 )

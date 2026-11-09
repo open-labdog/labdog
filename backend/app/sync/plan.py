@@ -21,7 +21,9 @@ whole request — mirroring ``app.api.sync.plan_group``.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+import asyncio
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel
 
@@ -53,9 +55,17 @@ def _has_changes(changes: list[DiffChange]) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Per-module adapters: (current, desired) -> list[DiffChange]
-# Each adapter owns its module's collector + desired-state + diff calls.
+# Per-module adapters
+#
+# Each adapter reads what it needs from the database and returns a
+# ``Collect``: a coroutine function that takes an open SSH connection,
+# collects the module's current state over it and diffs it against what
+# was read. The split is so a preview reads the database first, then
+# collects every module at once over one connection (BUG-159) without
+# touching the session again.
 # ---------------------------------------------------------------------------
+
+Collect = Callable[[Any], Awaitable[list[DiffChange]]]
 
 
 def _fmt_port(port_start: int | None, port_end: int | None) -> str:
@@ -79,20 +89,31 @@ def _fmt_rule(r) -> str:
     return f"{r.action} {r.protocol} {r.direction} {src} → {dst} port={port} ({comment})"
 
 
-async def _firewall_changes(host: Host, db: AsyncSession) -> list[DiffChange]:
+async def _firewall_plan(host: Host, db: AsyncSession, private_key_pem: str | None) -> Collect:
     from app.rules.desired_state import get_desired_state
-    from app.sync.diff import compute_diff, fetch_current_firewall_state
+    from app.sync.diff import compute_diff, read_firewall_state
 
     desired, desired_policies = await get_desired_state(
         host.id, db, host_source_ip=host.labdog_source_ip
     )
-    state = await fetch_current_firewall_state(host.id, db)
-    diff = compute_diff(
-        state.rules,
-        desired,
-        current_policies=state.policies,
-        desired_policies=desired_policies,
-    )
+
+    async def collect(conn: Any) -> list[DiffChange]:
+        # Nothing to read on a host whose backend is not known yet or that
+        # has no key, so every desired rule is an add.
+        state = await read_firewall_state(host, private_key_pem, conn=conn)
+        return _firewall_changes(
+            compute_diff(
+                state.rules,
+                desired,
+                current_policies=state.policies,
+                desired_policies=desired_policies,
+            )
+        )
+
+    return collect
+
+
+def _firewall_changes(diff) -> list[DiffChange]:
     changes: list[DiffChange] = []
     for r in diff.rules_to_add:
         changes.append(DiffChange(op="add", summary=_fmt_rule(r)))
@@ -111,18 +132,25 @@ async def _firewall_changes(host: Host, db: AsyncSession) -> list[DiffChange]:
     return changes
 
 
-async def _services_changes(
-    host: Host, db: AsyncSession, private_key_pem: str, ssh_user: str
-) -> list[DiffChange]:
-    from app.services.collector import collect_service_states
-    from app.services.diff import compute_service_diff
+async def _services_plan(host: Host, db: AsyncSession, private_key_pem: str) -> Collect:
     from app.services.merge import get_effective_services
 
     desired = await get_effective_services(host.id, db)
-    service_names = [s.service_name for s in desired]
-    current = await collect_service_states(host, db, private_key_pem, service_names)
-    diff = compute_service_diff(current, desired)
 
+    async def collect(conn: Any) -> list[DiffChange]:
+        from app.services.collector import collect_service_states
+        from app.services.diff import compute_service_diff
+
+        service_names = [s.service_name for s in desired]
+        current = await collect_service_states(
+            host, None, private_key_pem, service_names, conn=conn
+        )
+        return _services_changes(compute_service_diff(current, desired))
+
+    return collect
+
+
+def _services_changes(diff) -> list[DiffChange]:
     changes: list[DiffChange] = []
     for item in diff.services_to_update:
         cur = f"{item.actual_state}/{'enabled' if item.actual_enabled else 'disabled'}"
@@ -143,19 +171,24 @@ async def _services_changes(
     return changes
 
 
-async def _packages_changes(
-    host: Host, db: AsyncSession, private_key_pem: str, ssh_user: str
-) -> list[DiffChange]:
-    from app.packages.collector import collect_package_states
-    from app.packages.diff import compute_diff as compute_package_diff
+async def _packages_plan(host: Host, db: AsyncSession, private_key_pem: str) -> Collect:
     from app.packages.merge import get_effective_packages
 
     effective = await get_effective_packages(host.id, db)
-    desired_dicts = [p.model_dump() for p in effective]
-    package_names = [p.package_name for p in effective]
-    actual = await collect_package_states(host, db, private_key_pem, package_names)
-    diff = compute_package_diff(desired_dicts, actual)
 
+    async def collect(conn: Any) -> list[DiffChange]:
+        from app.packages.collector import collect_package_states
+        from app.packages.diff import compute_diff as compute_package_diff
+
+        desired_dicts = [p.model_dump() for p in effective]
+        package_names = [p.package_name for p in effective]
+        actual = await collect_package_states(host, None, private_key_pem, package_names, conn=conn)
+        return _packages_changes(compute_package_diff(desired_dicts, actual))
+
+    return collect
+
+
+def _packages_changes(diff) -> list[DiffChange]:
     changes: list[DiffChange] = []
     for e in diff.to_install:
         ver = f" {e.desired_version}" if e.desired_version else ""
@@ -180,22 +213,27 @@ def _cron_label(key: str) -> str:
     return f"{name} ({user})" if user else name
 
 
-async def _cron_changes(
-    host: Host, db: AsyncSession, private_key_pem: str, ssh_user: str
-) -> list[DiffChange]:
-    from app.cron.collector import collect_cron_jobs
-    from app.cron.diff import diff_cron_jobs
+async def _cron_plan(host: Host, db: AsyncSession, private_key_pem: str) -> Collect:
     from app.cron.merge import get_effective_cron_jobs
 
     effective = await get_effective_cron_jobs(host.id, db)
-    desired_dicts = [
-        {"name": j.name, "user": j.user, "schedule": j.schedule, "command": j.command}
-        for j in effective
-    ]
-    users = list({j.user for j in effective})
-    actual = await collect_cron_jobs(host, db, private_key_pem, users)
-    diff = diff_cron_jobs(desired_dicts, actual)
 
+    async def collect(conn: Any) -> list[DiffChange]:
+        from app.cron.collector import collect_cron_jobs
+        from app.cron.diff import diff_cron_jobs
+
+        desired_dicts = [
+            {"name": j.name, "user": j.user, "schedule": j.schedule, "command": j.command}
+            for j in effective
+        ]
+        users = list({j.user for j in effective})
+        actual = await collect_cron_jobs(host, None, private_key_pem, users, conn=conn)
+        return _cron_changes(diff_cron_jobs(desired_dicts, actual))
+
+    return collect
+
+
+def _cron_changes(diff) -> list[DiffChange]:
     changes: list[DiffChange] = []
     for k in diff.jobs_to_add:
         changes.append(DiffChange(op="add", summary=_cron_label(k)))
@@ -213,20 +251,25 @@ def _hosts_entry_label(e) -> str:
     return f"{e.ip_address} {e.hostname} {aliases}".strip()
 
 
-async def _hosts_file_changes(
-    host: Host, db: AsyncSession, private_key_pem: str, ssh_user: str
-) -> list[DiffChange]:
-    from app.hosts_mgmt.collector import collect_hosts_file
-    from app.hosts_mgmt.diff import compute_hosts_diff
+async def _hosts_file_plan(host: Host, db: AsyncSession, private_key_pem: str) -> Collect:
     from app.hosts_mgmt.merge import get_effective_hosts_entries
 
     desired = await get_effective_hosts_entries(host.id, db)
-    # No entry applies → /etc/hosts is unmanaged for this host → no-op.
-    if not desired:
-        return []
-    current = await collect_hosts_file(host, db, private_key_pem)
-    diff = compute_hosts_diff(current, desired)
 
+    async def collect(conn: Any) -> list[DiffChange]:
+        from app.hosts_mgmt.collector import collect_hosts_file
+        from app.hosts_mgmt.diff import compute_hosts_diff
+
+        # No entry applies → /etc/hosts is unmanaged for this host → no-op.
+        if not desired:
+            return []
+        current = await collect_hosts_file(host, None, private_key_pem, conn=conn)
+        return _hosts_file_changes(compute_hosts_diff(current, desired))
+
+    return collect
+
+
+def _hosts_file_changes(diff) -> list[DiffChange]:
     changes: list[DiffChange] = []
     for e in diff.entries_to_add:
         changes.append(DiffChange(op="add", summary=_hosts_entry_label(e)))
@@ -241,25 +284,33 @@ async def _hosts_file_changes(
     return changes
 
 
-async def _linux_users_changes(
-    host: Host, db: AsyncSession, private_key_pem: str, ssh_user: str
-) -> list[DiffChange]:
-    from app.user_mgmt.collector import collect_group_states, collect_user_states
-    from app.user_mgmt.diff import diff_groups, diff_users
+async def _linux_users_plan(host: Host, db: AsyncSession, private_key_pem: str) -> Collect:
     from app.user_mgmt.merge import get_effective_groups, get_effective_users
 
     desired_users = await get_effective_users(host.id, db)
     desired_groups = await get_effective_groups(host.id, db)
-    desired_user_dicts = [u.model_dump() for u in desired_users]
-    desired_group_dicts = [g.model_dump() for g in desired_groups]
-    usernames = [u.username for u in desired_users]
-    groupnames = [g.groupname for g in desired_groups]
 
-    actual_users = await collect_user_states(host, db, private_key_pem, usernames)
-    actual_groups = await collect_group_states(host, db, private_key_pem, groupnames)
-    user_diff = diff_users(desired_user_dicts, actual_users)
-    group_diff = diff_groups(desired_group_dicts, actual_groups)
+    async def collect(conn: Any) -> list[DiffChange]:
+        from app.user_mgmt.collector import collect_group_states, collect_user_states
+        from app.user_mgmt.diff import diff_groups, diff_users
 
+        desired_user_dicts = [u.model_dump() for u in desired_users]
+        desired_group_dicts = [g.model_dump() for g in desired_groups]
+        usernames = [u.username for u in desired_users]
+        groupnames = [g.groupname for g in desired_groups]
+        actual_users, actual_groups = await asyncio.gather(
+            collect_user_states(host, None, private_key_pem, usernames, conn=conn),
+            collect_group_states(host, None, private_key_pem, groupnames, conn=conn),
+        )
+        return _linux_users_changes(
+            diff_users(desired_user_dicts, actual_users),
+            diff_groups(desired_group_dicts, actual_groups),
+        )
+
+    return collect
+
+
+def _linux_users_changes(user_diff, group_diff) -> list[DiffChange]:
     changes: list[DiffChange] = []
     for n in user_diff.users_to_add:
         changes.append(DiffChange(op="add", summary=f"user {n}"))
@@ -280,26 +331,32 @@ async def _linux_users_changes(
     return changes
 
 
-async def _resolver_changes(
-    host: Host, db: AsyncSession, private_key_pem: str, ssh_user: str
-) -> list[DiffChange]:
-    from app.resolver.collector import collect_resolver_state
-    from app.resolver.diff import compute_resolver_diff
+async def _resolver_plan(host: Host, db: AsyncSession, private_key_pem: str) -> Collect:
     from app.resolver.merge import get_effective_resolver
 
     effective = await get_effective_resolver(host.id, db)
-    # No resolver config applies → DNS is unmanaged for this host → no-op.
-    if not effective:
-        return []
 
-    actual = await collect_resolver_state(host, db, private_key_pem, effective.resolver_type)
-    desired = {
-        "nameservers": effective.nameservers,
-        "search_domains": effective.search_domains,
-        "options": effective.options,
-    }
-    diff = compute_resolver_diff(actual, desired)
+    async def collect(conn: Any) -> list[DiffChange]:
+        from app.resolver.collector import collect_resolver_state
+        from app.resolver.diff import compute_resolver_diff
 
+        # No resolver config applies → DNS is unmanaged for this host → no-op.
+        if not effective:
+            return []
+        actual = await collect_resolver_state(
+            host, None, private_key_pem, effective.resolver_type, conn=conn
+        )
+        desired = {
+            "nameservers": effective.nameservers,
+            "search_domains": effective.search_domains,
+            "options": effective.options,
+        }
+        return _resolver_changes(compute_resolver_diff(actual, desired))
+
+    return collect
+
+
+def _resolver_changes(diff) -> list[DiffChange]:
     if not diff.has_changes:
         return [DiffChange(op="unchanged", summary="resolver config")]
 
@@ -333,30 +390,110 @@ async def _resolver_changes(
     return changes
 
 
-async def _module_changes(
-    module: str, host: Host, db: AsyncSession, private_key_pem: str | None, ssh_user: str
-) -> list[DiffChange]:
-    if module == "firewall":
-        # Firewall owns its SSH-key handling and backend quirks inside
-        # fetch_current_firewall_state, so it doesn't need the shared key.
-        return await _firewall_changes(host, db)
+_MODULE_PLANS = {
+    "services": _services_plan,
+    "packages": _packages_plan,
+    "cron": _cron_plan,
+    "hosts-file": _hosts_file_plan,
+    "linux-users": _linux_users_plan,
+    "resolver": _resolver_plan,
+}
 
+
+async def _module_plan(
+    module: str, host: Host, db: AsyncSession, private_key_pem: str | None
+) -> Collect:
+    if module == "firewall":
+        # A host without a key still previews its firewall: every desired
+        # rule is an add, as before.
+        return await _firewall_plan(host, db, private_key_pem)
     if private_key_pem is None:
         raise ValueError("Host has no SSH key assigned")
+    plan = _MODULE_PLANS.get(module)
+    if plan is None:
+        raise ValueError(f"Unknown module: {module}")
+    return await plan(host, db, private_key_pem)
 
-    if module == "services":
-        return await _services_changes(host, db, private_key_pem, ssh_user)
-    if module == "packages":
-        return await _packages_changes(host, db, private_key_pem, ssh_user)
-    if module == "cron":
-        return await _cron_changes(host, db, private_key_pem, ssh_user)
-    if module == "hosts-file":
-        return await _hosts_file_changes(host, db, private_key_pem, ssh_user)
-    if module == "linux-users":
-        return await _linux_users_changes(host, db, private_key_pem, ssh_user)
-    if module == "resolver":
-        return await _resolver_changes(host, db, private_key_pem, ssh_user)
-    raise ValueError(f"Unknown module: {module}")
+
+class HostPlan:
+    """A preview whose database reads are done and whose SSH work is not.
+
+    :func:`prepare_host_plan` makes one; :meth:`collect` finishes it. The
+    caller can hand its session's connection back in between (BUG-153),
+    since collecting uses the session only to record the host key the
+    first time the host is reached (TOFU).
+    """
+
+    def __init__(
+        self,
+        host: Host,
+        private_key_pem: str | None,
+        plans: list[tuple[str, Collect | Exception]],
+    ):
+        self.host = host
+        self.private_key_pem = private_key_pem
+        self.plans = plans
+
+    async def collect(self, db: AsyncSession | None) -> list[ModuleDiff]:
+        """Collect every module at once over one SSH connection (BUG-159).
+
+        The connection is opened by the first module that has something
+        to read, so a preview with nothing to read never connects. A module
+        whose collection fails gets ``error`` set; the others still finish.
+        """
+        from app.ssh_utils import shared_host_connection
+
+        async def _one(module: str, plan: Collect | Exception, conn: Any) -> ModuleDiff:
+            try:
+                if isinstance(plan, Exception):
+                    raise plan
+                changes = await plan(conn)
+            except Exception as exc:  # noqa: BLE001 — surface per-module, keep going
+                return ModuleDiff(module=module, has_changes=False, error=str(exc), changes=[])
+            return ModuleDiff(module=module, has_changes=_has_changes(changes), changes=changes)
+
+        async with shared_host_connection(self.host, db, self.private_key_pem) as conn:
+            return list(await asyncio.gather(*(_one(m, p, conn) for m, p in self.plans)))
+
+
+async def prepare_host_plan(
+    host_id: int,
+    module_filter: list[str] | None,
+    db: AsyncSession,
+) -> HostPlan:
+    """Read everything a preview needs from the database.
+
+    Raises:
+        LookupError: host not found.
+        ValueError: invalid ``module_filter`` (empty / unknown module).
+    """
+    from sqlalchemy import select
+
+    from app.crypto import decrypt_ssh_key, get_master_key
+    from app.models.host import Host
+    from app.models.ssh_key import SSHKey
+
+    host = (await db.execute(select(Host).where(Host.id == host_id))).scalar_one_or_none()
+    if host is None:
+        raise LookupError(f"Host {host_id} not found")
+
+    modules = determine_modules_to_run(module_filter)
+
+    private_key_pem: str | None = None
+    if host.ssh_key_id is not None:
+        ssh_key = (
+            await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
+        ).scalar_one_or_none()
+        if ssh_key is not None:
+            private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
+
+    plans: list[tuple[str, Collect | Exception]] = []
+    for module in modules:
+        try:
+            plans.append((module, await _module_plan(module, host, db, private_key_pem)))
+        except Exception as exc:  # noqa: BLE001 — surface per-module, keep going
+            plans.append((module, exc))
+    return HostPlan(host, private_key_pem, plans)
 
 
 async def plan_host_modules(
@@ -376,37 +513,5 @@ async def plan_host_modules(
         LookupError: host not found.
         ValueError: invalid ``module_filter`` (empty / unknown module).
     """
-    from sqlalchemy import select
-
-    from app.crypto import decrypt_ssh_key, get_master_key
-    from app.models.host import Host
-    from app.models.ssh_key import SSHKey
-
-    host = (await db.execute(select(Host).where(Host.id == host_id))).scalar_one_or_none()
-    if host is None:
-        raise LookupError(f"Host {host_id} not found")
-
-    modules = determine_modules_to_run(module_filter)
-
-    # Decrypt the SSH key once for the modules that need it. Firewall
-    # handles its own key lookup; the others share this.
-    private_key_pem: str | None = None
-    ssh_user = "root"
-    if host.ssh_key_id is not None:
-        ssh_key = (
-            await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
-        ).scalar_one_or_none()
-        if ssh_key is not None:
-            private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
-            ssh_user = ssh_key.ssh_user
-
-    results: list[ModuleDiff] = []
-    for module in modules:
-        try:
-            changes = await _module_changes(module, host, db, private_key_pem, ssh_user)
-            results.append(
-                ModuleDiff(module=module, has_changes=_has_changes(changes), changes=changes)
-            )
-        except Exception as exc:  # noqa: BLE001 — surface per-module, keep going
-            results.append(ModuleDiff(module=module, has_changes=False, error=str(exc), changes=[]))
-    return results
+    plan = await prepare_host_plan(host_id, module_filter, db)
+    return await plan.collect(db)

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import asyncssh
 
-from app.ssh_utils import ssh_connect_host
+from app.ssh_utils import host_connection
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +20,7 @@ async def collect_user_states(
     db: "AsyncSession",
     private_key_pem: str,
     usernames: list[str],
+    conn=None,
 ) -> list[dict]:
     """The state of each user in ``usernames``, absent where it does not exist.
 
@@ -27,15 +28,16 @@ async def collect_user_states(
     ``getent passwd`` for all of them, then one script that prints each
     present user's ``authorized_keys``, sudoers drop-in and groups between
     markers. It used to run four commands per user, a round trip each.
+
+    ``conn``: an open connection to use (see ``app.ssh_utils.host_connection``).
     """
     if not usernames:
         return []
     try:
-        private_key = asyncssh.import_private_key(private_key_pem)
 
         async def _run() -> list[dict]:
-            async with ssh_connect_host(host, db, client_keys=[private_key]) as conn:
-                return await _user_states(conn, usernames)
+            async with host_connection(host, db, private_key_pem, conn) as c:
+                return await _user_states(c, usernames)
 
         return await asyncio.wait_for(_run(), timeout=30.0)
     except Exception:
@@ -176,17 +178,17 @@ async def collect_group_states(
     db: "AsyncSession",
     private_key_pem: str,
     groupnames: list[str],
+    conn=None,
 ) -> list[dict]:
     """The state of each group in ``groupnames``: one ``getent group`` for all
     of them (BUG-158; it used to be one per group)."""
     if not groupnames:
         return []
     try:
-        private_key = asyncssh.import_private_key(private_key_pem)
 
         async def _run() -> list[dict]:
-            async with ssh_connect_host(host, db, client_keys=[private_key]) as conn:
-                return await _group_states(conn, groupnames)
+            async with host_connection(host, db, private_key_pem, conn) as c:
+                return await _group_states(c, groupnames)
 
         return await asyncio.wait_for(_run(), timeout=30.0)
     except Exception:
