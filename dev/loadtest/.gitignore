@@ -1,0 +1,4 @@
+.state/
+.env
+results/
+matrix.log

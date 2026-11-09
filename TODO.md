@@ -21,6 +21,26 @@ git log -- frontend/app/\(dashboard\)/groups/page.tsx
 
 ---
 
+## Scaling — an actions queue and worker role
+
+**Context:** The load tests in PR #270 (300 fake hosts, 28 slots, bulk
+sync of every host every 15 min) showed that the per-host part of an
+action run (`app.tasks.action_host`) waits behind bulk syncs on
+`long_running`. No run with parallelism 10 finished within an hour, in
+any topology. Giving drift its own queue fixed the same problem for
+drift checks (on time at every load), so the fix is the same shape.
+
+**Task:**
+- Route `app.tasks.action_host` and `app.tasks.action_group` to a new
+  `actions` queue, consumed by `work` in the `all` role and by a new
+  `worker-actions` role with its own `celery.actions_concurrency`.
+- Add it to `docs/scaling-out.md`, `dev/docker-compose.split.yml` and
+  the `split` config in `dev/loadtest/`.
+- Check it with unit tests (routing, role processes) and a short split
+  smoke run in `dev/loadtest`; no full load test is needed.
+
+---
+
 ## k8s-upgrade — broaden OS support
 
 **Context:** The `k8s-upgrade` action in `labdog-playbooks` is currently apt-only;

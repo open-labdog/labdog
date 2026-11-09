@@ -144,6 +144,43 @@ making them.
 
 ---
 
+## Scaling out — workers on more than one box
+
+LabDog's load is Ansible on the controller: at a few hundred hosts with
+frequent bulk syncs, the CPU of the box running the workers is the limit,
+while Postgres, Redis, the API and the scheduler stay lightly loaded
+(load tests in PR #270).
+
+**Shipped (PR #270).** One image, run as roles (`api`, `beat`,
+`orchestrator`, `worker`, `worker-drift`) with `--role` / `LABDOG_ROLE`;
+see [`docs/scaling-out.md`](docs/scaling-out.md). The single-container
+`all` install stays the default. Drift checks run on their own queue,
+fanned out per host.
+
+**Next.** An actions queue and worker role, so the per-host part of an
+action run stops waiting behind bulk syncs ([TODO.md](TODO.md)).
+
+**Later.** Run `worker` containers (and their drift and actions
+counterparts) on more than one box against the same Postgres and Redis,
+so worker capacity grows with hardware. What it needs:
+
+- SSH reach from every worker box to the managed hosts, and network
+  access to Postgres and Redis.
+- The same secrets and image version on every box.
+- Pack checkouts that reach every box. In one compose project they share
+  a volume; across boxes that means a shared filesystem, or workers that
+  re-sync a pack when its commit in the database moves ahead of their
+  checkout.
+- A connection pooler (PgBouncer) once the total slot count grows, at
+  ~6 Postgres connections per slot.
+- A functional check (a worker on a second box runs syncs and actions)
+  and a deployment doc. No further load tests are planned: the
+  per-box limit is already understood.
+
+`beat`, the API and the orchestrator stay single instances.
+
+---
+
 ## Ideas — exploration welcome
 
 Direction signals, not commitments. To pursue any of these, branch

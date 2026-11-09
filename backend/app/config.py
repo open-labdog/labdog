@@ -212,6 +212,10 @@ class CeleryConfig(BaseModel):
     #: ``soft_time_limit`` on one, and the orchestrator's 12h soft limit is
     #: what finalises a wedged run.
     orchestrator_concurrency: int = 4
+    #: Slots on a ``worker-drift`` container (``--role worker-drift``).
+    #: Unused by the default ``all`` role, whose ``work`` worker consumes
+    #: the ``drift`` queue alongside ``default`` and ``long_running``.
+    drift_concurrency: int = 4
     max_tasks_per_child: int = 100
 
 

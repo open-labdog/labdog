@@ -17,7 +17,6 @@ the verdict becomes durable.
 import logging
 from datetime import UTC
 
-from app.db import with_task_engine
 from app.enum_utils import enum_str
 from app.tasks import celery_app
 
@@ -153,7 +152,7 @@ async def _sweep_one(host, hms, db) -> bool:
     return await _check_drift_for_one_host(host, db, hms=hms)
 
 
-@celery_app.task(name="app.tasks.drift.check_all_drift", queue="long_running")
+@celery_app.task(name="app.tasks.drift.check_all_drift", queue="drift")
 def check_all_drift():
     """Periodic task: check firewall drift for every drift-enabled host.
 
@@ -161,11 +160,10 @@ def check_all_drift():
     per-module toggle: the firewall module predates ``HostModuleStatus``
     and still owns the host-level flag.
     """
-    import asyncio
+    from app.tasks.drift_sweep import run_sweep
 
-    from app.tasks.drift_sweep import sweep_module
-
-    return asyncio.run(with_task_engine(sweep_module("firewall", _sweep_one, host_gated=True)))
+    # Fans out one check per host on the drift queue; see app.tasks.drift_sweep.
+    return run_sweep("firewall")
 
 
 # Register periodic drift check via RedBeat (prevents duplicate schedules on restart)

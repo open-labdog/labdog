@@ -188,7 +188,7 @@ the labdog source tree.
 Three subprocesses, all children of the main process
 (`app/celery_manager.py`):
 
-- **`work`** — `-Q default,long_running`. Everything except the run
+- **`work`** — `-Q default,long_running,drift`. Everything except the run
   orchestrator: syncs, drift, discovery, and the per-host half of every
   action run.
 - **`orchestrator`** — `-Q orchestrator`. Runs only
@@ -199,7 +199,16 @@ Three subprocesses, all children of the main process
   `/health/ready` stayed green because the worker itself was fine
   (BUG-83). As a peer it is under the same `poll()` as the workers.
 
-The split is load-bearing, not tidiness. `run_action` dispatches per-host
+That is the default `all` role. `python -m app --role` (or
+`LABDOG_ROLE`) runs a subset instead — `api`, `beat`, `orchestrator`,
+`worker` (`default,long_running`) or `worker-drift` (`drift`) — so a
+deployment can run each in its own container from the same image and
+scale workers with `--scale` (`app/celery_manager.py::ROLE_PROCESSES`,
+`docs/scaling-out.md`). Only `api`/`all` migrate; the rest wait for the
+schema. Drift sweeps fan out one `drift_sweep.check_host_module` task per
+host on the `drift` queue rather than walking hosts serially.
+
+The orchestrator split is load-bearing, not tidiness. `run_action` dispatches per-host
 children to `long_running` and then blocks in `result.join()` until they
 finish, so an orchestrator sharing that pool competes with the very work
 it is waiting for. Do not route anything else to `orchestrator`, and do

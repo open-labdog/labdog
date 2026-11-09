@@ -8,7 +8,6 @@ decides whether the verdict becomes durable.
 
 import logging
 
-from app.db import with_task_engine
 from app.tasks import celery_app
 
 logger = logging.getLogger(__name__)
@@ -79,14 +78,13 @@ async def check_package_drift_for_one_host(host, hms, db) -> bool:
         return True
 
 
-@celery_app.task(name="app.tasks.package_drift.check_all_package_drift", queue="long_running")
+@celery_app.task(name="app.tasks.package_drift.check_all_package_drift", queue="drift")
 def check_all_package_drift():
     """Periodic task: package drift for every host with package drift enabled."""
-    import asyncio
+    from app.tasks.drift_sweep import run_sweep
 
-    from app.tasks.drift_sweep import sweep_module
-
-    return asyncio.run(with_task_engine(sweep_module("package", check_package_drift_for_one_host)))
+    # Fans out one check per host on the drift queue; see app.tasks.drift_sweep.
+    return run_sweep("package")
 
 
 package_drift_task = check_all_package_drift

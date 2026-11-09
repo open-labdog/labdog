@@ -220,3 +220,138 @@ class TestCandidateSelection:
         await sweep_module("firewall", check_one, host_gated=True)
 
         assert seen == [on.id]
+
+
+class _FakeRedis:
+    """Just enough of redis-py for the in-flight markers."""
+
+    def __init__(self):
+        self.keys: dict[str, str] = {}
+
+    def set(self, key, value, nx=False, ex=None):
+        if nx and key in self.keys:
+            return None
+        self.keys[key] = value
+        return True
+
+    def delete(self, key):
+        self.keys.pop(key, None)
+
+
+@pytest.fixture
+def enqueued(monkeypatch):
+    """Record what ``fan_out_module`` hands to the per-host task."""
+    from app.tasks import drift_sweep
+
+    sent: list[list] = []
+    monkeypatch.setattr(
+        drift_sweep.check_host_module, "apply_async", lambda args, **_kw: sent.append(list(args))
+    )
+    return sent
+
+
+class TestFanOut:
+    """The periodic task enqueues one check per host instead of looping."""
+
+    async def test_one_check_per_enabled_host_and_none_for_disabled(self, db, sweep_on, enqueued):
+        from app.tasks.drift_sweep import fan_out_module
+
+        on, _ = await _managed_host(db)
+        await _managed_host(db, enabled=False)
+
+        result = await fan_out_module(MODULE, redis_client=_FakeRedis())
+
+        assert enqueued == [[MODULE, on.id]]
+        assert result == {"enqueued": 1, "in_flight": 0}
+
+    async def test_a_host_whose_check_is_still_in_flight_is_not_enqueued_twice(
+        self, db, sweep_on, enqueued
+    ):
+        from app.tasks.drift_sweep import fan_out_module
+
+        host, _ = await _managed_host(db)
+        redis = _FakeRedis()
+
+        await fan_out_module(MODULE, redis_client=redis)
+        second = await fan_out_module(MODULE, redis_client=redis)
+
+        assert enqueued == [[MODULE, host.id]]
+        assert second == {"enqueued": 0, "in_flight": 1}
+
+    async def test_firewall_fans_out_over_the_host_level_flag(self, db, sweep_on, enqueued):
+        from app.tasks.drift_sweep import fan_out_module
+
+        ssh = await create_ssh_key(db)
+        on = await create_host(db, ssh_key_id=ssh.id)
+        off = await create_host(db, ssh_key_id=ssh.id)
+        on.drift_check_enabled = True
+        off.drift_check_enabled = False
+        await db.flush()
+
+        await fan_out_module("firewall", redis_client=_FakeRedis())
+
+        assert enqueued == [["firewall", on.id]]
+
+
+class TestThePerHostTask:
+    """``check_host_module`` keeps BUG-67's behaviour for its one host."""
+
+    @pytest.fixture
+    def stub_check(self, monkeypatch):
+        from app.tasks import drift_sweep
+
+        seen: list[int] = []
+
+        async def check_one(h, m, session):
+            seen.append(h.id)
+            m.sync_status = "out_of_sync"
+            return True
+
+        monkeypatch.setattr(drift_sweep, "_resolve_check", lambda _module: check_one)
+        return seen
+
+    async def test_a_busy_host_is_deferred_without_a_check(self, db, sweep_on, stub_check):
+        from app.tasks.drift_sweep import _check_host_module_async
+
+        host, hms = await _managed_host(db, status="in_sync")
+        await _claim_with_sync(db, host.id)
+
+        outcome = await _check_host_module_async(MODULE, host.id)
+
+        assert outcome == "deferred"
+        assert stub_check == []
+        assert hms.sync_status == "in_sync"
+
+    async def test_a_free_host_is_checked_and_committed(self, db, sweep_on, stub_check):
+        from app.tasks.drift_sweep import _check_host_module_async
+
+        host, hms = await _managed_host(db, status="in_sync")
+
+        outcome = await _check_host_module_async(MODULE, host.id)
+
+        assert outcome == "checked"
+        assert hms.sync_status == "out_of_sync"
+        assert sweep_on[-1] == "commit"
+
+    def test_the_task_clears_its_in_flight_marker(self, monkeypatch):
+        from app.tasks import drift_sweep
+
+        redis = _FakeRedis()
+        redis.set(drift_sweep._inflight_key(MODULE, 7), "1")
+
+        async def _fake(module_type, host_id):
+            return "checked"
+
+        monkeypatch.setattr(drift_sweep, "_check_host_module_async", _fake)
+        monkeypatch.setattr("redis.from_url", lambda _url: redis)
+
+        assert drift_sweep.check_host_module.run(MODULE, 7)["outcome"] == "checked"
+        assert redis.keys == {}
+
+
+def test_every_module_check_resolves():
+    """A typo in CHECKS would only show up as a failing tick in production."""
+    from app.tasks.drift_sweep import CHECKS, _resolve_check
+
+    for module_type in CHECKS:
+        assert callable(_resolve_check(module_type)), module_type
