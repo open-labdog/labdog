@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import ValidationError
 from sqlalchemy import case, exists, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 
 from app.actions.registry import ACTION_REGISTRY, reload_registry_async
 from app.actions.run_target import describe_target
@@ -551,6 +552,11 @@ async def get_run(
         .outerjoin(Host, Host.id == ActionHostRun.host_id)
         .where(ActionHostRun.action_run_id == id)
         .order_by(ActionHostRun.id)
+        # BUG-161: ActionHostRunOut has no output, and each host's is up
+        # to 1 MiB (MAX_OUTPUT_BYTES). The run page polls this every few
+        # seconds while a run is open; it reads a host's output from
+        # /host-runs/{id}/output when it shows it.
+        .options(defer(ActionHostRun.output))
     )
     host_runs = host_runs_result.all()
 

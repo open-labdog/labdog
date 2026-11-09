@@ -78,34 +78,6 @@ Checked and not filed:
   preview and output fan-outs below and the shell's 30 s pollers each
   get their own bucket and cannot reach 100/minute.
 
-### Performance — Medium
-
-- [ ] **BUG-161** `backend/app/api/actions.py:549` — the run detail
-      endpoint loads every host's full output, which it then drops, and
-      it is polled every few seconds
-
-      Symptom: `GET /api/actions/runs/{id}` selects whole
-      `ActionHostRun` rows, including `output` (up to 1 MiB per host,
-      `MAX_OUTPUT_BYTES` in `app/tasks/action_host.py:50`), but
-      `ActionHostRunOut` has no output field. The run detail page polls
-      it every 3 s while a run is open
-      (`components/action-run-detail.tsx:78`), and the sync tray every
-      4 s per active run (`components/sync-tray.tsx:139`). For a 100-host
-      run near its end, that is up to 100 MiB read from TOAST and
-      decompressed per poll. Once the run ends, the page fetches every
-      host's output at once (`:99`) and joins them into one string held
-      in React state, though only one host is read at a time.
-
-      Fix direction: `.options(defer(ActionHostRun.output))` in
-      `get_run` (or `deferred=True` on the column, with `undefer` where
-      output is read: the AI run tools, subject investigation, alert
-      handling and the per-host finalisers). In the page, fetch a
-      host's output when it is opened, and fetch the combined view on
-      demand.
-
-      Severity Medium: the waste scales with the run's size and lasts
-      as long as anyone watches it. Traced by reading.
-
 ### Performance — Low
 
 - [ ] **BUG-162** `backend/app/api/sync.py:243` — listing sync jobs
