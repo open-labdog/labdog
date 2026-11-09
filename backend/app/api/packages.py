@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
 from app.api._gitops_lock import check_gitops_lock
+from app.api._group_sync import group_member_ids, has_sync_in_flight
 from app.api._scoped_rules import (
     RuleAudit,
     apply_fields,
@@ -139,7 +140,6 @@ async def delete_group_package(
     # package.  The rule stays in the DB — drift detection will flag any
     # host that still has the package installed, and the user can retry
     # the sync if it fails.
-    from app.models.host import HostGroupMembership
     from app.models.sync_job import SyncJob
     from app.packages.models import PackageState
     from app.tasks.package_sync import run_package_sync
@@ -157,22 +157,12 @@ async def delete_group_package(
     )
     await db.flush()
 
-    memberships = await db.execute(
-        select(HostGroupMembership.c.host_id).where(HostGroupMembership.c.group_id == group_id)
-    )
-    host_ids = [r[0] for r in memberships.all()]
+    host_ids = await group_member_ids(db, group_id)
 
     sync_jobs = 0
     for hid in host_ids:
         # Skip hosts that already have a pending/running package sync
-        running = await db.execute(
-            select(SyncJob).where(
-                SyncJob.host_id == hid,
-                SyncJob.module_type == "package",
-                SyncJob.status.in_(["pending", "running"]),
-            )
-        )
-        if running.scalar_one_or_none():
+        if await has_sync_in_flight(db, hid, "package"):
             continue
 
         host_result = await db.execute(select(Host).where(Host.id == hid))

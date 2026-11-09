@@ -56,7 +56,7 @@ async def check_hosts_drift_for_one_host(host, hms, db) -> bool:
 
     import asyncssh
 
-    from app.hosts_mgmt.collector import collect_hosts_file
+    from app.hosts_mgmt.collector import collect_hosts_file, hosts_entry_dict
     from app.hosts_mgmt.diff import compute_hosts_diff
     from app.hosts_mgmt.merge import get_effective_hosts_entries
     from app.metrics.recorder import record_drift_sample
@@ -82,10 +82,7 @@ async def check_hosts_drift_for_one_host(host, hms, db) -> bool:
         write_drift_verdict(
             hms,
             drifted=diff.has_changes,
-            collected_state=[
-                {"ip_address": e.ip_address, "hostname": e.hostname, "aliases": e.aliases}
-                for e in current
-            ],
+            collected_state=[hosts_entry_dict(e) for e in current],
         )
         await record_drift_sample(
             db,

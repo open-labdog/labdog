@@ -10,7 +10,7 @@ from app.crypto.encryption import decrypt_ssh_key
 from app.crypto.key_management import get_master_key
 from app.db import get_db
 from app.hosts_mgmt.collector import collect_hosts_file
-from app.hosts_mgmt.diff import compute_hosts_diff
+from app.hosts_mgmt.diff import compute_hosts_diff, diff_entry_dict
 from app.hosts_mgmt.merge import get_effective_hosts_entries
 from app.models.host import Host
 from app.models.host_module_status import HostModuleStatus
@@ -102,33 +102,9 @@ async def check_hosts_drift(
             host_id=host_id,
             status=hms.sync_status,
             has_changes=diff.has_changes,
-            entries_to_add=[
-                {
-                    "ip_address": e.ip_address,
-                    "hostname": e.hostname,
-                    "aliases": e.aliases,
-                    "reason": e.reason,
-                }
-                for e in diff.entries_to_add
-            ],
-            entries_to_remove=[
-                {
-                    "ip_address": e.ip_address,
-                    "hostname": e.hostname,
-                    "aliases": e.aliases,
-                    "reason": e.reason,
-                }
-                for e in diff.entries_to_remove
-            ],
-            entries_to_update=[
-                {
-                    "ip_address": e.ip_address,
-                    "hostname": e.hostname,
-                    "aliases": e.aliases,
-                    "reason": e.reason,
-                }
-                for e in diff.entries_to_update
-            ],
+            entries_to_add=[diff_entry_dict(e) for e in diff.entries_to_add],
+            entries_to_remove=[diff_entry_dict(e) for e in diff.entries_to_remove],
+            entries_to_update=[diff_entry_dict(e) for e in diff.entries_to_update],
             entries_in_sync=diff.entries_in_sync,
             checked_at=checked_at.isoformat(),
         )

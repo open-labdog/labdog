@@ -608,12 +608,10 @@ async def _collect_services(host: Host, db: AsyncSession, private_pem: str):
 
 
 async def _collect_hosts_file(host: Host, db: AsyncSession, private_pem: str):
-    from app.hosts_mgmt.collector import collect_hosts_file
+    from app.hosts_mgmt.collector import collect_hosts_file, hosts_entry_dict
 
     current = await collect_hosts_file(host, db, private_pem)
-    return [
-        {"ip_address": e.ip_address, "hostname": e.hostname, "aliases": e.aliases} for e in current
-    ]
+    return [hosts_entry_dict(e) for e in current]
 
 
 async def _collect_users(host: Host, db: AsyncSession, private_pem: str):

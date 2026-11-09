@@ -18,6 +18,11 @@ class ParsedHostsEntry:
     aliases: list[str]
 
 
+def hosts_entry_dict(entry: ParsedHostsEntry) -> dict:
+    """A collected /etc/hosts line as ``HostModuleStatus.collected_state`` stores it."""
+    return {"ip_address": entry.ip_address, "hostname": entry.hostname, "aliases": entry.aliases}
+
+
 async def collect_hosts_file(
     host: "Host",
     db: "AsyncSession",
