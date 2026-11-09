@@ -1,6 +1,7 @@
 import asyncio
 import socket
 
+from app.db import with_task_engine
 from app.tasks import celery_app
 
 
@@ -49,7 +50,7 @@ def scan_network_task(self, cidr: str, port: int, timeout: float, exclude_ips: l
                 )
         return found
 
-    reachable = asyncio.run(_scan_with_progress())
+    reachable = asyncio.run(with_task_engine(_scan_with_progress()))
 
     # Attempt reverse DNS for each discovered IP
     hosts_found = []

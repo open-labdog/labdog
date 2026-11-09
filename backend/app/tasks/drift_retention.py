@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 
+from app.db import with_task_engine
 from app.tasks import celery_app
 
 logger = logging.getLogger(__name__)
@@ -45,7 +46,7 @@ def prune_old_drift_samples() -> dict:
     """Fold ``drift_samples`` older than the window into the rollup, then delete."""
     import asyncio  # noqa: PLC0415
 
-    return asyncio.run(_prune_drift_samples())
+    return asyncio.run(with_task_engine(_prune_drift_samples()))
 
 
 async def _get_retention_days(db) -> int:

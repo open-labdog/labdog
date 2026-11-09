@@ -4,6 +4,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta, tzinfo
 from typing import TYPE_CHECKING
 
+from app.db import with_task_engine
 from app.tasks import celery_app
 
 if TYPE_CHECKING:
@@ -54,7 +55,7 @@ def check_scheduled_scans() -> dict:
     Returns:
         A dict with the number of configs dispatched this tick.
     """
-    count = asyncio.run(_check())
+    count = asyncio.run(with_task_engine(_check()))
     return {"dispatched": count}
 
 

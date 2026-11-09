@@ -52,7 +52,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 
-from app.db import task_session
+from app.db import task_session, with_task_engine
 from app.enum_utils import enum_str
 from app.sync.orchestrator import build_host_sync_plan, execute_host_sync_plan
 from app.tasks import celery_app
@@ -950,12 +950,14 @@ def run_host_sync(
     private_data_dir, ssh_key_path = _make_tmpfs_workspace()
     try:
         payload = asyncio.run(
-            _async_run(
-                job_id=job_id,
-                host_id=host_id,
-                module_filter=module_filter,
-                private_data_dir=private_data_dir,
-                ssh_key_path=ssh_key_path,
+            with_task_engine(
+                _async_run(
+                    job_id=job_id,
+                    host_id=host_id,
+                    module_filter=module_filter,
+                    private_data_dir=private_data_dir,
+                    ssh_key_path=ssh_key_path,
+                )
             )
         )
         # A job the host queue re-dispatched may be the one a deferred
@@ -966,7 +968,7 @@ def run_host_sync(
         # and closes its own row.
         from app.tasks.builtin_dispatchers import close_origin_host_run  # noqa: PLC0415
 
-        asyncio.run(close_origin_host_run(job_id, payload))
+        asyncio.run(with_task_engine(close_origin_host_run(job_id, payload)))
         return payload
     finally:
         _cleanup_tmpfs(private_data_dir)

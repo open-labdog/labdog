@@ -8,6 +8,7 @@ decides whether the verdict becomes durable.
 
 import logging
 
+from app.db import with_task_engine
 from app.tasks import celery_app
 
 logger = logging.getLogger(__name__)
@@ -121,7 +122,7 @@ def check_all_hosts_drift():
 
     from app.tasks.drift_sweep import sweep_module
 
-    return asyncio.run(sweep_module("hosts_file", check_hosts_drift_for_one_host))
+    return asyncio.run(with_task_engine(sweep_module("hosts_file", check_hosts_drift_for_one_host)))
 
 
 # Register periodic hosts drift check via RedBeat

@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from app.db import with_task_engine
 from app.tasks import celery_app
 from app.tasks.action_timeouts import ORCHESTRATOR_POLL_SECONDS
 
@@ -92,7 +93,7 @@ def run_action(self, action_run_id: int) -> dict:
     Returns:
         A dict summarising the outcome, e.g. ``{"action_run_id": 1}``.
     """
-    asyncio.run(_run_action_async(action_run_id, orchestrator_id=self.request.id))
+    asyncio.run(with_task_engine(_run_action_async(action_run_id, orchestrator_id=self.request.id)))
     return {"action_run_id": action_run_id}
 
 
@@ -118,7 +119,7 @@ def resume_run(self, action_run_id: int) -> dict:
     Returns:
         A dict summarising the outcome, e.g. ``{"action_run_id": 1}``.
     """
-    asyncio.run(_resume_run_async(action_run_id, self.request.id))
+    asyncio.run(with_task_engine(_resume_run_async(action_run_id, self.request.id)))
     return {"action_run_id": action_run_id}
 
 

@@ -20,6 +20,7 @@ import shutil
 import tempfile
 from datetime import UTC, datetime
 
+from app.db import with_task_engine
 from app.tasks import celery_app
 
 
@@ -72,7 +73,7 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
     claimed = False
 
     try:
-        claimed = asyncio.run(_claim_or_defer(job_id, host_id))
+        claimed = asyncio.run(with_task_engine(_claim_or_defer(job_id, host_id)))
         if not claimed:
             return {"job_id": job_id, "status": "deferred"}
 
@@ -130,7 +131,7 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
                 with open(f"{private_data_dir}/inventory/hosts", "w") as f:
                     f.write(result["inventory"])
 
-        asyncio.run(_prepare())
+        asyncio.run(with_task_engine(_prepare()))
 
         from app.settings_service import get_setting_cached_typed
 
@@ -162,7 +163,7 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
                     job.error_message = interpret_runner_failure(runner)
                 await db.commit()
 
-        asyncio.run(_record_result())
+        asyncio.run(with_task_engine(_record_result()))
 
         return {
             "job_id": job_id,
@@ -190,7 +191,7 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
                     await db.commit()
 
         try:
-            asyncio.run(_mark_failed())
+            asyncio.run(with_task_engine(_mark_failed()))
         except Exception:
             pass
 
@@ -211,7 +212,9 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
             from app.tasks.host_lock import release_host_queue
 
             asyncio.run(
-                release_host_queue(
-                    host_id, after=f"ca_cert job_id={job_id}", exclude_sync_job_id=job_id
+                with_task_engine(
+                    release_host_queue(
+                        host_id, after=f"ca_cert job_id={job_id}", exclude_sync_job_id=job_id
+                    )
                 )
             )

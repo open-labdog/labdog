@@ -1,6 +1,7 @@
 import logging
 import re
 
+from app.db import with_task_engine
 from app.tasks import celery_app
 
 logger = logging.getLogger(__name__)
@@ -237,4 +238,4 @@ def collect_host_facts(host_id: int):
     """
     import asyncio
 
-    asyncio.run(_collect_host_facts_async(host_id))
+    asyncio.run(with_task_engine(_collect_host_facts_async(host_id)))

@@ -17,6 +17,7 @@ import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 
+from app.db import with_task_engine
 from app.tasks import celery_app
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 @celery_app.task(name="app.tasks.ai_sessions.archive_old_sessions", queue="default")
 def archive_old_sessions() -> dict:
     """Archive finished sessions older than ``ai.session_archive_after_days``."""
-    return asyncio.run(_archive_old_sessions())
+    return asyncio.run(with_task_engine(_archive_old_sessions()))
 
 
 async def _archive_old_sessions(now: datetime | None = None) -> dict:

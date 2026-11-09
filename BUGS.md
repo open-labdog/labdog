@@ -121,40 +121,6 @@ Checked and not filed:
 
 ### Performance — Medium
 
-- [ ] **BUG-156** `backend/app/db.py:37` — `task_session()` builds and
-      disposes a whole engine per call, so a task opens a new Postgres
-      connection for every block
-
-      Symptom: one `task_session()` block running `SELECT 1` takes
-      28.13 ms median (p95 41.59 ms); a session from an existing engine
-      takes 0.63 ms (p95 1.03 ms). *Measured*. A sync opens five or six
-      (`app/tasks/host_sync_orchestrator.py:668`, `:713`, `:791`,
-      `:819`, `:872`), a per-host action run around a dozen
-      (`app/tasks/action_host.py`), the action orchestrator one every 5
-      s for the life of a run (`_check_in`), and `release_host_queue`
-      (`app/tasks/host_lock.py:1102`) one per member host. Each one is
-      a new Postgres backend: a fork plus authentication on the
-      database side.
-
-      Root cause: the docstring's reason holds (an engine made before
-      Celery forks must not be used after), and each Celery task runs
-      its own `asyncio.run`, so a process-wide async pool would hand out
-      connections bound to a closed loop. Making one engine per block
-      solves both, at the price above.
-
-      Fix direction: one engine per event loop instead of per block.
-      Open it at the top of each task's `asyncio.run` (a
-      `task_engine()` context the task wrappers enter), keep it in a
-      `ContextVar`, and have `task_session()` take sessions from it,
-      falling back to today's behaviour when none is set. The sync then
-      makes one connection instead of six, and the orchestrator one per
-      run instead of one per 5 s.
-
-      Severity Medium: a few hundred milliseconds per sync and constant
-      connection churn on the database, not an outage. Related: BUG-132
-      on the PR #270 branch documents about six connections per worker
-      slot, a number this fix should bring down.
-
 - [ ] **BUG-157** `backend/app/packages/generator.py:88` — the packages
       play runs one package-manager call per package and gathers every
       fact

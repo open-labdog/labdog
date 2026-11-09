@@ -33,6 +33,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from app.db import with_task_engine
 from app.tasks import celery_app
 
 logger = logging.getLogger(__name__)
@@ -48,7 +49,7 @@ SWEEP_INTERVAL_SECONDS = 86_400
 )
 def prune_ai_snapshots() -> dict:
     """Delete AI-taken snapshots older than the retention window."""
-    return asyncio.run(_prune_ai_snapshots())
+    return asyncio.run(with_task_engine(_prune_ai_snapshots()))
 
 
 async def _prune_ai_snapshots() -> dict:

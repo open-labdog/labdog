@@ -8,6 +8,7 @@ decides whether the verdict becomes durable.
 
 import logging
 
+from app.db import with_task_engine
 from app.tasks import celery_app
 
 logger = logging.getLogger(__name__)
@@ -87,7 +88,7 @@ def check_all_service_drift():
 
     from app.tasks.drift_sweep import sweep_module
 
-    return asyncio.run(sweep_module("service", check_service_drift_for_one_host))
+    return asyncio.run(with_task_engine(sweep_module("service", check_service_drift_for_one_host)))
 
 
 # Register periodic service drift check via RedBeat

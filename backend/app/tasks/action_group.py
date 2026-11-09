@@ -75,6 +75,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from app.db import with_task_engine
 from app.tasks import celery_app
 
 logger = logging.getLogger(__name__)
@@ -103,7 +104,7 @@ def run_action_group(self, action_run_id: int) -> dict:
     Returns:
         A dict summarising the outcome.
     """
-    asyncio.run(_run_action_group_async(action_run_id))
+    asyncio.run(with_task_engine(_run_action_group_async(action_run_id)))
     return {"action_run_id": action_run_id}
 
 

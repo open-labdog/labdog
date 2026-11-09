@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from app.db import with_task_engine
 from app.tasks import celery_app
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ TICK_SECONDS = 60
 @celery_app.task(name="app.tasks.notifications.deliver")
 def deliver() -> dict:
     """Queue expiry warnings, then send what is due."""
-    return asyncio.run(_deliver())
+    return asyncio.run(with_task_engine(_deliver()))
 
 
 async def _deliver() -> dict:
@@ -44,7 +45,7 @@ async def _deliver() -> dict:
 @celery_app.task(name="app.tasks.notifications.prune_old_notifications")
 def prune_old_notifications() -> dict:
     """Delete sent and failed notifications older than ``logging.run_retention_days``."""
-    return asyncio.run(_prune())
+    return asyncio.run(with_task_engine(_prune()))
 
 
 async def _prune() -> dict:
