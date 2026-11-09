@@ -1,11 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
 from app.api._gitops_lock import check_gitops_lock
-from app.audit.logger import log_action
+from app.api._scoped_rules import (
+    RuleAudit,
+    apply_fields,
+    commit_created,
+    commit_updated,
+    delete_and_commit,
+    flush_or_409,
+    require_group,
+    require_host,
+    scoped_row_or_404,
+)
 from app.auth.users import current_active_user
 from app.cron.merge import get_effective_cron_jobs
 from app.cron.models import CronJob
@@ -16,11 +25,18 @@ from app.cron.schemas import (
     EffectiveCronJobResponse,
 )
 from app.db import get_db
-from app.models.host import Host
-from app.models.host_group import HostGroup
 from app.models.user import User
 
 router = APIRouter(tags=["cron-jobs"])
+
+_NOT_FOUND = "Cron job rule not found"
+
+
+def _audit_state(rule: CronJob) -> dict:
+    return {"name": rule.name, "user": rule.user, "state": str(rule.state)}
+
+
+_AUDIT = RuleAudit("cron_job", _audit_state)
 
 
 # ---------------------------------------------------------------------------
@@ -34,9 +50,7 @@ async def list_group_cron_jobs(
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    group = await db.scalar(select(HostGroup).where(HostGroup.id == group_id))
-    if not group:
-        raise HTTPException(status_code=404, detail="Group not found")
+    await require_group(db, group_id)
 
     result = await db.execute(
         select(CronJob)
@@ -58,32 +72,15 @@ async def create_group_cron_job(
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
-    group = await db.scalar(select(HostGroup).where(HostGroup.id == group_id))
-    if not group:
-        raise HTTPException(status_code=404, detail="Group not found")
+    await require_group(db, group_id)
 
     rule = CronJob(group_id=group_id, **body.model_dump())
     db.add(rule)
-    try:
-        await db.flush()
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail=f"Cron job '{body.name}' for user '{body.user}' already exists in this group",
-        )
-
-    await log_action(
-        db=db,
-        action="create",
-        entity_type="cron_job",
-        entity_id=rule.id,
-        user_id=user.id,
-        after_state={"name": rule.name, "user": rule.user, "state": str(rule.state)},
+    await flush_or_409(
+        db,
+        lambda: f"Cron job '{body.name}' for user '{body.user}' already exists in this group",
     )
-    await db.commit()
-    await db.refresh(rule)
-    return rule
+    return await commit_created(db, rule, _AUDIT, user)
 
 
 @router.put(
@@ -98,42 +95,16 @@ async def update_group_cron_job(
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
-    result = await db.execute(
-        select(CronJob).where(
-            CronJob.id == rule_id,
-            CronJob.group_id == group_id,
-        )
+    rule = await scoped_row_or_404(
+        db, CronJob, rule_id, CronJob.group_id == group_id, detail=_NOT_FOUND
     )
-    rule = result.scalar_one_or_none()
-    if not rule:
-        raise HTTPException(status_code=404, detail="Cron job rule not found")
-
-    before = {"name": rule.name, "user": rule.user, "state": str(rule.state)}
-
-    for field, value in body.model_dump(exclude_unset=True).items():
-        setattr(rule, field, value)
-
-    try:
-        await db.flush()
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail=f"Cron job '{rule.name}' for user '{rule.user}' already exists in this group",
-        )
-
-    await log_action(
-        db=db,
-        action="update",
-        entity_type="cron_job",
-        entity_id=rule.id,
-        user_id=user.id,
-        before_state=before,
-        after_state={"name": rule.name, "user": rule.user, "state": str(rule.state)},
+    before = _audit_state(rule)
+    apply_fields(rule, body.model_dump(exclude_unset=True))
+    await flush_or_409(
+        db,
+        lambda: f"Cron job '{rule.name}' for user '{rule.user}' already exists in this group",
     )
-    await db.commit()
-    await db.refresh(rule)
-    return rule
+    return await commit_updated(db, rule, _AUDIT, user, before)
 
 
 @router.delete("/groups/{group_id}/cron-jobs/{rule_id}", status_code=204)
@@ -144,31 +115,10 @@ async def delete_group_cron_job(
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
-    result = await db.execute(
-        select(CronJob).where(
-            CronJob.id == rule_id,
-            CronJob.group_id == group_id,
-        )
+    rule = await scoped_row_or_404(
+        db, CronJob, rule_id, CronJob.group_id == group_id, detail=_NOT_FOUND
     )
-    rule = result.scalar_one_or_none()
-    if not rule:
-        raise HTTPException(status_code=404, detail="Cron job rule not found")
-
-    before = {"name": rule.name, "user": rule.user, "state": str(rule.state)}
-    rule_id_for_log = rule.id
-
-    await db.delete(rule)
-    await db.flush()
-
-    await log_action(
-        db=db,
-        action="delete",
-        entity_type="cron_job",
-        entity_id=rule_id_for_log,
-        user_id=user.id,
-        before_state=before,
-    )
-    await db.commit()
+    await delete_and_commit(db, rule, _AUDIT, user)
     return Response(status_code=204)
 
 
@@ -183,9 +133,7 @@ async def list_host_cron_jobs(
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    host = await db.scalar(select(Host).where(Host.id == host_id))
-    if not host:
-        raise HTTPException(status_code=404, detail="Host not found")
+    await require_host(db, host_id)
 
     result = await db.execute(
         select(CronJob)
@@ -206,32 +154,15 @@ async def create_host_cron_job(
     user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    host = await db.scalar(select(Host).where(Host.id == host_id))
-    if not host:
-        raise HTTPException(status_code=404, detail="Host not found")
+    await require_host(db, host_id)
 
     rule = CronJob(host_id=host_id, **body.model_dump())
     db.add(rule)
-    try:
-        await db.flush()
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail=f"Cron job '{body.name}' for user '{body.user}' already exists on this host",
-        )
-
-    await log_action(
-        db=db,
-        action="create",
-        entity_type="cron_job",
-        entity_id=rule.id,
-        user_id=user.id,
-        after_state={"name": rule.name, "user": rule.user, "state": str(rule.state)},
+    await flush_or_409(
+        db,
+        lambda: f"Cron job '{body.name}' for user '{body.user}' already exists on this host",
     )
-    await db.commit()
-    await db.refresh(rule)
-    return rule
+    return await commit_created(db, rule, _AUDIT, user)
 
 
 @router.put(
@@ -245,42 +176,16 @@ async def update_host_cron_job(
     user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(CronJob).where(
-            CronJob.id == rule_id,
-            CronJob.host_id == host_id,
-        )
+    rule = await scoped_row_or_404(
+        db, CronJob, rule_id, CronJob.host_id == host_id, detail=_NOT_FOUND
     )
-    rule = result.scalar_one_or_none()
-    if not rule:
-        raise HTTPException(status_code=404, detail="Cron job rule not found")
-
-    before = {"name": rule.name, "user": rule.user, "state": str(rule.state)}
-
-    for field, value in body.model_dump(exclude_unset=True).items():
-        setattr(rule, field, value)
-
-    try:
-        await db.flush()
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail=f"Cron job '{rule.name}' for user '{rule.user}' already exists on this host",
-        )
-
-    await log_action(
-        db=db,
-        action="update",
-        entity_type="cron_job",
-        entity_id=rule.id,
-        user_id=user.id,
-        before_state=before,
-        after_state={"name": rule.name, "user": rule.user, "state": str(rule.state)},
+    before = _audit_state(rule)
+    apply_fields(rule, body.model_dump(exclude_unset=True))
+    await flush_or_409(
+        db,
+        lambda: f"Cron job '{rule.name}' for user '{rule.user}' already exists on this host",
     )
-    await db.commit()
-    await db.refresh(rule)
-    return rule
+    return await commit_updated(db, rule, _AUDIT, user, before)
 
 
 @router.delete("/hosts/{host_id}/cron-jobs/{rule_id}", status_code=204)
@@ -290,31 +195,10 @@ async def delete_host_cron_job(
     user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(CronJob).where(
-            CronJob.id == rule_id,
-            CronJob.host_id == host_id,
-        )
+    rule = await scoped_row_or_404(
+        db, CronJob, rule_id, CronJob.host_id == host_id, detail=_NOT_FOUND
     )
-    rule = result.scalar_one_or_none()
-    if not rule:
-        raise HTTPException(status_code=404, detail="Cron job rule not found")
-
-    before = {"name": rule.name, "user": rule.user, "state": str(rule.state)}
-    rule_id_for_log = rule.id
-
-    await db.delete(rule)
-    await db.flush()
-
-    await log_action(
-        db=db,
-        action="delete",
-        entity_type="cron_job",
-        entity_id=rule_id_for_log,
-        user_id=user.id,
-        before_state=before,
-    )
-    await db.commit()
+    await delete_and_commit(db, rule, _AUDIT, user)
     return Response(status_code=204)
 
 
@@ -332,8 +216,6 @@ async def effective_cron_jobs(
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    host = await db.scalar(select(Host).where(Host.id == host_id))
-    if not host:
-        raise HTTPException(status_code=404, detail="Host not found")
+    await require_host(db, host_id)
 
     return await get_effective_cron_jobs(host_id, db)

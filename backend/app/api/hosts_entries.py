@@ -4,7 +4,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api._gitops_lock import check_gitops_lock
-from app.audit.logger import log_action
+from app.api._scoped_rules import (
+    RuleAudit,
+    commit_created,
+    commit_updated,
+    delete_and_commit,
+    require_group,
+    require_host,
+    scoped_row_or_404,
+)
 from app.auth.users import current_active_user
 from app.db import get_db
 from app.hosts_mgmt.merge import get_effective_hosts_entries, render_hosts_file
@@ -16,10 +24,26 @@ from app.hosts_mgmt.schemas import (
     HostsEntryUpdate,
 )
 from app.models.host import Host
-from app.models.host_group import HostGroup
 from app.models.user import User
 
 router = APIRouter(tags=["hosts-entries"])
+
+_NOT_FOUND = "Hosts entry not found"
+
+
+def _audit_state(entry: HostsEntry) -> dict:
+    return {
+        "ip_address": entry.ip_address,
+        "hostname": entry.hostname,
+        "host_ref_id": entry.host_ref_id,
+    }
+
+
+def _deleted_state(entry: HostsEntry) -> dict:
+    return {"ip_address": entry.ip_address, "hostname": entry.hostname}
+
+
+_AUDIT = RuleAudit("hosts_entry", _audit_state, deleted_state=_deleted_state)
 
 
 async def _validate_host_ref(db: AsyncSession, host_ref_id: int | None) -> None:
@@ -59,9 +83,7 @@ async def list_group_hosts_entries(
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    group = await db.scalar(select(HostGroup).where(HostGroup.id == group_id))
-    if not group:
-        raise HTTPException(status_code=404, detail="Group not found")
+    await require_group(db, group_id)
 
     result = await db.execute(
         select(HostsEntry)
@@ -83,30 +105,13 @@ async def create_group_hosts_entry(
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
-    group = await db.scalar(select(HostGroup).where(HostGroup.id == group_id))
-    if not group:
-        raise HTTPException(status_code=404, detail="Group not found")
+    await require_group(db, group_id)
 
     await _validate_host_ref(db, body.host_ref_id)
     entry = HostsEntry(group_id=group_id, **body.model_dump())
     db.add(entry)
     await db.flush()
-
-    await log_action(
-        db=db,
-        action="create",
-        entity_type="hosts_entry",
-        entity_id=entry.id,
-        user_id=user.id,
-        after_state={
-            "ip_address": entry.ip_address,
-            "hostname": entry.hostname,
-            "host_ref_id": entry.host_ref_id,
-        },
-    )
-    await db.commit()
-    await db.refresh(entry)
-    return entry
+    return await commit_created(db, entry, _AUDIT, user)
 
 
 @router.put(
@@ -121,42 +126,13 @@ async def update_group_hosts_entry(
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
-    result = await db.execute(
-        select(HostsEntry).where(
-            HostsEntry.id == entry_id,
-            HostsEntry.group_id == group_id,
-        )
+    entry = await scoped_row_or_404(
+        db, HostsEntry, entry_id, HostsEntry.group_id == group_id, detail=_NOT_FOUND
     )
-    entry = result.scalar_one_or_none()
-    if not entry:
-        raise HTTPException(status_code=404, detail="Hosts entry not found")
-
-    before = {
-        "ip_address": entry.ip_address,
-        "hostname": entry.hostname,
-        "host_ref_id": entry.host_ref_id,
-    }
-
+    before = _audit_state(entry)
     await _apply_entry_update(db, entry, body)
-
     await db.flush()
-
-    await log_action(
-        db=db,
-        action="update",
-        entity_type="hosts_entry",
-        entity_id=entry.id,
-        user_id=user.id,
-        before_state=before,
-        after_state={
-            "ip_address": entry.ip_address,
-            "hostname": entry.hostname,
-            "host_ref_id": entry.host_ref_id,
-        },
-    )
-    await db.commit()
-    await db.refresh(entry)
-    return entry
+    return await commit_updated(db, entry, _AUDIT, user, before)
 
 
 @router.delete("/groups/{group_id}/hosts-entries/{entry_id}", status_code=204)
@@ -167,31 +143,10 @@ async def delete_group_hosts_entry(
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
-    result = await db.execute(
-        select(HostsEntry).where(
-            HostsEntry.id == entry_id,
-            HostsEntry.group_id == group_id,
-        )
+    entry = await scoped_row_or_404(
+        db, HostsEntry, entry_id, HostsEntry.group_id == group_id, detail=_NOT_FOUND
     )
-    entry = result.scalar_one_or_none()
-    if not entry:
-        raise HTTPException(status_code=404, detail="Hosts entry not found")
-
-    before = {"ip_address": entry.ip_address, "hostname": entry.hostname}
-    entry_id_for_log = entry.id
-
-    await db.delete(entry)
-    await db.flush()
-
-    await log_action(
-        db=db,
-        action="delete",
-        entity_type="hosts_entry",
-        entity_id=entry_id_for_log,
-        user_id=user.id,
-        before_state=before,
-    )
-    await db.commit()
+    await delete_and_commit(db, entry, _AUDIT, user)
 
 
 # ---------------------------------------------------------------------------
@@ -208,9 +163,7 @@ async def list_host_hosts_entries(
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    host = await db.scalar(select(Host).where(Host.id == host_id))
-    if not host:
-        raise HTTPException(status_code=404, detail="Host not found")
+    await require_host(db, host_id)
 
     result = await db.execute(
         select(HostsEntry)
@@ -231,30 +184,13 @@ async def create_host_hosts_entry(
     user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    host = await db.scalar(select(Host).where(Host.id == host_id))
-    if not host:
-        raise HTTPException(status_code=404, detail="Host not found")
+    await require_host(db, host_id)
 
     await _validate_host_ref(db, body.host_ref_id)
     entry = HostsEntry(host_id=host_id, **body.model_dump())
     db.add(entry)
     await db.flush()
-
-    await log_action(
-        db=db,
-        action="create",
-        entity_type="hosts_entry",
-        entity_id=entry.id,
-        user_id=user.id,
-        after_state={
-            "ip_address": entry.ip_address,
-            "hostname": entry.hostname,
-            "host_ref_id": entry.host_ref_id,
-        },
-    )
-    await db.commit()
-    await db.refresh(entry)
-    return entry
+    return await commit_created(db, entry, _AUDIT, user)
 
 
 @router.put(
@@ -268,42 +204,13 @@ async def update_host_hosts_entry(
     user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(HostsEntry).where(
-            HostsEntry.id == entry_id,
-            HostsEntry.host_id == host_id,
-        )
+    entry = await scoped_row_or_404(
+        db, HostsEntry, entry_id, HostsEntry.host_id == host_id, detail=_NOT_FOUND
     )
-    entry = result.scalar_one_or_none()
-    if not entry:
-        raise HTTPException(status_code=404, detail="Hosts entry not found")
-
-    before = {
-        "ip_address": entry.ip_address,
-        "hostname": entry.hostname,
-        "host_ref_id": entry.host_ref_id,
-    }
-
+    before = _audit_state(entry)
     await _apply_entry_update(db, entry, body)
-
     await db.flush()
-
-    await log_action(
-        db=db,
-        action="update",
-        entity_type="hosts_entry",
-        entity_id=entry.id,
-        user_id=user.id,
-        before_state=before,
-        after_state={
-            "ip_address": entry.ip_address,
-            "hostname": entry.hostname,
-            "host_ref_id": entry.host_ref_id,
-        },
-    )
-    await db.commit()
-    await db.refresh(entry)
-    return entry
+    return await commit_updated(db, entry, _AUDIT, user, before)
 
 
 @router.delete("/hosts/{host_id}/hosts-entries/{entry_id}", status_code=204)
@@ -313,31 +220,10 @@ async def delete_host_hosts_entry(
     user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(HostsEntry).where(
-            HostsEntry.id == entry_id,
-            HostsEntry.host_id == host_id,
-        )
+    entry = await scoped_row_or_404(
+        db, HostsEntry, entry_id, HostsEntry.host_id == host_id, detail=_NOT_FOUND
     )
-    entry = result.scalar_one_or_none()
-    if not entry:
-        raise HTTPException(status_code=404, detail="Hosts entry not found")
-
-    before = {"ip_address": entry.ip_address, "hostname": entry.hostname}
-    entry_id_for_log = entry.id
-
-    await db.delete(entry)
-    await db.flush()
-
-    await log_action(
-        db=db,
-        action="delete",
-        entity_type="hosts_entry",
-        entity_id=entry_id_for_log,
-        user_id=user.id,
-        before_state=before,
-    )
-    await db.commit()
+    await delete_and_commit(db, entry, _AUDIT, user)
 
 
 # ---------------------------------------------------------------------------
@@ -354,9 +240,7 @@ async def effective_hosts_entries(
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    host = await db.scalar(select(Host).where(Host.id == host_id))
-    if not host:
-        raise HTTPException(status_code=404, detail="Host not found")
+    await require_host(db, host_id)
 
     return await get_effective_hosts_entries(host_id, db)
 
@@ -375,9 +259,7 @@ async def hosts_file_preview(
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    host = await db.scalar(select(Host).where(Host.id == host_id))
-    if not host:
-        raise HTTPException(status_code=404, detail="Host not found")
+    await require_host(db, host_id)
 
     entries = await get_effective_hosts_entries(host_id, db)
     # Empty when no entry applies: a sync then leaves the file alone, so
