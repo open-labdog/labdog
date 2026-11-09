@@ -21,7 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
-from app.gitops.importers.firewall import ModuleImportResult
+from app.gitops.importers._common import ModuleImportResult
 from app.gitops.schema import LabDogGlobalYAML
 from app.models.app_setting import AppSetting
 from app.settings_service import SETTING_DEFINITIONS, get_default, invalidate_cache

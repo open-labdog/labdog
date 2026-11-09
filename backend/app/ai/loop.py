@@ -36,13 +36,15 @@ from app.ai.providers.base import (
     TextDelta,
     ToolCall,
     ToolCallEnd,
+    ToolSpec,
     TurnEnd,
     Usage,
 )
 from app.ai.providers.factory import build_provider
 from app.ai.redaction import redact
+from app.ai.safety import Classification, Verdict
 from app.ai.snapshots import snapshot_if_mutating
-from app.ai.tools import TOOL_REGISTRY, ToolContext, tools_for_session
+from app.ai.tools import TOOL_REGISTRY, ToolContext, ToolHandler, ToolResult, tools_for_session
 from app.audit.logger import log_action
 from app.settings_service import get_setting_typed
 
@@ -268,6 +270,16 @@ class LoopOutcome:
     stopped_by: str = ""
 
 
+@dataclass
+class _StreamedTurn:
+    """What one provider turn produced."""
+
+    #: The turn's text, joined and stripped.
+    text: str
+    tool_calls: list[ToolCall]
+    turn_end: TurnEnd | None
+
+
 def build_system_prompt(autonomy_level: str, *, mode: str = "chat") -> str:
     prompt = SYSTEM_PROMPT.format(
         autonomy=autonomy_level,
@@ -386,17 +398,7 @@ class AgentLoop:
     async def _run_tool(self, call: ToolCall, ctx: ToolContext) -> str:
         """Execute one tool call, record it, and return the model-facing text."""
         handler = TOOL_REGISTRY.get(call.name)
-        started = datetime.now(UTC)
-
-        record = AIToolCall(
-            session_id=self.session.id,
-            tool_name=call.name,
-            arguments=call.arguments,
-            classification=handler.classification if handler else "unknown",
-            status="proposed",
-            started_at=started,
-        )
-        self.db.add(record)
+        record = self._new_call_record(call, handler)
 
         # The allowlist is re-checked here, not just when building the tool
         # specs. A model can call a name it was never offered, and this is
@@ -404,23 +406,7 @@ class AgentLoop:
         permitted = set(self._permitted)
 
         if handler is None or call.name not in permitted:
-            record.status = "blocked" if handler is not None else "error"
-            record.result_summary = (
-                "tool not permitted for this session" if handler is not None else "unknown tool"
-            )
-            record.finished_at = datetime.now(UTC)
-            await self.db.flush()
-            # A verify session has no tools at all, and "You may use: "
-            # with nothing after it reads like the list failed to render
-            # rather than like a deliberate restriction.
-            available = (
-                f"You may use: {', '.join(sorted(permitted))}"
-                if permitted
-                else "This session has no tools. Answer from the evidence you were given."
-            )
-            if handler is not None:
-                return f"The {call.name} tool is not available to this session. {available}"
-            return f"There is no tool called {call.name!r}. {available}"
+            return await self._refuse_unpermitted(call, handler, record, permitted)
 
         # Autonomy is decided here, before the call runs, using the same
         # function the SDK runner's permission callback uses. It used to be
@@ -434,49 +420,9 @@ class AgentLoop:
             autonomy_level=self.session.autonomy_level,
         )
         if decision.needs_approval and decision.verdict is not None:
-            self._parked = await approvals.park(
-                self.db,
-                self.session,
-                tool_name=call.name,
-                arguments=call.arguments,
-                verdict=decision.verdict,
-                record=record,
-            )
-            await self.db.commit()
-            await self._emit(
-                "approval_required",
-                {
-                    "approval_id": self._parked.id,
-                    "tool_name": self._parked.tool_name,
-                    "command_preview": self._parked.command_preview,
-                    "target_host_id": self._parked.target_host_id,
-                    "reason": self._parked.reason,
-                    "summary": self._parked.summary,
-                },
-            )
-            return approvals.PARKED_RESULT
+            return await self._park_for_approval(call, decision.verdict, record)
 
-        # full_auto reaches here with a write the operator never sees, so
-        # the rollback point has to be taken now rather than asked for
-        # afterwards — and an unattended one waits for no host LabDog is
-        # itself changing, which is checked first so a refusal costs no
-        # snapshot.
-        snapshot_name = None
-        refusal = await busy_refusal(
-            self.db,
-            self.session,
-            classification=decision.classification,
-            arguments=call.arguments,
-        )
-        if not refusal:
-            snapshot_name, refusal = await snapshot_if_mutating(
-                self.db,
-                classification=decision.classification,
-                arguments=call.arguments,
-                session_id=self.session.id,
-                label=str(call.arguments.get("command") or call.name),
-                skip=self.session.skip_snapshots,
-            )
+        snapshot_name, refusal = await self._rollback_point(call, decision.classification)
         if refusal:
             record.status = "blocked"
             record.result_summary = refusal[:1000]
@@ -493,43 +439,11 @@ class AgentLoop:
         try:
             result = await handler.run(ctx, call.arguments)
         except Exception as exc:
-            logger.exception("ai session %s: tool %s failed", self.session.id, call.name)
-            record.status = "error"
-            record.result_summary = str(exc)[:500]
-            record.finished_at = datetime.now(UTC)
-            await self.db.flush()
-            return f"The {call.name} tool failed: {exc}"
+            return await self._record_tool_failure(call, record, exc)
 
-        record.classification = result.classification or handler.classification
-        record.target_host_id = result.target_host_id
-        record.result_summary = (result.summary or result.content)[:1000]
-        # What this call actually cost in context. Recorded per call so the
-        # relative expense of tools is observable rather than assumed.
-        record.result_chars = len(result.content)
-        record.finished_at = datetime.now(UTC)
-        record.status = (
-            "executed"
-            if result.ok
-            else ("blocked" if record.classification == "denied" else "error")
-        )
-
+        self._record_tool_result(record, handler, result)
         if call.name == "run_ssh_command":
-            self.session.command_count += 1
-            # Commands against managed hosts belong in the same audit trail
-            # as any other change LabDog makes to them.
-            await log_action(
-                self.db,
-                action="ai_command",
-                entity_type="host",
-                entity_id=result.target_host_id,
-                user_id=self.session.created_by_user_id,
-                after_state={
-                    "session_id": self.session.id,
-                    "command": redact(str(call.arguments.get("command", ""))),
-                    "classification": record.classification,
-                    "status": record.status,
-                },
-            )
+            await self._audit_ssh_command(call, record, result)
 
         await self.db.flush()
         await self._emit(
@@ -543,6 +457,145 @@ class AgentLoop:
             },
         )
         return result.content
+
+    def _new_call_record(self, call: ToolCall, handler: ToolHandler | None) -> AIToolCall:
+        """Add a ``proposed`` row for the call; each exit settles it."""
+        record = AIToolCall(
+            session_id=self.session.id,
+            tool_name=call.name,
+            arguments=call.arguments,
+            classification=handler.classification if handler else "unknown",
+            status="proposed",
+            started_at=datetime.now(UTC),
+        )
+        self.db.add(record)
+        return record
+
+    async def _refuse_unpermitted(
+        self,
+        call: ToolCall,
+        handler: ToolHandler | None,
+        record: AIToolCall,
+        permitted: set[str],
+    ) -> str:
+        """Settle a call to an unknown or withheld tool, and tell the model
+        what it may use instead."""
+        record.status = "blocked" if handler is not None else "error"
+        record.result_summary = (
+            "tool not permitted for this session" if handler is not None else "unknown tool"
+        )
+        record.finished_at = datetime.now(UTC)
+        await self.db.flush()
+        # A verify session has no tools at all, and "You may use: "
+        # with nothing after it reads like the list failed to render
+        # rather than like a deliberate restriction.
+        available = (
+            f"You may use: {', '.join(sorted(permitted))}"
+            if permitted
+            else "This session has no tools. Answer from the evidence you were given."
+        )
+        if handler is not None:
+            return f"The {call.name} tool is not available to this session. {available}"
+        return f"There is no tool called {call.name!r}. {available}"
+
+    async def _park_for_approval(self, call: ToolCall, verdict: Verdict, record: AIToolCall) -> str:
+        """Hold the call for an operator's decision, which ends this run."""
+        self._parked = await approvals.park(
+            self.db,
+            self.session,
+            tool_name=call.name,
+            arguments=call.arguments,
+            verdict=verdict,
+            record=record,
+        )
+        await self.db.commit()
+        await self._emit(
+            "approval_required",
+            {
+                "approval_id": self._parked.id,
+                "tool_name": self._parked.tool_name,
+                "command_preview": self._parked.command_preview,
+                "target_host_id": self._parked.target_host_id,
+                "reason": self._parked.reason,
+                "summary": self._parked.summary,
+            },
+        )
+        return approvals.PARKED_RESULT
+
+    async def _rollback_point(
+        self, call: ToolCall, classification: Classification
+    ) -> tuple[str | None, str | None]:
+        """The snapshot taken for the call, and the refusal that stops it.
+
+        full_auto reaches here with a write the operator never sees, so
+        the rollback point has to be taken now rather than asked for
+        afterwards — and an unattended one waits for no host LabDog is
+        itself changing, which is checked first so a refusal costs no
+        snapshot.
+        """
+        snapshot_name = None
+        refusal = await busy_refusal(
+            self.db,
+            self.session,
+            classification=classification,
+            arguments=call.arguments,
+        )
+        if not refusal:
+            snapshot_name, refusal = await snapshot_if_mutating(
+                self.db,
+                classification=classification,
+                arguments=call.arguments,
+                session_id=self.session.id,
+                label=str(call.arguments.get("command") or call.name),
+                skip=self.session.skip_snapshots,
+            )
+        return snapshot_name, refusal
+
+    async def _record_tool_failure(self, call: ToolCall, record: AIToolCall, exc: Exception) -> str:
+        """Settle a call whose handler raised. Called from the ``except``
+        block, so the logged traceback is the handler's."""
+        logger.exception("ai session %s: tool %s failed", self.session.id, call.name)
+        record.status = "error"
+        record.result_summary = str(exc)[:500]
+        record.finished_at = datetime.now(UTC)
+        await self.db.flush()
+        return f"The {call.name} tool failed: {exc}"
+
+    @staticmethod
+    def _record_tool_result(record: AIToolCall, handler: ToolHandler, result: ToolResult) -> None:
+        record.classification = result.classification or handler.classification
+        record.target_host_id = result.target_host_id
+        record.result_summary = (result.summary or result.content)[:1000]
+        # What this call actually cost in context. Recorded per call so the
+        # relative expense of tools is observable rather than assumed.
+        record.result_chars = len(result.content)
+        record.finished_at = datetime.now(UTC)
+        record.status = (
+            "executed"
+            if result.ok
+            else ("blocked" if record.classification == "denied" else "error")
+        )
+
+    async def _audit_ssh_command(
+        self, call: ToolCall, record: AIToolCall, result: ToolResult
+    ) -> None:
+        """Count the command against the cap and add it to the audit log."""
+        self.session.command_count += 1
+        # Commands against managed hosts belong in the same audit trail
+        # as any other change LabDog makes to them.
+        await log_action(
+            self.db,
+            action="ai_command",
+            entity_type="host",
+            entity_id=result.target_host_id,
+            user_id=self.session.created_by_user_id,
+            after_state={
+                "session_id": self.session.id,
+                "command": redact(str(call.arguments.get("command", ""))),
+                "classification": record.classification,
+                "status": record.status,
+            },
+        )
 
     async def run(self) -> LoopOutcome:
         """Iterate until the model is done or a cap stops it."""
@@ -567,12 +620,7 @@ class AgentLoop:
             await self._emit("status", {"status": "failed", "error": message})
             return LoopOutcome("failed", "", 0, message)
 
-        session.status = "running"
-        session.started_at = session.started_at or datetime.now(UTC)
-        # Commit rather than flush: holding the row lock for the whole run
-        # would block an operator's Cancel instead of applying it, and would
-        # lose the transcript if the worker died mid-session.
-        await self.db.commit()
+        await self._mark_running()
 
         ctx = ToolContext(
             db=self.db,
@@ -598,100 +646,27 @@ class AgentLoop:
 
             # Budget is re-checked every iteration, not just at the start: a
             # long run can cross the limit partway through.
-            budget = await service.get_budget_status(self.db, self.provider_row)
-            if budget.exceeded:
-                stopped_by = budget.reason
+            if (spent := await self._budget_spent()) is not None:
+                stopped_by = spent
                 break
-            warn_pct = int(await get_setting_typed("ai.budget_warn_pct", self.db))
-            if warn_pct and budget.warn_fraction() * 100 >= warn_pct:
-                await self._emit(
-                    "budget_warning",
-                    {
-                        "message": (
-                            f"AI spend is at {budget.warn_fraction() * 100:.0f}% of budget."
-                        ),
-                        "day_spend": budget.day_spend,
-                        "month_spend": budget.month_spend,
-                    },
-                )
 
             transcript = _to_normalized(await service.load_transcript(self.db, session.id))
-            turn_text: list[str] = []
-            tool_calls: list[ToolCall] = []
-            turn_end: TurnEnd | None = None
-
             try:
-                async for event in self.provider.stream_turn(
-                    transcript,
-                    specs,
-                    max_tokens=self.provider_row.max_tokens,
-                    temperature=self.provider_row.temperature,
-                ):
-                    if isinstance(event, TextDelta):
-                        turn_text.append(event.text)
-                        await self._emit("text", {"text": event.text})
-                    elif isinstance(event, ToolCallEnd):
-                        tool_calls.append(event.call)
-                    elif isinstance(event, Usage):
-                        await self._record_usage(event)
-                    elif isinstance(event, TurnEnd):
-                        turn_end = event
+                turn = await self._stream_turn(transcript, specs)
             except LLMProviderError as exc:
-                logger.warning("ai session %s: provider error: %s", session.id, exc)
-                await service.finish_session(self.db, session, status="failed", error=str(exc))
-                await self.db.commit()
-                await self._emit("error", {"message": str(exc)})
-                return LoopOutcome("failed", "", session.iterations, str(exc))
+                return await self._fail_on_provider_error(exc)
 
             session.iterations += 1
-            text = "".join(turn_text).strip()
+            await self._append_assistant_turn(turn)
 
-            await service.append_message(
-                self.db,
-                session.id,
-                role="assistant",
-                content=text,
-                tool_calls=[
-                    {"id": c.id, "name": c.name, "arguments": c.arguments} for c in tool_calls
-                ]
-                or None,
-            )
-
-            if not tool_calls:
-                final_text = text
-                if turn_end and turn_end.stop_reason == "max_tokens":
+            if not turn.tool_calls:
+                final_text = turn.text
+                if turn.turn_end and turn.turn_end.stop_reason == "max_tokens":
                     stopped_by = "the model's per-turn output limit"
                 await self.db.commit()
                 break
 
-            for index, call in enumerate(tool_calls):
-                content = await self._run_tool(call, ctx)
-                await service.append_message(
-                    self.db,
-                    session.id,
-                    role="tool",
-                    content=content,
-                    tool_call_id=call.id,
-                )
-                if self._parked is not None:
-                    # Every remaining call in this turn still needs a
-                    # result. Both wire formats reject a tool call with no
-                    # matching result, so a transcript persisted with a
-                    # dangling one could not be replayed on resume — and
-                    # would fail at the provider, looking like an outage
-                    # rather than a bug here.
-                    for skipped in tool_calls[index + 1 :]:
-                        await service.append_message(
-                            self.db,
-                            session.id,
-                            role="tool",
-                            content=approvals.SKIPPED_RESULT,
-                            tool_call_id=skipped.id,
-                        )
-                    break
-                if cap := self._cap_hit():
-                    stopped_by = cap
-                    break
+            stopped_by = await self._run_turn_tools(turn.tool_calls, ctx)
 
             # Land the turn before the next provider call: the transcript is
             # what a reconnecting UI reads, and what a resumed session would
@@ -708,6 +683,115 @@ class AgentLoop:
             if stopped_by:
                 break
 
+        return await self._finish(final_text, stopped_by)
+
+    async def _mark_running(self) -> None:
+        self.session.status = "running"
+        self.session.started_at = self.session.started_at or datetime.now(UTC)
+        # Commit rather than flush: holding the row lock for the whole run
+        # would block an operator's Cancel instead of applying it, and would
+        # lose the transcript if the worker died mid-session.
+        await self.db.commit()
+
+    async def _budget_spent(self) -> str | None:
+        """Why the run must stop for spend, or None; warns as it nears."""
+        budget = await service.get_budget_status(self.db, self.provider_row)
+        if budget.exceeded:
+            return budget.reason
+        warn_pct = int(await get_setting_typed("ai.budget_warn_pct", self.db))
+        if warn_pct and budget.warn_fraction() * 100 >= warn_pct:
+            await self._emit(
+                "budget_warning",
+                {
+                    "message": f"AI spend is at {budget.warn_fraction() * 100:.0f}% of budget.",
+                    "day_spend": budget.day_spend,
+                    "month_spend": budget.month_spend,
+                },
+            )
+        return None
+
+    async def _stream_turn(
+        self, transcript: list[NormalizedMessage], specs: list[ToolSpec]
+    ) -> _StreamedTurn:
+        """One provider turn, its text published and its usage recorded as
+        they arrive. Raises :class:`LLMProviderError` as the provider does."""
+        turn_text: list[str] = []
+        tool_calls: list[ToolCall] = []
+        turn_end: TurnEnd | None = None
+        async for event in self.provider.stream_turn(
+            transcript,
+            specs,
+            max_tokens=self.provider_row.max_tokens,
+            temperature=self.provider_row.temperature,
+        ):
+            if isinstance(event, TextDelta):
+                turn_text.append(event.text)
+                await self._emit("text", {"text": event.text})
+            elif isinstance(event, ToolCallEnd):
+                tool_calls.append(event.call)
+            elif isinstance(event, Usage):
+                await self._record_usage(event)
+            elif isinstance(event, TurnEnd):
+                turn_end = event
+        return _StreamedTurn("".join(turn_text).strip(), tool_calls, turn_end)
+
+    async def _fail_on_provider_error(self, exc: LLMProviderError) -> LoopOutcome:
+        logger.warning("ai session %s: provider error: %s", self.session.id, exc)
+        await service.finish_session(self.db, self.session, status="failed", error=str(exc))
+        await self.db.commit()
+        await self._emit("error", {"message": str(exc)})
+        return LoopOutcome("failed", "", self.session.iterations, str(exc))
+
+    async def _append_assistant_turn(self, turn: _StreamedTurn) -> None:
+        await service.append_message(
+            self.db,
+            self.session.id,
+            role="assistant",
+            content=turn.text,
+            tool_calls=[
+                {"id": c.id, "name": c.name, "arguments": c.arguments} for c in turn.tool_calls
+            ]
+            or None,
+        )
+
+    async def _run_turn_tools(self, tool_calls: list[ToolCall], ctx: ToolContext) -> str:
+        """Run one turn's calls in order, appending each result.
+
+        Returns the cap that stopped the turn, or ``""``. A call that parks
+        for approval also stops it; ``self._parked`` says so.
+        """
+        for index, call in enumerate(tool_calls):
+            content = await self._run_tool(call, ctx)
+            await service.append_message(
+                self.db,
+                self.session.id,
+                role="tool",
+                content=content,
+                tool_call_id=call.id,
+            )
+            if self._parked is not None:
+                # Every remaining call in this turn still needs a
+                # result. Both wire formats reject a tool call with no
+                # matching result, so a transcript persisted with a
+                # dangling one could not be replayed on resume — and
+                # would fail at the provider, looking like an outage
+                # rather than a bug here.
+                for skipped in tool_calls[index + 1 :]:
+                    await service.append_message(
+                        self.db,
+                        self.session.id,
+                        role="tool",
+                        content=approvals.SKIPPED_RESULT,
+                        tool_call_id=skipped.id,
+                    )
+                return ""
+            if cap := self._cap_hit():
+                return cap
+        return ""
+
+    async def _finish(self, final_text: str, stopped_by: str) -> LoopOutcome:
+        """Write the report and close the session, unless it was cancelled."""
+        session = self.session
         if stopped_by and not final_text:
             final_text = await self._summarize_partial(stopped_by)
 
@@ -748,23 +832,11 @@ class AgentLoop:
                 ),
             )
         )
-        chunks: list[str] = []
         try:
-            async for event in self.provider.stream_turn(
-                transcript,
-                [],
-                max_tokens=self.provider_row.max_tokens,
-                temperature=self.provider_row.temperature,
-            ):
-                if isinstance(event, TextDelta):
-                    chunks.append(event.text)
-                    await self._emit("text", {"text": event.text})
-                elif isinstance(event, Usage):
-                    await self._record_usage(event)
+            text = (await self._stream_turn(transcript, [])).text
         except LLMProviderError as exc:
             logger.info("ai session %s: wrap-up failed: %s", self.session.id, exc)
             return ""
-        text = "".join(chunks).strip()
         if text:
             await service.append_message(self.db, self.session.id, role="assistant", content=text)
         return text

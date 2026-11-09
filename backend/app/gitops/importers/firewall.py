@@ -1,12 +1,13 @@
 """Firewall module GitOps import handler."""
 
 import logging
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
+from app.gitops.importers._common import ModuleImportResult, log_import_summary
 from app.gitops.schema import LabDogGroupYAML
 from app.gitops.serializer import YAMLParseError, yaml_rules_to_specs
 from app.models.firewall_rule import FirewallRule
@@ -14,27 +15,6 @@ from app.models.host_group import HostGroup
 from app.rules.converter import firewall_rules_to_specs, spec_to_firewall_rule
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class ModuleImportResult:
-    """Result produced by a single per-module import handler.
-
-    Attributes:
-        module: Module name (e.g. ``"firewall"``).
-        added: Number of rows added.
-        removed: Number of rows removed.
-        unchanged: Number of rows that were already correct.
-        changed: ``True`` when any mutations were performed.
-        error_message: Non-``None`` when the handler failed.
-    """
-
-    module: str
-    added: int = 0
-    removed: int = 0
-    unchanged: int = 0
-    changed: bool = False
-    error_message: str | None = None
 
 
 async def import_firewall(
@@ -142,13 +122,6 @@ async def import_firewall(
             after_state=after_state,
         )
 
-    logger.info(
-        "GitOps firewall import for group %d: +%d -%d =%d (SHA: %s)",
-        group_id,
-        module_result.added,
-        module_result.removed,
-        module_result.unchanged,
-        commit_sha[:8],
-    )
+    log_import_summary(logger, "firewall", group_id, module_result, commit_sha)
 
     return module_result

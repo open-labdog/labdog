@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api._group_sync import group_member_ids_or_400
 from app.auth.users import current_active_user
 from app.ca_certs.actions import (
     CA_CERT_MODULE_TYPE,
@@ -26,7 +27,7 @@ from app.ca_certs.actions import (
     host_has_running_ca_cert_action,
 )
 from app.db import get_db
-from app.models.host import Host, HostGroupMembership
+from app.models.host import Host
 from app.models.host_group import HostGroup
 from app.models.sync_job import SyncJob
 from app.models.user import User
@@ -112,12 +113,7 @@ async def deploy_ca_certs_to_group(
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
 
-    memberships = await db.execute(
-        select(HostGroupMembership.c.host_id).where(HostGroupMembership.c.group_id == group_id)
-    )
-    host_ids = [r[0] for r in memberships.all()]
-    if not host_ids:
-        raise HTTPException(status_code=400, detail="No hosts in this group")
+    host_ids = await group_member_ids_or_400(db, group_id)
 
     triggered = 0
     skipped = 0

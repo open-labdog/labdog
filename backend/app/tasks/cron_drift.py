@@ -7,7 +7,6 @@ decides whether the verdict becomes durable.
 """
 
 import logging
-from datetime import UTC
 
 from app.tasks import celery_app
 
@@ -22,30 +21,25 @@ async def check_cron_drift_for_one_host(host, hms, db) -> bool:
     nothing is written.
     """
     import time
-    from datetime import datetime
 
     import asyncssh
-    from sqlalchemy import select
 
     from app.cron.collector import collect_cron_jobs
     from app.cron.diff import diff_cron_jobs
     from app.cron.merge import get_effective_cron_jobs
-    from app.crypto.encryption import decrypt_ssh_key
-    from app.crypto.key_management import get_master_key
     from app.metrics.recorder import record_drift_sample
-    from app.models.ssh_key import SSHKey
-    from app.ssh_utils import get_source_ip, ssh_connect_host
+    from app.tasks.drift_sweep import (
+        load_private_key_pem,
+        probe_source_ip_once,
+        record_check_error,
+        record_unreachable,
+        write_drift_verdict,
+    )
 
     try:
-        if not host.ssh_key_id:
+        private_key_pem = await load_private_key_pem(host, db)
+        if private_key_pem is None:
             return False
-        ssh_key = (
-            await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
-        ).scalar_one_or_none()
-        if not ssh_key:
-            return False
-
-        private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
 
         effective = await get_effective_cron_jobs(host.id, db)
         desired_dicts = [
@@ -70,11 +64,7 @@ async def check_cron_drift_for_one_host(host, hms, db) -> bool:
             cron_diff.jobs_to_add or cron_diff.jobs_to_remove or cron_diff.jobs_to_update
         )
 
-        hms.sync_status = "out_of_sync" if drifted else "in_sync"
-        hms.last_drift_check_at = datetime.now(UTC)
-        hms.collected_state = actual
-        hms.collected_at = datetime.now(UTC)
-        hms.error_message = None
+        write_drift_verdict(hms, drifted=drifted, collected_state=actual)
         await record_drift_sample(
             db,
             host_id=host.id,
@@ -90,27 +80,14 @@ async def check_cron_drift_for_one_host(host, hms, db) -> bool:
 
         await refresh_host_sync_status(host, db)
 
-        if not host.labdog_source_ip:
-            try:
-                imported_key = asyncssh.import_private_key(private_key_pem)
-                async with ssh_connect_host(host, db, client_keys=[imported_key]) as probe:
-                    host.labdog_source_ip = await get_source_ip(probe)
-            except Exception:
-                # Best-effort optimisation for the next merge, not part of
-                # the verdict. Debug level because a host that fails this
-                # fails it every tick.
-                logger.debug("source-IP probe failed for host %s", host.id, exc_info=True)
+        await probe_source_ip_once(host, db, private_key_pem, logger)
         return True
     except (OSError, asyncssh.Error, TimeoutError) as e:
-        hms.sync_status = "unknown"
-        hms.last_drift_check_at = datetime.now(UTC)
-        hms.error_message = f"Host unreachable: {e or 'connection timed out'}"
+        record_unreachable(hms, e)
         return True
     except Exception as e:
         logger.exception("cron drift check failed for host %s", host.id)
-        hms.sync_status = "error"
-        hms.last_drift_check_at = datetime.now(UTC)
-        hms.error_message = str(e)
+        record_check_error(hms, e)
         return True
 
 

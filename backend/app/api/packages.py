@@ -1,16 +1,26 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
 from app.api._gitops_lock import check_gitops_lock
+from app.api._group_sync import group_member_ids, has_sync_in_flight
+from app.api._scoped_rules import (
+    RuleAudit,
+    apply_fields,
+    commit_created,
+    commit_updated,
+    delete_and_commit,
+    flush_or_409,
+    require_group,
+    require_host,
+    scoped_row_or_404,
+)
 from app.audit.logger import log_action
 from app.auth.users import current_active_user
 from app.db import get_db
 from app.db_after_commit import run_after_commit
 from app.models.host import Host
-from app.models.host_group import HostGroup
 from app.models.user import User
 from app.packages.merge import get_effective_packages, get_effective_repos
 from app.packages.models import PackageRepository, PackageRule
@@ -26,6 +36,25 @@ from app.packages.schemas import (
 
 router = APIRouter(tags=["packages"])
 
+_PACKAGE_NOT_FOUND = "Package rule not found"
+_REPO_NOT_FOUND = "Package repository not found"
+
+
+def _package_state(rule: PackageRule) -> dict:
+    return {
+        "package_name": rule.package_name,
+        "state": str(rule.state),
+        "version": rule.version,
+    }
+
+
+def _repo_state(repo: PackageRepository) -> dict:
+    return {"name": repo.name, "url": repo.url, "state": str(repo.state)}
+
+
+_PACKAGE_AUDIT = RuleAudit("package_rule", _package_state)
+_REPO_AUDIT = RuleAudit("package_repo", _repo_state)
+
 
 # ---------------------------------------------------------------------------
 # Group-level package CRUD
@@ -38,9 +67,7 @@ async def list_group_packages(
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    group = await db.scalar(select(HostGroup).where(HostGroup.id == group_id))
-    if not group:
-        raise HTTPException(status_code=404, detail="Group not found")
+    await require_group(db, group_id)
 
     result = await db.execute(
         select(PackageRule)
@@ -62,36 +89,12 @@ async def create_group_package(
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
-    group = await db.scalar(select(HostGroup).where(HostGroup.id == group_id))
-    if not group:
-        raise HTTPException(status_code=404, detail="Group not found")
+    await require_group(db, group_id)
 
     rule = PackageRule(group_id=group_id, **body.model_dump())
     db.add(rule)
-    try:
-        await db.flush()
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail=f"Package '{body.package_name}' already exists in this group",
-        )
-
-    await log_action(
-        db=db,
-        action="create",
-        entity_type="package_rule",
-        entity_id=rule.id,
-        user_id=user.id,
-        after_state={
-            "package_name": rule.package_name,
-            "state": str(rule.state),
-            "version": rule.version,
-        },
-    )
-    await db.commit()
-    await db.refresh(rule)
-    return rule
+    await flush_or_409(db, lambda: f"Package '{body.package_name}' already exists in this group")
+    return await commit_created(db, rule, _PACKAGE_AUDIT, user)
 
 
 @router.put(
@@ -106,50 +109,13 @@ async def update_group_package(
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
-    result = await db.execute(
-        select(PackageRule).where(
-            PackageRule.id == rule_id,
-            PackageRule.group_id == group_id,
-        )
+    rule = await scoped_row_or_404(
+        db, PackageRule, rule_id, PackageRule.group_id == group_id, detail=_PACKAGE_NOT_FOUND
     )
-    rule = result.scalar_one_or_none()
-    if not rule:
-        raise HTTPException(status_code=404, detail="Package rule not found")
-
-    before = {
-        "package_name": rule.package_name,
-        "state": str(rule.state),
-        "version": rule.version,
-    }
-
-    for field, value in body.model_dump(exclude_unset=True).items():
-        setattr(rule, field, value)
-
-    try:
-        await db.flush()
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail=f"Package '{rule.package_name}' already exists in this group",
-        )
-
-    await log_action(
-        db=db,
-        action="update",
-        entity_type="package_rule",
-        entity_id=rule.id,
-        user_id=user.id,
-        before_state=before,
-        after_state={
-            "package_name": rule.package_name,
-            "state": str(rule.state),
-            "version": rule.version,
-        },
-    )
-    await db.commit()
-    await db.refresh(rule)
-    return rule
+    before = _package_state(rule)
+    apply_fields(rule, body.model_dump(exclude_unset=True))
+    await flush_or_409(db, lambda: f"Package '{rule.package_name}' already exists in this group")
+    return await commit_updated(db, rule, _PACKAGE_AUDIT, user, before)
 
 
 @router.delete("/groups/{group_id}/packages/{rule_id}")
@@ -161,107 +127,70 @@ async def delete_group_package(
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
-    result = await db.execute(
-        select(PackageRule).where(
-            PackageRule.id == rule_id,
-            PackageRule.group_id == group_id,
-        )
+    rule = await scoped_row_or_404(
+        db, PackageRule, rule_id, PackageRule.group_id == group_id, detail=_PACKAGE_NOT_FOUND
     )
-    rule = result.scalar_one_or_none()
-    if not rule:
-        raise HTTPException(status_code=404, detail="Package rule not found")
-
-    before = {
-        "package_name": rule.package_name,
-        "state": str(rule.state),
-        "version": rule.version,
-    }
-
-    if uninstall:
-        # Change state to "absent" so the normal sync pipeline removes the
-        # package.  The rule stays in the DB — drift detection will flag any
-        # host that still has the package installed, and the user can retry
-        # the sync if it fails.
-        from app.models.host import HostGroupMembership
-        from app.models.sync_job import SyncJob
-        from app.packages.models import PackageState
-        from app.tasks.package_sync import run_package_sync
-
-        rule.state = PackageState.absent
-
-        await log_action(
-            db=db,
-            action="update",
-            entity_type="package_rule",
-            entity_id=rule.id,
-            user_id=user.id,
-            before_state=before,
-            after_state={
-                "package_name": rule.package_name,
-                "state": str(rule.state),
-                "version": rule.version,
-            },
-        )
-        await db.flush()
-
-        memberships = await db.execute(
-            select(HostGroupMembership.c.host_id).where(HostGroupMembership.c.group_id == group_id)
-        )
-        host_ids = [r[0] for r in memberships.all()]
-
-        sync_jobs = 0
-        for hid in host_ids:
-            # Skip hosts that already have a pending/running package sync
-            running = await db.execute(
-                select(SyncJob).where(
-                    SyncJob.host_id == hid,
-                    SyncJob.module_type == "package",
-                    SyncJob.status.in_(["pending", "running"]),
-                )
-            )
-            if running.scalar_one_or_none():
-                continue
-
-            host_result = await db.execute(select(Host).where(Host.id == hid))
-            host = host_result.scalar_one_or_none()
-            if not host or not host.ssh_key_id:
-                continue
-
-            job = SyncJob(
-                host_id=hid,
-                group_id=group_id,
-                module_type="package",
-                status="pending",
-                triggered_by_user_id=user.id,
-            )
-            db.add(job)
-            await db.flush()
-            # BUG-137: dispatch after the commit below, or the worker may
-            # start before the row exists.
-            run_after_commit(
-                db,
-                lambda job_id=job.id, host_id=hid: run_package_sync.delay(
-                    job_id=job_id, host_id=host_id
-                ),
-            )
-            sync_jobs += 1
-
-        await db.commit()
-        return {"sync_jobs": sync_jobs}
-    else:
-        await db.delete(rule)
-        await db.flush()
-
-        await log_action(
-            db=db,
-            action="delete",
-            entity_type="package_rule",
-            entity_id=rule.id,
-            user_id=user.id,
-            before_state=before,
-        )
-        await db.commit()
+    if not uninstall:
+        await delete_and_commit(db, rule, _PACKAGE_AUDIT, user)
         return Response(status_code=204)
+
+    before = _package_state(rule)
+
+    # Change state to "absent" so the normal sync pipeline removes the
+    # package.  The rule stays in the DB — drift detection will flag any
+    # host that still has the package installed, and the user can retry
+    # the sync if it fails.
+    from app.models.sync_job import SyncJob
+    from app.packages.models import PackageState
+    from app.tasks.package_sync import run_package_sync
+
+    rule.state = PackageState.absent
+
+    await log_action(
+        db=db,
+        action="update",
+        entity_type=_PACKAGE_AUDIT.entity_type,
+        entity_id=rule.id,
+        user_id=user.id,
+        before_state=before,
+        after_state=_package_state(rule),
+    )
+    await db.flush()
+
+    host_ids = await group_member_ids(db, group_id)
+
+    sync_jobs = 0
+    for hid in host_ids:
+        # Skip hosts that already have a pending/running package sync
+        if await has_sync_in_flight(db, hid, "package"):
+            continue
+
+        host_result = await db.execute(select(Host).where(Host.id == hid))
+        host = host_result.scalar_one_or_none()
+        if not host or not host.ssh_key_id:
+            continue
+
+        job = SyncJob(
+            host_id=hid,
+            group_id=group_id,
+            module_type="package",
+            status="pending",
+            triggered_by_user_id=user.id,
+        )
+        db.add(job)
+        await db.flush()
+        # BUG-137: dispatch after the commit below, or the worker may
+        # start before the row exists.
+        run_after_commit(
+            db,
+            lambda job_id=job.id, host_id=hid: run_package_sync.delay(
+                job_id=job_id, host_id=host_id
+            ),
+        )
+        sync_jobs += 1
+
+    await db.commit()
+    return {"sync_jobs": sync_jobs}
 
 
 # ---------------------------------------------------------------------------
@@ -275,9 +204,7 @@ async def list_host_packages(
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    host = await db.scalar(select(Host).where(Host.id == host_id))
-    if not host:
-        raise HTTPException(status_code=404, detail="Host not found")
+    await require_host(db, host_id)
 
     result = await db.execute(
         select(PackageRule)
@@ -298,36 +225,12 @@ async def create_host_package(
     user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    host = await db.scalar(select(Host).where(Host.id == host_id))
-    if not host:
-        raise HTTPException(status_code=404, detail="Host not found")
+    await require_host(db, host_id)
 
     rule = PackageRule(host_id=host_id, **body.model_dump())
     db.add(rule)
-    try:
-        await db.flush()
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail=f"Package '{body.package_name}' already exists on this host",
-        )
-
-    await log_action(
-        db=db,
-        action="create",
-        entity_type="package_rule",
-        entity_id=rule.id,
-        user_id=user.id,
-        after_state={
-            "package_name": rule.package_name,
-            "state": str(rule.state),
-            "version": rule.version,
-        },
-    )
-    await db.commit()
-    await db.refresh(rule)
-    return rule
+    await flush_or_409(db, lambda: f"Package '{body.package_name}' already exists on this host")
+    return await commit_created(db, rule, _PACKAGE_AUDIT, user)
 
 
 @router.put(
@@ -341,50 +244,13 @@ async def update_host_package(
     user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(PackageRule).where(
-            PackageRule.id == rule_id,
-            PackageRule.host_id == host_id,
-        )
+    rule = await scoped_row_or_404(
+        db, PackageRule, rule_id, PackageRule.host_id == host_id, detail=_PACKAGE_NOT_FOUND
     )
-    rule = result.scalar_one_or_none()
-    if not rule:
-        raise HTTPException(status_code=404, detail="Package rule not found")
-
-    before = {
-        "package_name": rule.package_name,
-        "state": str(rule.state),
-        "version": rule.version,
-    }
-
-    for field, value in body.model_dump(exclude_unset=True).items():
-        setattr(rule, field, value)
-
-    try:
-        await db.flush()
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail=f"Package '{rule.package_name}' already exists on this host",
-        )
-
-    await log_action(
-        db=db,
-        action="update",
-        entity_type="package_rule",
-        entity_id=rule.id,
-        user_id=user.id,
-        before_state=before,
-        after_state={
-            "package_name": rule.package_name,
-            "state": str(rule.state),
-            "version": rule.version,
-        },
-    )
-    await db.commit()
-    await db.refresh(rule)
-    return rule
+    before = _package_state(rule)
+    apply_fields(rule, body.model_dump(exclude_unset=True))
+    await flush_or_409(db, lambda: f"Package '{rule.package_name}' already exists on this host")
+    return await commit_updated(db, rule, _PACKAGE_AUDIT, user, before)
 
 
 @router.delete("/hosts/{host_id}/packages/{rule_id}", status_code=204)
@@ -394,35 +260,10 @@ async def delete_host_package(
     user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(PackageRule).where(
-            PackageRule.id == rule_id,
-            PackageRule.host_id == host_id,
-        )
+    rule = await scoped_row_or_404(
+        db, PackageRule, rule_id, PackageRule.host_id == host_id, detail=_PACKAGE_NOT_FOUND
     )
-    rule = result.scalar_one_or_none()
-    if not rule:
-        raise HTTPException(status_code=404, detail="Package rule not found")
-
-    before = {
-        "package_name": rule.package_name,
-        "state": str(rule.state),
-        "version": rule.version,
-    }
-    rule_id_for_log = rule.id
-
-    await db.delete(rule)
-    await db.flush()
-
-    await log_action(
-        db=db,
-        action="delete",
-        entity_type="package_rule",
-        entity_id=rule_id_for_log,
-        user_id=user.id,
-        before_state=before,
-    )
-    await db.commit()
+    await delete_and_commit(db, rule, _PACKAGE_AUDIT, user)
     return Response(status_code=204)
 
 
@@ -440,9 +281,7 @@ async def effective_packages(
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    host = await db.scalar(select(Host).where(Host.id == host_id))
-    if not host:
-        raise HTTPException(status_code=404, detail="Host not found")
+    await require_host(db, host_id)
 
     return await get_effective_packages(host_id, db)
 
@@ -456,9 +295,7 @@ async def effective_repos(
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    host = await db.scalar(select(Host).where(Host.id == host_id))
-    if not host:
-        raise HTTPException(status_code=404, detail="Host not found")
+    await require_host(db, host_id)
 
     return await get_effective_repos(host_id, db)
 
@@ -477,9 +314,7 @@ async def list_group_repos(
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    group = await db.scalar(select(HostGroup).where(HostGroup.id == group_id))
-    if not group:
-        raise HTTPException(status_code=404, detail="Group not found")
+    await require_group(db, group_id)
 
     result = await db.execute(
         select(PackageRepository)
@@ -501,32 +336,12 @@ async def create_group_repo(
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
-    group = await db.scalar(select(HostGroup).where(HostGroup.id == group_id))
-    if not group:
-        raise HTTPException(status_code=404, detail="Group not found")
+    await require_group(db, group_id)
 
     repo = PackageRepository(group_id=group_id, **body.model_dump())
     db.add(repo)
-    try:
-        await db.flush()
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail=f"Repository '{body.name}' already exists in this group",
-        )
-
-    await log_action(
-        db=db,
-        action="create",
-        entity_type="package_repo",
-        entity_id=repo.id,
-        user_id=user.id,
-        after_state={"name": repo.name, "url": repo.url, "state": str(repo.state)},
-    )
-    await db.commit()
-    await db.refresh(repo)
-    return repo
+    await flush_or_409(db, lambda: f"Repository '{body.name}' already exists in this group")
+    return await commit_created(db, repo, _REPO_AUDIT, user)
 
 
 @router.put(
@@ -541,42 +356,17 @@ async def update_group_repo(
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
-    result = await db.execute(
-        select(PackageRepository).where(
-            PackageRepository.id == repo_id,
-            PackageRepository.group_id == group_id,
-        )
+    repo = await scoped_row_or_404(
+        db,
+        PackageRepository,
+        repo_id,
+        PackageRepository.group_id == group_id,
+        detail=_REPO_NOT_FOUND,
     )
-    repo = result.scalar_one_or_none()
-    if not repo:
-        raise HTTPException(status_code=404, detail="Package repository not found")
-
-    before = {"name": repo.name, "url": repo.url, "state": str(repo.state)}
-
-    for field, value in body.model_dump(exclude_unset=True).items():
-        setattr(repo, field, value)
-
-    try:
-        await db.flush()
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail=f"Repository '{repo.name}' already exists in this group",
-        )
-
-    await log_action(
-        db=db,
-        action="update",
-        entity_type="package_repo",
-        entity_id=repo.id,
-        user_id=user.id,
-        before_state=before,
-        after_state={"name": repo.name, "url": repo.url, "state": str(repo.state)},
-    )
-    await db.commit()
-    await db.refresh(repo)
-    return repo
+    before = _repo_state(repo)
+    apply_fields(repo, body.model_dump(exclude_unset=True))
+    await flush_or_409(db, lambda: f"Repository '{repo.name}' already exists in this group")
+    return await commit_updated(db, repo, _REPO_AUDIT, user, before)
 
 
 @router.delete("/groups/{group_id}/package-repos/{repo_id}", status_code=204)
@@ -587,29 +377,12 @@ async def delete_group_repo(
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
-    result = await db.execute(
-        select(PackageRepository).where(
-            PackageRepository.id == repo_id,
-            PackageRepository.group_id == group_id,
-        )
+    repo = await scoped_row_or_404(
+        db,
+        PackageRepository,
+        repo_id,
+        PackageRepository.group_id == group_id,
+        detail=_REPO_NOT_FOUND,
     )
-    repo = result.scalar_one_or_none()
-    if not repo:
-        raise HTTPException(status_code=404, detail="Package repository not found")
-
-    before = {"name": repo.name, "url": repo.url, "state": str(repo.state)}
-    repo_id_for_log = repo.id
-
-    await db.delete(repo)
-    await db.flush()
-
-    await log_action(
-        db=db,
-        action="delete",
-        entity_type="package_repo",
-        entity_id=repo_id_for_log,
-        user_id=user.id,
-        before_state=before,
-    )
-    await db.commit()
+    await delete_and_commit(db, repo, _REPO_AUDIT, user)
     return Response(status_code=204)

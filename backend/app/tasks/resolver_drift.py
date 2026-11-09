@@ -122,23 +122,19 @@ async def _collect_and_diff(host, hms, db):
 
 async def check_resolver_drift_for_one_host(host, hms, db) -> bool:
     """`app.tasks.drift_sweep.CheckOne` adapter for the resolver module."""
-    from datetime import datetime
-
     import asyncssh
+
+    from app.tasks.drift_sweep import record_check_error, record_unreachable
 
     try:
         diff = await _collect_and_diff(host, hms, db)
         return diff is not None
     except (OSError, asyncssh.Error, TimeoutError) as e:
-        hms.sync_status = "unknown"
-        hms.last_drift_check_at = datetime.now(UTC)
-        hms.error_message = f"Host unreachable: {e or 'connection timed out'}"
+        record_unreachable(hms, e)
         return True
     except Exception as e:
         logger.exception("resolver drift check failed for host %s", host.id)
-        hms.sync_status = "error"
-        hms.last_drift_check_at = datetime.now(UTC)
-        hms.error_message = str(e)
+        record_check_error(hms, e)
         return True
 
 

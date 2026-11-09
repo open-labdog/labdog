@@ -7,13 +7,22 @@ execution is handled by the Actions surface (see ``api/actions.py``)
 plus the ``ca_cert_action`` Celery task.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
-from app.audit.logger import log_action
+from app.api._scoped_rules import (
+    RuleAudit,
+    apply_fields,
+    commit_created,
+    commit_updated,
+    delete_and_commit,
+    flush_or_409,
+    require_group,
+    require_host,
+    scoped_row_or_404,
+)
 from app.auth.users import current_active_user
 from app.ca_certs.merge import get_effective_ca_certs
 from app.ca_certs.models import CACertRule
@@ -25,11 +34,11 @@ from app.ca_certs.schemas import (
     EffectiveCACertResponse,
 )
 from app.db import get_db
-from app.models.host import Host
-from app.models.host_group import HostGroup
 from app.models.user import User
 
 router = APIRouter(tags=["ca-certs"])
+
+_NOT_FOUND = "CA certificate rule not found"
 
 
 def _build_rule_from_create(
@@ -67,6 +76,9 @@ def _audit_state(rule: CACertRule) -> dict:
     }
 
 
+_AUDIT = RuleAudit("ca_cert_rule", _audit_state)
+
+
 # ---------------------------------------------------------------------------
 # Group-level CA cert CRUD
 # ---------------------------------------------------------------------------
@@ -81,9 +93,7 @@ async def list_group_ca_certs(
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    group = await db.scalar(select(HostGroup).where(HostGroup.id == group_id))
-    if not group:
-        raise HTTPException(status_code=404, detail="Group not found")
+    await require_group(db, group_id)
 
     result = await db.execute(
         select(CACertRule)
@@ -104,35 +114,18 @@ async def create_group_ca_cert(
     user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    group = await db.scalar(select(HostGroup).where(HostGroup.id == group_id))
-    if not group:
-        raise HTTPException(status_code=404, detail="Group not found")
+    await require_group(db, group_id)
 
     rule = _build_rule_from_create(body, group_id=group_id)
     db.add(rule)
-    try:
-        await db.flush()
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"CA certificate with fingerprint {rule.fingerprint_sha256} "
-                "already exists in this group"
-            ),
-        )
-
-    await log_action(
-        db=db,
-        action="create",
-        entity_type="ca_cert_rule",
-        entity_id=rule.id,
-        user_id=user.id,
-        after_state=_audit_state(rule),
+    await flush_or_409(
+        db,
+        lambda: (
+            f"CA certificate with fingerprint {rule.fingerprint_sha256} "
+            "already exists in this group"
+        ),
     )
-    await db.commit()
-    await db.refresh(rule)
-    return rule
+    return await commit_created(db, rule, _AUDIT, user)
 
 
 @router.put(
@@ -146,34 +139,13 @@ async def update_group_ca_cert(
     user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    rule = (
-        await db.execute(
-            select(CACertRule).where(
-                CACertRule.id == rule_id,
-                CACertRule.group_id == group_id,
-            )
-        )
-    ).scalar_one_or_none()
-    if not rule:
-        raise HTTPException(status_code=404, detail="CA certificate rule not found")
-
-    before = _audit_state(rule)
-    for field, value in body.model_dump(exclude_unset=True).items():
-        setattr(rule, field, value)
-
-    await db.flush()
-    await log_action(
-        db=db,
-        action="update",
-        entity_type="ca_cert_rule",
-        entity_id=rule.id,
-        user_id=user.id,
-        before_state=before,
-        after_state=_audit_state(rule),
+    rule = await scoped_row_or_404(
+        db, CACertRule, rule_id, CACertRule.group_id == group_id, detail=_NOT_FOUND
     )
-    await db.commit()
-    await db.refresh(rule)
-    return rule
+    before = _audit_state(rule)
+    apply_fields(rule, body.model_dump(exclude_unset=True))
+    await db.flush()
+    return await commit_updated(db, rule, _AUDIT, user, before)
 
 
 @router.delete("/groups/{group_id}/ca-certs/{rule_id}", status_code=204)
@@ -183,31 +155,10 @@ async def delete_group_ca_cert(
     user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    rule = (
-        await db.execute(
-            select(CACertRule).where(
-                CACertRule.id == rule_id,
-                CACertRule.group_id == group_id,
-            )
-        )
-    ).scalar_one_or_none()
-    if not rule:
-        raise HTTPException(status_code=404, detail="CA certificate rule not found")
-
-    before = _audit_state(rule)
-    rule_id_for_log = rule.id
-
-    await db.delete(rule)
-    await db.flush()
-    await log_action(
-        db=db,
-        action="delete",
-        entity_type="ca_cert_rule",
-        entity_id=rule_id_for_log,
-        user_id=user.id,
-        before_state=before,
+    rule = await scoped_row_or_404(
+        db, CACertRule, rule_id, CACertRule.group_id == group_id, detail=_NOT_FOUND
     )
-    await db.commit()
+    await delete_and_commit(db, rule, _AUDIT, user)
     return Response(status_code=204)
 
 
@@ -225,9 +176,7 @@ async def list_host_ca_certs(
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    host = await db.scalar(select(Host).where(Host.id == host_id))
-    if not host:
-        raise HTTPException(status_code=404, detail="Host not found")
+    await require_host(db, host_id)
 
     result = await db.execute(
         select(CACertRule)
@@ -248,35 +197,17 @@ async def create_host_ca_cert(
     user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    host = await db.scalar(select(Host).where(Host.id == host_id))
-    if not host:
-        raise HTTPException(status_code=404, detail="Host not found")
+    await require_host(db, host_id)
 
     rule = _build_rule_from_create(body, host_id=host_id)
     db.add(rule)
-    try:
-        await db.flush()
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"CA certificate with fingerprint {rule.fingerprint_sha256} "
-                "already exists on this host"
-            ),
-        )
-
-    await log_action(
-        db=db,
-        action="create",
-        entity_type="ca_cert_rule",
-        entity_id=rule.id,
-        user_id=user.id,
-        after_state=_audit_state(rule),
+    await flush_or_409(
+        db,
+        lambda: (
+            f"CA certificate with fingerprint {rule.fingerprint_sha256} already exists on this host"
+        ),
     )
-    await db.commit()
-    await db.refresh(rule)
-    return rule
+    return await commit_created(db, rule, _AUDIT, user)
 
 
 @router.put(
@@ -290,34 +221,13 @@ async def update_host_ca_cert(
     user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    rule = (
-        await db.execute(
-            select(CACertRule).where(
-                CACertRule.id == rule_id,
-                CACertRule.host_id == host_id,
-            )
-        )
-    ).scalar_one_or_none()
-    if not rule:
-        raise HTTPException(status_code=404, detail="CA certificate rule not found")
-
-    before = _audit_state(rule)
-    for field, value in body.model_dump(exclude_unset=True).items():
-        setattr(rule, field, value)
-
-    await db.flush()
-    await log_action(
-        db=db,
-        action="update",
-        entity_type="ca_cert_rule",
-        entity_id=rule.id,
-        user_id=user.id,
-        before_state=before,
-        after_state=_audit_state(rule),
+    rule = await scoped_row_or_404(
+        db, CACertRule, rule_id, CACertRule.host_id == host_id, detail=_NOT_FOUND
     )
-    await db.commit()
-    await db.refresh(rule)
-    return rule
+    before = _audit_state(rule)
+    apply_fields(rule, body.model_dump(exclude_unset=True))
+    await db.flush()
+    return await commit_updated(db, rule, _AUDIT, user, before)
 
 
 @router.delete("/hosts/{host_id}/ca-certs/{rule_id}", status_code=204)
@@ -327,31 +237,10 @@ async def delete_host_ca_cert(
     user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    rule = (
-        await db.execute(
-            select(CACertRule).where(
-                CACertRule.id == rule_id,
-                CACertRule.host_id == host_id,
-            )
-        )
-    ).scalar_one_or_none()
-    if not rule:
-        raise HTTPException(status_code=404, detail="CA certificate rule not found")
-
-    before = _audit_state(rule)
-    rule_id_for_log = rule.id
-
-    await db.delete(rule)
-    await db.flush()
-    await log_action(
-        db=db,
-        action="delete",
-        entity_type="ca_cert_rule",
-        entity_id=rule_id_for_log,
-        user_id=user.id,
-        before_state=before,
+    rule = await scoped_row_or_404(
+        db, CACertRule, rule_id, CACertRule.host_id == host_id, detail=_NOT_FOUND
     )
-    await db.commit()
+    await delete_and_commit(db, rule, _AUDIT, user)
     return Response(status_code=204)
 
 
@@ -369,8 +258,6 @@ async def effective_ca_certs(
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    host = await db.scalar(select(Host).where(Host.id == host_id))
-    if not host:
-        raise HTTPException(status_code=404, detail="Host not found")
+    await require_host(db, host_id)
 
     return await get_effective_ca_certs(host_id, db)

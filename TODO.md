@@ -527,3 +527,118 @@ versus every member, `check_host_busy` with an exclude versus
 parent run and every child. A helper covering both needs three
 callbacks, which is the "third thing, harder to read than either
 original" this list warns against.
+
+---
+
+## Readability refactors left from the Phase 2 pass
+
+**Context:** the Phase 2 readability pass (PR #276) split the 19 backend
+functions that did several jobs each, pulled out six duplicated
+patterns, and split the plan, action packs and assistant pages. Dennis
+approved that scope on 2026-11-08 and asked for the rest to be written
+down. Keep the same rules for these: move code, don't rewrite it. The
+same statements run in the same order, with the same SQL, SSH and
+Celery calls, log text, commit points and lock scope. BUG-/SEC- comments
+move with the line they explain, and no existing test changes.
+
+**Frontend.** The frontend has no unit tests, so each of these needs a
+behaviour check of its own. For the three pages already split, that was
+a throwaway Playwright harness: it served `npm run build`'s static
+export, answered every `/api/**` request from a scripted mock, fixed the
+clock, and recorded the rendered DOM and the API requests after every
+step of a scripted session. The old and new builds had to match at every
+step.
+
+- **`hosts/[id]/client-page.tsx` HostDetailPage** (308 lines, 47
+  branches, 13 `useState`): `useHostTabs` for the URL and tab state,
+  `useSyncPreview` for preview, apply and pending jobs, and
+  `<TrustHostKeyDialog>`.
+- **Host config tabs** (`hosts/[id]/_tabs/config/*.tsx`, 8 tabs of 170
+  to 330 lines): each repeats the same props type and the same dialog,
+  edit and delete state. Share them as `HostConfigTabProps` and a
+  `useOverrideDialog(defaults)` hook.
+- **`lib/pending.ts` usePendingQueue** (200 lines, 69 branches in one
+  `useMemo`): one builder per kind of pending item, called from the
+  memo.
+- **Shared form blocks:** the secret-field block repeated in the
+  Grafana, Proxmox, SSH key and action pack settings, the login and
+  register forms, and the git repo auth step. One component each.
+
+**Backend: Create/Update validators outside the three files done.**
+`schemas/rules.py`, `user_mgmt/schemas.py` and `schemas/scans.py` now
+write each field check once and register it on both models. The same
+check is still written twice, once per model, in `hosts_mgmt/schemas.py`,
+`cron/schemas.py`, `schemas/hosts.py`, `packs/schemas.py`,
+`proxmox/schemas.py` and `grafana/schemas.py`. Same fix: a module-level
+`_check_<field>` that lets `None` through, registered with
+`field_validator` on both. Compare the two copies first. Where they
+differ in more than the `None` pass-through, the difference is behaviour
+and stays.
+
+**Backend: functions still over 60 lines.** Measured on PR #276, counting
+lines without blanks, comments or docstrings, with branch counts in
+brackets. 73 functions are over 60 lines, down from 108, and 7 are over
+100, down from 34. The playbook generators and `get_simple_counts` stay
+as they are, because each is one data literal:
+`generate_package_playbook`, `generate_iptables_playbook`,
+`generate_nftables_playbook`, `generate_service_playbook`,
+`generate_cleanup_tasks` and `generate_ca_cert_playbook`. Most of the
+rest are a single endpoint, sweep or importer, so split one when it is
+next changed and turns out to do more than one thing.
+
+The longest and most branched, to look at first:
+
+- `tasks/ca_cert_action.py` `run_ca_cert_action` (112 lines, 13)
+- `sync/orchestrator.py` `build_host_sync_plan` (104, 23)
+- `workflows/snapshot_cleanup.py` `find_orphaned_snapshots` (104, 18,
+  nested 6 deep)
+- `tasks/host_lock.py` `check_hosts_busy` (100, 9) and
+  `check_host_busy` (72, 9)
+- `tasks/action_sweeper.py` `_sweep_stale_runs` (87, 25, nested 5 deep)
+- `tasks/alert_handling.py` `_check` (73, 25, nested 6 deep)
+- `tasks/facts.py` `_collect_host_facts_async` (92, 22)
+- `tasks/drift.py` `_check_drift_for_one_host` (90, 14, nested 5 deep)
+- `ai/agent_sdk/runner.py` `AgentSDKRunner._execute_tool` (93, 10),
+  `run` (79, 17) and `_can_use_tool` (66, 9)
+
+The rest, by area:
+
+- **API endpoints:** `scheduled_actions.run_now` (90),
+  `sync.trigger_bulk_sync` (89) and `trigger_group_bulk_sync` (62),
+  `hosts.list_hosts_summary` (80) and `create_host` (65),
+  `groups.list_groups_summary` (73), `user_sync.check_user_drift` (79),
+  `cron_sync.check_cron_drift` (71), `service_drift.check_service_drift`
+  (65), `actions.list_host_runs` (75) and `list_runs` (61),
+  `discovery.add_discovered_hosts` (74), `scans.approve_pending_hosts`
+  (70), `action_packs.claim_all_keys` (73),
+  `action_resolutions.upsert_action_resolution` (61).
+- **GitOps:** the importers `import_scheduled_actions` (88),
+  `import_resolver` (84), `import_packages` (83), `import_discovery`
+  (83), `import_users` (81) and `import_firewall` (67),
+  `importer.import_group_from_yaml` (64),
+  `serializer.yaml_rules_to_specs` (64), `tasks/gitops._trigger_group_sync`
+  (69).
+- **Action runs:** `action_host._load_run_spec` (82),
+  `_run_action_host_async` (75), `_phase_g_persist` (73) and
+  `_claim_or_defer` (64), `action_group._load_group_run` (70, split out
+  of `_run_action_group_async` in this pass),
+  `action_orchestrator.finalise_run_if_complete` (65),
+  `builtin_dispatchers._sync_async` (74).
+- **Sync and sweeps:** `host_sync_orchestrator._async_run` (72) and
+  `_finalise_run` (70), `sync_sweeper._sweep_stale_syncs_async` (67),
+  `drift_sweep.sweep_module` (68), `resolver_drift._collect_and_diff`
+  (74), `drift_retention._fold_into_rollup` (73).
+- **Workflow steps:** `preflight.run_preflight` (68),
+  `rollback.rollback_to_snapshot` (68), `verify.run_verification` (66),
+  `snapshot.create_snapshot` (61), and `tasks/ai_snapshots._prune_ai_snapshots`
+  (73).
+- **AI:** `tasks/ai_task._resume_session_async` (76) and
+  `_run_builtin_ai_task_group_async` (75), `tools/logs._query_loki` (73),
+  `tools/metrics._query_mimir_range` (64),
+  `subject_investigation._prepare_stuck` (62).
+- **Everything else:** `alerts/labels.dispatch_for` (84),
+  `notifications/delivery.drain` (70), `metrics/overview.get_stuck_operations`
+  (71), `metrics/collector._scheduling_and_pack_families` (66, split out
+  of `collect` in this pass), `actions/packs.load_packs_with_resolutions`
+  (69) and `_manifest_to_definition` (69), `proxmox/discovery._scan_pve_node`
+  (68).

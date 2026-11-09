@@ -7,7 +7,6 @@ decides whether the verdict becomes durable.
 """
 
 import logging
-from datetime import UTC
 
 from app.tasks import celery_app
 
@@ -22,30 +21,25 @@ async def check_user_drift_for_one_host(host, hms, db) -> bool:
     nothing is written.
     """
     import time
-    from datetime import datetime
 
     import asyncssh
-    from sqlalchemy import select
 
-    from app.crypto.encryption import decrypt_ssh_key
-    from app.crypto.key_management import get_master_key
     from app.metrics.recorder import record_drift_sample
-    from app.models.ssh_key import SSHKey
-    from app.ssh_utils import get_source_ip, ssh_connect_host
+    from app.tasks.drift_sweep import (
+        load_private_key_pem,
+        probe_source_ip_once,
+        record_check_error,
+        record_unreachable,
+        write_drift_verdict,
+    )
     from app.user_mgmt.collector import collect_group_states, collect_user_states
     from app.user_mgmt.diff import diff_groups, diff_users
     from app.user_mgmt.merge import get_effective_groups, get_effective_users
 
     try:
-        if not host.ssh_key_id:
+        private_key_pem = await load_private_key_pem(host, db)
+        if private_key_pem is None:
             return False
-        ssh_key = (
-            await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
-        ).scalar_one_or_none()
-        if not ssh_key:
-            return False
-
-        private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
 
         desired_users = await get_effective_users(host.id, db)
         desired_groups = await get_effective_groups(host.id, db)
@@ -71,11 +65,11 @@ async def check_user_drift_for_one_host(host, hms, db) -> bool:
             group_diff.groups_to_add or group_diff.groups_to_remove or group_diff.groups_to_update
         )
 
-        hms.sync_status = "out_of_sync" if users_drifted or groups_drifted else "in_sync"
-        hms.last_drift_check_at = datetime.now(UTC)
-        hms.collected_state = {"users": actual_users, "groups": actual_groups}
-        hms.collected_at = datetime.now(UTC)
-        hms.error_message = None
+        write_drift_verdict(
+            hms,
+            drifted=users_drifted or groups_drifted,
+            collected_state={"users": actual_users, "groups": actual_groups},
+        )
         await record_drift_sample(
             db,
             host_id=host.id,
@@ -87,24 +81,14 @@ async def check_user_drift_for_one_host(host, hms, db) -> bool:
             duration_ms=_duration_ms,
         )
 
-        if not host.labdog_source_ip:
-            try:
-                imported_key = asyncssh.import_private_key(private_key_pem)
-                async with ssh_connect_host(host, db, client_keys=[imported_key]) as probe:
-                    host.labdog_source_ip = await get_source_ip(probe)
-            except Exception:
-                logger.debug("source-IP probe failed for host %s", host.id, exc_info=True)
+        await probe_source_ip_once(host, db, private_key_pem, logger)
         return True
     except (OSError, asyncssh.Error, TimeoutError) as e:
-        hms.sync_status = "unknown"
-        hms.last_drift_check_at = datetime.now(UTC)
-        hms.error_message = f"Host unreachable: {e or 'connection timed out'}"
+        record_unreachable(hms, e)
         return True
     except Exception as e:
         logger.exception("linux_user drift check failed for host %s", host.id)
-        hms.sync_status = "error"
-        hms.last_drift_check_at = datetime.now(UTC)
-        hms.error_message = str(e)
+        record_check_error(hms, e)
         return True
 
 

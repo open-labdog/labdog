@@ -3,11 +3,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api._gitops_lock import check_gitops_lock
+from app.api._scoped_rules import require_group, require_host, scoped_row_or_404
 from app.auth.users import current_active_user
 from app.db import get_db
 from app.models.firewall_rule import FirewallRule
 from app.models.host import Host
-from app.models.host_group import HostGroup
 from app.models.user import User
 from app.rules.merge import (
     get_effective_policies as _merge_get_effective_policies,
@@ -27,6 +27,8 @@ from app.schemas.rules import (
 
 router = APIRouter(tags=["rules"])
 
+_NOT_FOUND = "Rule not found"
+
 
 @router.get("/groups/{group_id}/rules", response_model=list[RuleResponse])
 async def list_rules(
@@ -42,8 +44,7 @@ async def list_rules(
     return result.scalars().all()
 
 
-async def _validate_host_refs(db: AsyncSession, body) -> None:
-    ids = [i for i in (body.source_host_id, body.destination_host_id) if i is not None]
+async def _require_hosts_exist(db: AsyncSession, ids: list[int]) -> None:
     if not ids:
         return
     rows = await db.execute(select(Host.id).where(Host.id.in_(ids)))
@@ -51,6 +52,19 @@ async def _validate_host_refs(db: AsyncSession, body) -> None:
     missing = [i for i in ids if i not in found]
     if missing:
         raise HTTPException(status_code=400, detail=f"Referenced host(s) not found: {missing}")
+
+
+async def _validate_host_refs(db: AsyncSession, body) -> None:
+    ids = [i for i in (body.source_host_id, body.destination_host_id) if i is not None]
+    await _require_hosts_exist(db, ids)
+
+
+def _check_ports(body: RuleCreate) -> None:
+    if body.protocol == "icmp" and body.port_start is not None:
+        raise HTTPException(status_code=400, detail="ICMP rules cannot specify ports")
+    # Validate port range
+    if body.port_start and body.port_end and body.port_end < body.port_start:
+        raise HTTPException(status_code=400, detail="port_end must be >= port_start")
 
 
 @router.post("/groups/{group_id}/rules", response_model=RuleResponse, status_code=201)
@@ -61,11 +75,7 @@ async def create_rule(
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
-    if body.protocol == "icmp" and body.port_start is not None:
-        raise HTTPException(status_code=400, detail="ICMP rules cannot specify ports")
-    # Validate port range
-    if body.port_start and body.port_end and body.port_end < body.port_start:
-        raise HTTPException(status_code=400, detail="port_end must be >= port_start")
+    _check_ports(body)
     await _validate_host_refs(db, body)
     rule = FirewallRule(group_id=group_id, **body.model_dump())
     db.add(rule)
@@ -105,15 +115,9 @@ async def update_rule(
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
-    result = await db.execute(
-        select(FirewallRule).where(
-            FirewallRule.id == rule_id,
-            FirewallRule.group_id == group_id,
-        )
+    rule = await scoped_row_or_404(
+        db, FirewallRule, rule_id, FirewallRule.group_id == group_id, detail=_NOT_FOUND
     )
-    rule = result.scalar_one_or_none()
-    if not rule:
-        raise HTTPException(status_code=404, detail="Rule not found")
     await _apply_rule_update(db, rule, body)
     await db.commit()
     await db.refresh(rule)
@@ -137,12 +141,7 @@ async def _apply_rule_update(db: AsyncSession, rule: FirewallRule, body: RuleUpd
     host_ids = [
         i for i in (data.get("source_host_id"), data.get("destination_host_id")) if i is not None
     ]
-    if host_ids:
-        rows = await db.execute(select(Host.id).where(Host.id.in_(host_ids)))
-        found = {r[0] for r in rows.all()}
-        missing = [i for i in host_ids if i not in found]
-        if missing:
-            raise HTTPException(status_code=400, detail=f"Referenced host(s) not found: {missing}")
+    await _require_hosts_exist(db, host_ids)
 
     for field, value in data.items():
         setattr(rule, field, value)
@@ -156,15 +155,9 @@ async def delete_rule(
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
-    result = await db.execute(
-        select(FirewallRule).where(
-            FirewallRule.id == rule_id,
-            FirewallRule.group_id == group_id,
-        )
+    rule = await scoped_row_or_404(
+        db, FirewallRule, rule_id, FirewallRule.group_id == group_id, detail=_NOT_FOUND
     )
-    rule = result.scalar_one_or_none()
-    if not rule:
-        raise HTTPException(status_code=404, detail="Rule not found")
     await db.delete(rule)
     await db.commit()
 
@@ -192,13 +185,8 @@ async def create_host_rule(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a host-level firewall rule override."""
-    host_result = await db.execute(select(Host).where(Host.id == host_id))
-    if not host_result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Host not found")
-    if body.protocol == "icmp" and body.port_start is not None:
-        raise HTTPException(status_code=400, detail="ICMP rules cannot specify ports")
-    if body.port_start and body.port_end and body.port_end < body.port_start:
-        raise HTTPException(status_code=400, detail="port_end must be >= port_start")
+    await require_host(db, host_id)
+    _check_ports(body)
     await _validate_host_refs(db, body)
     rule = FirewallRule(host_id=host_id, **body.model_dump())
     db.add(rule)
@@ -216,15 +204,9 @@ async def update_host_rule(
     db: AsyncSession = Depends(get_db),
 ):
     """Update a host-level firewall rule override."""
-    result = await db.execute(
-        select(FirewallRule).where(
-            FirewallRule.id == rule_id,
-            FirewallRule.host_id == host_id,
-        )
+    rule = await scoped_row_or_404(
+        db, FirewallRule, rule_id, FirewallRule.host_id == host_id, detail=_NOT_FOUND
     )
-    rule = result.scalar_one_or_none()
-    if not rule:
-        raise HTTPException(status_code=404, detail="Rule not found")
     await _apply_rule_update(db, rule, body)
     await db.commit()
     await db.refresh(rule)
@@ -239,15 +221,9 @@ async def delete_host_rule(
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a host-level firewall rule override."""
-    result = await db.execute(
-        select(FirewallRule).where(
-            FirewallRule.id == rule_id,
-            FirewallRule.host_id == host_id,
-        )
+    rule = await scoped_row_or_404(
+        db, FirewallRule, rule_id, FirewallRule.host_id == host_id, detail=_NOT_FOUND
     )
-    rule = result.scalar_one_or_none()
-    if not rule:
-        raise HTTPException(status_code=404, detail="Rule not found")
     await db.delete(rule)
     await db.commit()
 
@@ -268,10 +244,7 @@ async def get_group_policies(
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(HostGroup).where(HostGroup.id == group_id))
-    group = result.scalar_one_or_none()
-    if not group:
-        raise HTTPException(status_code=404, detail="Group not found")
+    group = await require_group(db, group_id)
     return ChainPoliciesResponse(
         input=group.input_policy or "drop",
         output=group.output_policy or "accept",
@@ -286,10 +259,7 @@ async def update_group_policies(
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
-    result = await db.execute(select(HostGroup).where(HostGroup.id == group_id))
-    group = result.scalar_one_or_none()
-    if not group:
-        raise HTTPException(status_code=404, detail="Group not found")
+    group = await require_group(db, group_id)
     group.input_policy = body.input_policy
     group.output_policy = body.output_policy
     await db.commit()

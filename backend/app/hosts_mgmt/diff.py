@@ -9,6 +9,16 @@ class HostsFileDiffEntry:
     reason: str  # "missing", "hostname_mismatch", "aliases_mismatch", "extra"
 
 
+def diff_entry_dict(entry: HostsFileDiffEntry) -> dict:
+    """A diff entry as the plan and drift responses list it."""
+    return {
+        "ip_address": entry.ip_address,
+        "hostname": entry.hostname,
+        "aliases": entry.aliases,
+        "reason": entry.reason,
+    }
+
+
 @dataclass
 class HostsFileDiff:
     entries_to_add: list[HostsFileDiffEntry] = field(default_factory=list)

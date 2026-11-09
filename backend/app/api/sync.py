@@ -6,6 +6,11 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api._group_sync import (
+    group_member_ids,
+    group_member_ids_or_400,
+    has_sync_in_flight,
+)
 from app.audit.logger import log_action
 from app.auth.users import current_active_user
 from app.db import get_db
@@ -113,10 +118,7 @@ async def plan_group(
     db: AsyncSession = Depends(get_db),
 ):
     """Preview changes for all hosts in a group (does NOT apply)."""
-    memberships = await db.execute(
-        select(HostGroupMembership.c.host_id).where(HostGroupMembership.c.group_id == group_id)
-    )
-    host_ids = [r[0] for r in memberships.all()]
+    host_ids = await group_member_ids(db, group_id)
 
     results = []
     for hid in host_ids:
@@ -350,12 +352,7 @@ async def trigger_group_sync(
     # NOTE: no "zero user rules" guard (removed) — see trigger_host_sync.
     # The firewall desired-state always includes the SSH anti-lockout rule
     # and the preview flow surfaces changes before apply.
-    memberships = await db.execute(
-        select(HostGroupMembership.c.host_id).where(HostGroupMembership.c.group_id == group_id)
-    )
-    host_ids = [r[0] for r in memberships.all()]
-    if not host_ids:
-        raise HTTPException(status_code=400, detail="No hosts in this group")
+    host_ids = await group_member_ids_or_400(db, group_id)
 
     from app.tasks.sync import run_sync_playbook
 
@@ -368,14 +365,7 @@ async def trigger_group_sync(
     # all rows together, then dispatch.
     pending: list[tuple[int, int]] = []
     for hid in host_ids:
-        running = await db.execute(
-            select(SyncJob).where(
-                SyncJob.host_id == hid,
-                SyncJob.module_type == "firewall",
-                SyncJob.status.in_(["pending", "running"]),
-            )
-        )
-        if running.scalar_one_or_none():
+        if await has_sync_in_flight(db, hid, "firewall"):
             continue
         job = SyncJob(
             host_id=hid, group_id=group_id, status="pending", triggered_by_user_id=user_id
@@ -621,12 +611,7 @@ async def trigger_group_bulk_sync(
     if group is None:
         raise HTTPException(status_code=404, detail="Group not found")
 
-    memberships = await db.execute(
-        select(HostGroupMembership.c.host_id).where(HostGroupMembership.c.group_id == group_id)
-    )
-    host_ids = [r[0] for r in memberships.all()]
-    if not host_ids:
-        raise HTTPException(status_code=400, detail="No hosts in this group")
+    host_ids = await group_member_ids_or_400(db, group_id)
 
     user_id = user.id
 
@@ -636,14 +621,7 @@ async def trigger_group_bulk_sync(
     triggered: list[tuple[int, int]] = []  # (job_id, host_id)
     skipped_host_ids: list[int] = []
     for hid in host_ids:
-        existing = await db.execute(
-            select(SyncJob).where(
-                SyncJob.host_id == hid,
-                SyncJob.module_type == "bulk",
-                SyncJob.status.in_(["pending", "running"]),
-            )
-        )
-        if existing.scalar_one_or_none() is not None:
+        if await has_sync_in_flight(db, hid, "bulk"):
             skipped_host_ids.append(hid)
             continue
         job = SyncJob(

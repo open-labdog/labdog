@@ -5,12 +5,13 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api._group_sync import group_member_ids_or_400, sync_group_members
 from app.api.sync import SyncJobResponse
 from app.auth.users import current_active_user
 from app.crypto.encryption import decrypt_ssh_key
 from app.crypto.key_management import get_master_key
 from app.db import get_db
-from app.models.host import Host, HostGroupMembership
+from app.models.host import Host
 from app.models.host_module_status import HostModuleStatus
 from app.models.ssh_key import SSHKey
 from app.models.sync_job import SyncJob
@@ -324,43 +325,11 @@ async def trigger_group_user_sync(
     user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    memberships = await db.execute(
-        select(HostGroupMembership.c.host_id).where(HostGroupMembership.c.group_id == group_id)
-    )
-    host_ids = [r[0] for r in memberships.all()]
-    if not host_ids:
-        raise HTTPException(status_code=400, detail="No hosts in this group")
+    host_ids = await group_member_ids_or_400(db, group_id)
 
     from app.tasks.user_sync import user_sync_task
 
-    # BUG-37: dispatch after commit, not before — see app/api/sync.py.
-    pending: list[tuple[int, int]] = []
-    for hid in host_ids:
-        running = await db.execute(
-            select(SyncJob).where(
-                SyncJob.host_id == hid,
-                SyncJob.module_type == "linux_user",
-                SyncJob.status.in_(["pending", "running"]),
-            )
-        )
-        if running.scalar_one_or_none():
-            continue
-
-        job = SyncJob(
-            host_id=hid,
-            group_id=group_id,
-            module_type="linux_user",
-            status="pending",
-            triggered_by_user_id=user.id,
-        )
-        db.add(job)
-        await db.flush()
-        pending.append((job.id, hid))
-
-    await db.commit()
-    for job_id, hid in pending:
-        user_sync_task.delay(job_id=job_id, host_id=hid)
-    return {"triggered": len(pending), "skipped": len(host_ids) - len(pending)}
+    return await sync_group_members(db, group_id, host_ids, "linux_user", user, user_sync_task)
 
 
 @router.get("/jobs/{job_id}", response_model=SyncJobResponse)

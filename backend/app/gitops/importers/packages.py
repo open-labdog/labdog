@@ -8,11 +8,17 @@ Handles both ``PackageRule`` (packages) and ``PackageRepository``
 import logging
 
 from pydantic import ValidationError
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
-from app.gitops.importers.firewall import ModuleImportResult
+from app.gitops.importers._common import (
+    ModuleImportResult,
+    TupleDiff,
+    log_import_summary,
+    replace_group_rows,
+    warn_if_section_empty,
+)
 from app.gitops.schema import LabDogGroupYAML, PackageRepositoryYAML, PackageYAML
 from app.models.host_group import HostGroup
 from app.packages.constants import is_protected
@@ -121,6 +127,80 @@ def _yaml_to_repo_tuple(entry: PackageRepositoryYAML) -> tuple:
 # ---------------------------------------------------------------------------
 
 
+def _new_package(entry: PackageYAML, group_id: int) -> PackageRule:
+    return PackageRule(
+        group_id=group_id,
+        package_name=entry.package_name,
+        version=entry.version,
+        state=PackageState(entry.state),
+        package_manager=PackageManager(entry.package_manager),
+        priority=entry.priority,
+        comment=entry.comment,
+        hold=entry.hold,
+    )
+
+
+def _new_repo(entry: PackageRepositoryYAML, group_id: int) -> PackageRepository:
+    return PackageRepository(
+        group_id=group_id,
+        name=entry.name,
+        url=entry.url,
+        key_url=entry.key_url,
+        repo_type=RepoType(entry.repo_type),
+        distribution=entry.distribution,
+        components=entry.components,
+        state=PackageState(entry.state),
+    )
+
+
+def _package_state(r: PackageRule) -> dict:
+    return {
+        "package_name": r.package_name,
+        "version": r.version,
+        "state": str(r.state),
+        "package_manager": str(r.package_manager),
+        "priority": r.priority,
+        "comment": r.comment,
+        "hold": r.hold,
+    }
+
+
+def _repo_state(r: PackageRepository) -> dict:
+    return {
+        "name": r.name,
+        "url": r.url,
+        "key_url": r.key_url,
+        "repo_type": str(r.repo_type),
+        "distribution": r.distribution,
+        "components": r.components,
+        "state": str(r.state),
+    }
+
+
+def _yaml_package_state(e: PackageYAML) -> dict:
+    return {
+        "package_name": e.package_name,
+        "version": e.version,
+        "state": e.state,
+        "package_manager": e.package_manager,
+        "priority": e.priority,
+        "comment": e.comment,
+        "hold": e.hold,
+    }
+
+
+def _yaml_repo_state(e: PackageRepositoryYAML) -> dict:
+    return {
+        "name": e.name,
+        "url": e.url,
+        "key_url": e.key_url,
+        "repo_type": e.repo_type,
+        "distribution": e.distribution,
+        "components": e.components,
+        "state": e.state,
+    }
+
+
 async def import_packages(
     group: HostGroup,
     parsed: LabDogGroupYAML,
@@ -156,10 +236,7 @@ async def import_packages(
     # ------------------------------------------------------------------
     desired_packages: list[PackageYAML] = []
 
-    if parsed.packages is None:
-        logger.warning("Group %d: YAML has no packages section — wiping package rules", group_id)
-    elif not parsed.packages:
-        logger.warning("Group %d: YAML has empty packages list — wiping package rules", group_id)
+    warn_if_section_empty(logger, group_id, parsed.packages, "packages", "package rules")
 
     for entry in parsed.packages or []:
         if is_protected(entry.package_name):
@@ -185,16 +262,9 @@ async def import_packages(
     # ------------------------------------------------------------------
     desired_repos: list[PackageRepositoryYAML] = []
 
-    if parsed.package_repositories is None:
-        logger.warning(
-            "Group %d: YAML has no package_repositories section — wiping repositories",
-            group_id,
-        )
-    elif not parsed.package_repositories:
-        logger.warning(
-            "Group %d: YAML has empty package_repositories list — wiping repositories",
-            group_id,
-        )
+    warn_if_section_empty(
+        logger, group_id, parsed.package_repositories, "package_repositories", "repositories"
+    )
 
     for entry in parsed.package_repositories or []:
         try:
@@ -222,13 +292,10 @@ async def import_packages(
     )
     current_pkg_rules: list[PackageRule] = list(current_pkg_result.scalars().all())
 
-    current_pkg_tuples = {_rule_to_pkg_tuple(r) for r in current_pkg_rules}
-    desired_pkg_tuples = {_yaml_to_pkg_tuple(e) for e in desired_packages}
-
-    pkg_added = len(desired_pkg_tuples - current_pkg_tuples)
-    pkg_removed = len(current_pkg_tuples - desired_pkg_tuples)
-    pkg_unchanged = len(current_pkg_tuples & desired_pkg_tuples)
-    pkg_changed = bool(pkg_added or pkg_removed)
+    pkg_diff = TupleDiff.of(
+        {_rule_to_pkg_tuple(r) for r in current_pkg_rules},
+        {_yaml_to_pkg_tuple(e) for e in desired_packages},
+    )
 
     # ------------------------------------------------------------------
     # 4. Diff repositories
@@ -238,112 +305,30 @@ async def import_packages(
     )
     current_repos: list[PackageRepository] = list(current_repo_result.scalars().all())
 
-    current_repo_tuples = {_repo_orm_to_tuple(r) for r in current_repos}
-    desired_repo_tuples = {_yaml_to_repo_tuple(e) for e in desired_repos}
-
-    repo_added = len(desired_repo_tuples - current_repo_tuples)
-    repo_removed = len(current_repo_tuples - desired_repo_tuples)
-    repo_unchanged = len(current_repo_tuples & desired_repo_tuples)
-    repo_changed = bool(repo_added or repo_removed)
-
-    has_changes = pkg_changed or repo_changed
-
-    module_result = ModuleImportResult(
-        module="packages",
-        added=pkg_added + repo_added,
-        removed=pkg_removed + repo_removed,
-        unchanged=pkg_unchanged + repo_unchanged,
-        changed=has_changes,
+    repo_diff = TupleDiff.of(
+        {_repo_orm_to_tuple(r) for r in current_repos},
+        {_yaml_to_repo_tuple(e) for e in desired_repos},
     )
 
-    if has_changes:
+    diff = pkg_diff + repo_diff
+    module_result = diff.result("packages")
+
+    if diff.changed:
         # Capture before-state for audit.
         before_state = {
-            "packages": [
-                {
-                    "package_name": r.package_name,
-                    "version": r.version,
-                    "state": str(r.state),
-                    "package_manager": str(r.package_manager),
-                    "priority": r.priority,
-                    "comment": r.comment,
-                    "hold": r.hold,
-                }
-                for r in current_pkg_rules
-            ],
-            "repositories": [
-                {
-                    "name": r.name,
-                    "url": r.url,
-                    "key_url": r.key_url,
-                    "repo_type": str(r.repo_type),
-                    "distribution": r.distribution,
-                    "components": r.components,
-                    "state": str(r.state),
-                }
-                for r in current_repos
-            ],
+            "packages": [_package_state(r) for r in current_pkg_rules],
+            "repositories": [_repo_state(r) for r in current_repos],
         }
 
-        # Delete-and-replace packages.
-        if pkg_changed:
-            await db.execute(delete(PackageRule).where(PackageRule.group_id == group_id))
-            for entry in desired_packages:
-                rule = PackageRule(
-                    group_id=group_id,
-                    package_name=entry.package_name,
-                    version=entry.version,
-                    state=PackageState(entry.state),
-                    package_manager=PackageManager(entry.package_manager),
-                    priority=entry.priority,
-                    comment=entry.comment,
-                    hold=entry.hold,
-                )
-                db.add(rule)
-
-        # Delete-and-replace repositories.
-        if repo_changed:
-            await db.execute(
-                delete(PackageRepository).where(PackageRepository.group_id == group_id)
-            )
-            for entry in desired_repos:
-                repo = PackageRepository(
-                    group_id=group_id,
-                    name=entry.name,
-                    url=entry.url,
-                    key_url=entry.key_url,
-                    repo_type=RepoType(entry.repo_type),
-                    distribution=entry.distribution,
-                    components=entry.components,
-                    state=PackageState(entry.state),
-                )
-                db.add(repo)
+        # Delete-and-replace each table only if it changed.
+        if pkg_diff.changed:
+            await replace_group_rows(db, PackageRule, group_id, desired_packages, _new_package)
+        if repo_diff.changed:
+            await replace_group_rows(db, PackageRepository, group_id, desired_repos, _new_repo)
 
         after_state = {
-            "packages": [
-                {
-                    "package_name": e.package_name,
-                    "version": e.version,
-                    "state": e.state,
-                    "package_manager": e.package_manager,
-                    "priority": e.priority,
-                    "comment": e.comment,
-                    "hold": e.hold,
-                }
-                for e in desired_packages
-            ],
-            "repositories": [
-                {
-                    "name": e.name,
-                    "url": e.url,
-                    "key_url": e.key_url,
-                    "repo_type": e.repo_type,
-                    "distribution": e.distribution,
-                    "components": e.components,
-                    "state": e.state,
-                }
-                for e in desired_repos
-            ],
+            "packages": [_yaml_package_state(e) for e in desired_packages],
+            "repositories": [_yaml_repo_state(e) for e in desired_repos],
             "commit_sha": commit_sha,
             "file_path": group.gitops_file_path,
         }
@@ -357,13 +342,6 @@ async def import_packages(
             after_state=after_state,
         )
 
-    logger.info(
-        "GitOps packages import for group %d: +%d -%d =%d (SHA: %s)",
-        group_id,
-        module_result.added,
-        module_result.removed,
-        module_result.unchanged,
-        commit_sha[:8],
-    )
+    log_import_summary(logger, "packages", group_id, module_result, commit_sha)
 
     return module_result

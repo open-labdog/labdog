@@ -6,12 +6,13 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api._group_sync import group_member_ids
 from app.auth.users import current_active_user
 from app.db import get_db
 from app.drift.detector import check_drift
 from app.enum_utils import enum_str
 from app.metrics.recorder import record_drift_sample
-from app.models.host import Host, HostGroupMembership
+from app.models.host import Host
 from app.models.user import User
 from app.rules.desired_state import get_desired_state
 from app.rules.model import ChainPolicies, FirewallRuleSpec
@@ -115,10 +116,7 @@ async def check_group_drift(
     user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    memberships = await db.execute(
-        select(HostGroupMembership.c.host_id).where(HostGroupMembership.c.group_id == group_id)
-    )
-    host_ids = [r[0] for r in memberships.all()]
+    host_ids = await group_member_ids(db, group_id)
     results = []
     from app.models.host import SyncStatus
 

@@ -554,119 +554,17 @@ async def _prepare_drift(db: AsyncSession, subject) -> PreparedInvestigation:  #
 async def _prepare_host(db: AsyncSession, subject) -> PreparedInvestigation:  # noqa: ANN001
     host = await _get_host(db, subject.host_id)
     since = datetime.now(UTC) - timedelta(days=7)
-    # A column_property: read it with a query, since an instance already in
-    # the session may not have it loaded and cannot lazy-load it here.
-    verified = await db.scalar(select(Host.last_verified_at).where(Host.id == host.id))
-    facts = [
-        _host_line(host),
-        f"Kernel: {_sanitise(host.kernel_version or 'not collected')}",
-        f"Firewall backend: {enum_str(host.firewall_backend)}",
-        f"LabDog status: {enum_str(host.sync_status)}; last sync {_utc(host.last_sync_at)}; "
-        f"last verified {_utc(verified)}; drift checks "
-        f"{'on' if host.drift_check_enabled else 'off'}",
-        "",
-        "Metrics now:",
-        *_metrics_block(await _host_metrics(db, host.id)),
-    ]
+    facts = await _host_overview(db, host)
 
     evidence: list[str] = []
-    modules = (
-        (await db.execute(select(HostModuleStatus).where(HostModuleStatus.host_id == host.id)))
-        .scalars()
-        .all()
-    )
-    off = [m for m in modules if enum_str(m.sync_status) != "in_sync"]
-    facts.append("")
-    if off:
-        facts.append("Modules not in sync:")
-        facts += [f"- {_sanitise(m.module_type)}: {enum_str(m.sync_status)}" for m in off]
-        evidence += [
-            f"{_sanitise(m.module_type)}: {_clip(_sanitise(m.error_message), 400)}"
-            for m in off
-            if m.error_message
-        ]
-    else:
-        facts.append("Every module LabDog manages was in sync at its last check.")
-
-    failed_runs = (
-        await db.execute(
-            select(ActionHostRun, ActionRun.action_key)
-            .join(ActionRun, ActionRun.id == ActionHostRun.action_run_id)
-            .where(
-                ActionHostRun.host_id == host.id,
-                ActionHostRun.status == "failed",
-                ActionHostRun.finished_at >= since,
-            )
-            .order_by(ActionHostRun.finished_at.desc())
-            .limit(5)
-        )
-    ).all()
-    failed_syncs = (
-        (
-            await db.execute(
-                select(SyncJob)
-                .where(
-                    SyncJob.host_id == host.id,
-                    SyncJob.status == JobStatus.failed,
-                    SyncJob.created_at >= since,
-                )
-                .order_by(SyncJob.created_at.desc())
-                .limit(3)
-            )
-        )
-        .scalars()
-        .all()
-    )
-    facts.append("")
-    if failed_runs or failed_syncs:
-        facts.append("Failures in the last 7 days:")
-        facts += [
-            f"- action {_sanitise(key)} (run #{hr.action_run_id}) failed {_utc(hr.finished_at)}"
-            for hr, key in failed_runs
-        ]
-        facts += [
-            f"- sync #{j.id} failed {_utc(j.completed_at or j.created_at)}" for j in failed_syncs
-        ]
-        evidence += [
-            f"run #{hr.action_run_id}: {_clip(_sanitise(hr.error_message), 400)}"
-            for hr, _ in failed_runs
-            if hr.error_message
-        ]
-        evidence += [
-            f"sync #{j.id}: {_clip(_sanitise(j.error_message), 400)}"
-            for j in failed_syncs
-            if j.error_message
-        ]
-    else:
-        facts.append("Nothing LabDog ran on this host failed in the last 7 days.")
-
-    alerts = (
-        (
-            await db.execute(
-                select(AlertEvent)
-                .where(AlertEvent.host_id == host.id, AlertEvent.status == "firing")
-                .order_by(AlertEvent.starts_at.desc())
-                .limit(5)
-            )
-        )
-        .scalars()
-        .all()
-    )
-    facts.append("")
-    if alerts:
-        facts.append("Firing alerts:")
-        for a in alerts:
-            facts.append(
-                f"- {_sanitise(a.alertname)} ({_sanitise(a.severity or 'no severity')}) "
-                f"since {_utc(a.starts_at)}"
-            )
-            summary = (a.annotations or {}).get("summary") or (a.annotations or {}).get(
-                "description"
-            )
-            if summary:
-                evidence.append(f"{_sanitise(a.alertname)}: {_clip(_sanitise(summary), 400)}")
-    else:
-        facts.append("No alert is firing for this host.")
+    for findings in (
+        await _modules_out_of_sync(db, host.id),
+        await _recent_failures(db, host.id, since),
+        await _firing_alerts(db, host.id),
+    ):
+        facts.append("")
+        facts += findings.facts
+        evidence += findings.evidence
 
     if evidence:
         facts += ["", "Details:", _fence("\n".join(evidence))]
@@ -693,6 +591,143 @@ async def _prepare_host(db: AsyncSession, subject) -> PreparedInvestigation:  # 
         ),
         host_ids=[host.id],
     )
+
+
+@dataclass
+class _Findings:
+    """One section of a host-health mission: its fact lines, and the
+    untrusted text behind them that goes in the fenced details."""
+
+    facts: list[str]
+    evidence: list[str]
+
+
+async def _host_overview(db: AsyncSession, host: Host) -> list[str]:
+    """The host line, its LabDog status and its metrics now."""
+    # A column_property: read it with a query, since an instance already in
+    # the session may not have it loaded and cannot lazy-load it here.
+    verified = await db.scalar(select(Host.last_verified_at).where(Host.id == host.id))
+    return [
+        _host_line(host),
+        f"Kernel: {_sanitise(host.kernel_version or 'not collected')}",
+        f"Firewall backend: {enum_str(host.firewall_backend)}",
+        f"LabDog status: {enum_str(host.sync_status)}; last sync {_utc(host.last_sync_at)}; "
+        f"last verified {_utc(verified)}; drift checks "
+        f"{'on' if host.drift_check_enabled else 'off'}",
+        "",
+        "Metrics now:",
+        *_metrics_block(await _host_metrics(db, host.id)),
+    ]
+
+
+async def _modules_out_of_sync(db: AsyncSession, host_id: int) -> _Findings:
+    modules = (
+        (await db.execute(select(HostModuleStatus).where(HostModuleStatus.host_id == host_id)))
+        .scalars()
+        .all()
+    )
+    off = [m for m in modules if enum_str(m.sync_status) != "in_sync"]
+    if not off:
+        return _Findings(["Every module LabDog manages was in sync at its last check."], [])
+    return _Findings(
+        [
+            "Modules not in sync:",
+            *(f"- {_sanitise(m.module_type)}: {enum_str(m.sync_status)}" for m in off),
+        ],
+        [
+            f"{_sanitise(m.module_type)}: {_clip(_sanitise(m.error_message), 400)}"
+            for m in off
+            if m.error_message
+        ],
+    )
+
+
+async def _recent_failures(db: AsyncSession, host_id: int, since: datetime) -> _Findings:
+    """The last few failed action runs and syncs on the host since ``since``."""
+    failed_runs = (
+        await db.execute(
+            select(ActionHostRun, ActionRun.action_key)
+            .join(ActionRun, ActionRun.id == ActionHostRun.action_run_id)
+            .where(
+                ActionHostRun.host_id == host_id,
+                ActionHostRun.status == "failed",
+                ActionHostRun.finished_at >= since,
+            )
+            .order_by(ActionHostRun.finished_at.desc())
+            .limit(5)
+        )
+    ).all()
+    failed_syncs = (
+        (
+            await db.execute(
+                select(SyncJob)
+                .where(
+                    SyncJob.host_id == host_id,
+                    SyncJob.status == JobStatus.failed,
+                    SyncJob.created_at >= since,
+                )
+                .order_by(SyncJob.created_at.desc())
+                .limit(3)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not (failed_runs or failed_syncs):
+        return _Findings(["Nothing LabDog ran on this host failed in the last 7 days."], [])
+    return _Findings(
+        [
+            "Failures in the last 7 days:",
+            *(
+                f"- action {_sanitise(key)} (run #{hr.action_run_id}) failed {_utc(hr.finished_at)}"
+                for hr, key in failed_runs
+            ),
+            *(
+                f"- sync #{j.id} failed {_utc(j.completed_at or j.created_at)}"
+                for j in failed_syncs
+            ),
+        ],
+        [
+            *(
+                f"run #{hr.action_run_id}: {_clip(_sanitise(hr.error_message), 400)}"
+                for hr, _ in failed_runs
+                if hr.error_message
+            ),
+            *(
+                f"sync #{j.id}: {_clip(_sanitise(j.error_message), 400)}"
+                for j in failed_syncs
+                if j.error_message
+            ),
+        ],
+    )
+
+
+async def _firing_alerts(db: AsyncSession, host_id: int) -> _Findings:
+    alerts = (
+        (
+            await db.execute(
+                select(AlertEvent)
+                .where(AlertEvent.host_id == host_id, AlertEvent.status == "firing")
+                .order_by(AlertEvent.starts_at.desc())
+                .limit(5)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not alerts:
+        return _Findings(["No alert is firing for this host."], [])
+    facts = ["Firing alerts:"]
+    evidence: list[str] = []
+    for a in alerts:
+        facts.append(
+            f"- {_sanitise(a.alertname)} ({_sanitise(a.severity or 'no severity')}) "
+            f"since {_utc(a.starts_at)}"
+        )
+        summary = (a.annotations or {}).get("summary") or (a.annotations or {}).get("description")
+        if summary:
+            evidence.append(f"{_sanitise(a.alertname)}: {_clip(_sanitise(summary), 400)}")
+    return _Findings(facts, evidence)
 
 
 _PREPARERS = {
