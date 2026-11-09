@@ -151,7 +151,8 @@ async def test_a_preview_collects_every_module_at_once_over_one_connection(db, m
     seen_conns = []
 
     def _stub(name, result):
-        async def _collector(host, db, pem, *args, conn=None, **kwargs):
+        # Firewall is called with keywords, the rest positionally.
+        async def _collector(host, db=None, *args, conn=None, **kwargs):
             assert db is None, "collecting must not touch the session"
             seen_conns.append(conn)
             await conn.run(name)
