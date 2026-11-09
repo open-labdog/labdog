@@ -1,0 +1,33 @@
+# Overlay for run_one.sh's "split" config: the image under test run as
+# separate role containers (plan step 3) instead of one "all" container.
+# Same total slots as "raised": worker 2 x 6 + worker-drift 4 + orchestrator 12.
+x-role: &role
+  extends: { file: docker-compose.yml, service: labdog }
+  container_name: !reset null
+  ports: !reset []
+
+services:
+  labdog:
+    environment:
+      LABDOG_ROLE: api
+
+  beat:
+    <<: *role
+    environment:
+      LABDOG_ROLE: beat
+
+  orchestrator:
+    <<: *role
+    environment:
+      LABDOG_ROLE: orchestrator
+
+  worker:
+    <<: *role
+    environment:
+      LABDOG_ROLE: worker
+
+  worker-drift:
+    <<: *role
+    environment:
+      LABDOG_ROLE: worker-drift
+      LABDOG_CELERY__DRIFT_CONCURRENCY: ${DRIFT_CONCURRENCY:-4}

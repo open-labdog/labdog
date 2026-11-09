@@ -79,9 +79,14 @@ services:
 
 networks:
   loadtest:
+    # Two-host mode (FAKEHOST_DOCKER, see README): fake hosts get 172.30/16
+    # with nat-unprotected so LabDog on the other box can reach them by a
+    # plain route; the LabDog side moves to 172.29/16.
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: ${LT_GW_MODE:-nat}
     ipam:
       config:
-        - subnet: 172.30.0.0/16
+        - subnet: ${LT_SUBNET:-172.30.0.0/16}
 
 volumes:
   postgres_data:
