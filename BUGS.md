@@ -80,30 +80,6 @@ Checked and not filed:
 
 ### Performance — Medium
 
-- [ ] **BUG-157** `backend/app/packages/generator.py:88` — the packages
-      play runs one package-manager call per package and gathers every
-      fact
-
-      Symptom: 20 packages are 20 `ansible.builtin.package` tasks, each
-      a separate module run (about 80 ms of transport each, BUG-154)
-      that starts the package manager and reads its cache again. The
-      play also sets `gather_facts: True` (`:181`), which took 1.43 s
-      against 0.60 s for a play without it; the `min` subset took 1.27
-      s. *Measured* (facts). The facts are read only by the repository,
-      hold and unhold tasks' `ansible_facts['os_family']` conditions.
-
-      Fix direction: group the packages by target state (absent,
-      latest, present, present at a version) and emit one task per
-      group with `name:` as a list, so apt and dnf resolve them in one
-      transaction. One bad name then fails the whole group, so keep the
-      per-package task as a fallback in a `rescue`, or pre-check names.
-      Take the OS family from the host row (`Host.os_family`,
-      `app/models/host.py:81`) when it is known and drop fact gathering;
-      otherwise `gather_subset: ["!all", "!min", "distribution"]`.
-
-      Severity Medium: package changes are the most common sync, and
-      the cost grows with each package an operator adds.
-
 - [ ] **BUG-160** `backend/app/metrics/aggregates.py:393` — each metrics
       scrape scans `drift_samples` three times and `sync_jobs` twice
 

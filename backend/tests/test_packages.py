@@ -241,6 +241,58 @@ class TestPackageGenerator:
         pkg_task = next(t for t in tasks if "ansible.builtin.package" in t)
         assert pkg_task["ansible.builtin.package"]["name"] == "nginx-1.24.0"
 
+    def test_packages_with_the_same_state_share_one_task(self):
+        """BUG-157: one package-manager call per state, with a per-package
+        fallback that runs only when the list task failed."""
+        result = generate_package_playbook(
+            host_ip="1.2.3.4",
+            packages=[
+                {"package_name": "curl", "state": "present", "package_manager": "apt"},
+                {"package_name": "telnet", "state": "absent"},
+                {
+                    "package_name": "nginx",
+                    "state": "present",
+                    "version": "1.24.0",
+                    "package_manager": "apt",
+                },
+                {"package_name": "vim", "state": "latest"},
+            ],
+            repos=[],
+            ssh_key_path="/tmp/test.key",
+        )
+        tasks = [t for t in result["playbook"][0]["tasks"] if "ansible.builtin.package" in t]
+        listed = [
+            (t["ansible.builtin.package"]["name"], t["ansible.builtin.package"]["state"])
+            for t in tasks
+            if "when" not in t
+        ]
+        # Removals first; one state, one task.
+        assert listed == [
+            ("telnet", "absent"),
+            (["curl", "nginx=1.24.0"], "present"),
+            ("vim", "latest"),
+        ]
+        present = next(t for t in tasks if isinstance(t["ansible.builtin.package"]["name"], list))
+        assert present["ignore_errors"] is True
+        assert present["register"] == "labdog_packages_present"
+        fallback = [t for t in tasks if "when" in t]
+        assert [t["ansible.builtin.package"]["name"] for t in fallback] == ["curl", "nginx=1.24.0"]
+        assert {t["when"] for t in fallback} == {"labdog_packages_present is failed"}
+
+    def test_only_the_facts_the_play_reads_are_gathered(self):
+        result = generate_package_playbook(
+            host_ip="1.2.3.4",
+            packages=[{"package_name": "curl", "state": "present"}],
+            repos=[],
+            ssh_key_path="/tmp/test.key",
+        )
+        assert result["playbook"][0]["gather_subset"] == [
+            "!all",
+            "!min",
+            "distribution",
+            "pkg_mgr",
+        ]
+
     def test_absent_package_state(self):
         result = generate_package_playbook(
             host_ip="1.2.3.4",
