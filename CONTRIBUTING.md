@@ -11,9 +11,17 @@ land under the same license (inbound = outbound).
   version/commit you saw it on, and the relevant logs. If you can
   share the exact SQL state + API response, even better.
 - **Feature ideas** — open an issue first so we can discuss scope
-  before you invest significant time. See [`TODO.md`](TODO.md) for
-  what's already on the roadmap and [`BUGS.md`](BUGS.md) for the
-  open bug registry.
+  before you invest significant time. See the
+  [roadmap board](https://github.com/orgs/open-labdog/projects/1) for what's already planned and
+  [`BUGS.md`](BUGS.md) for the open bug registry.
+
+LabDog deliberately does not aim to replace Puppet, Chef or Salt, do
+container orchestration (Kubernetes, Nomad), deploy applications (use
+CI/CD), or do monitoring and alerting (use Prometheus, Grafana, Loki).
+Sysctl/kernel parameter management and arbitrary file management are
+out of scope too; write an action pack if you need them. Adjacent
+tools do these better, and LabDog would rather integrate than
+replace.
 
 ## Dev setup
 
@@ -91,14 +99,15 @@ the decision points and what was considered and rejected.
   without tests won't merge.
 - Update `docs/` when you change user-visible behaviour. A comment
   on the PR is not a substitute for updating the user guide.
-- If the change touches anything in [`TODO.md`](TODO.md) or fixes a
-  bug listed in [`BUGS.md`](BUGS.md) — tick the item (`[x]`), note
-  the fix and commit hash, or un-check it with an explanation.
+- If the change delivers an item on the [roadmap board](https://github.com/orgs/open-labdog/projects/1),
+  link the PR on that item. If it fixes a bug listed in
+  [`BUGS.md`](BUGS.md), delete the entry and reference the bug ID in
+  the commit.
 
 ### Working with `plans/` — branch-scoped scratchpad
 
-For substantive design work that needs more than a TODO entry can
-hold, use a temporary `plans/` directory on the work branch. The
+For substantive design work that needs more than a roadmap item
+can hold, use a temporary `plans/` directory on the work branch. The
 workflow:
 
 1. **Branch from `dev`** — `feat/<topic>`, `fix/<bug-id>`, etc.
@@ -113,12 +122,11 @@ workflow:
    never carry it.
 5. **Merge.** Reviewers read commits, not plan files.
 
-Roles of the four top-level tracking files:
+Where work is tracked:
 
 | File | Purpose |
 |---|---|
-| [`ROADMAP.md`](ROADMAP.md) | High-altitude direction — in design, ideas, out of scope. |
-| [`TODO.md`](TODO.md) | Open near-term tasks. Open-only — finished items are deleted, not ticked. |
+| [Roadmap board](https://github.com/orgs/open-labdog/projects/1) | Direction and open tasks, with priority and status. Research and design notes go in each item. |
 | [`BUGS.md`](BUGS.md) | Open bug registry. Open-only — fixed bugs are deleted, with a commit referencing the bug ID. |
 | `plans/` (work branches) | Private scratchpad for one piece of in-flight work. Created and deleted within a single branch's lifetime. |
 
@@ -210,7 +218,7 @@ the human-owned steps it cannot verify:
   release.** This should already be true from each feature PR (see
   [Pull requests](#pull-requests)); the release PR is the backstop
   that catches anything missed.
-- [ ] `TODO.md`: items completed this cycle removed.
+- [ ] Roadmap board: items shipped this cycle set to Done, with the PR linked.
 - [ ] `BUGS.md`: bugs fixed this cycle deleted, fixing commit
   references the bug ID.
 - [ ] `plans/` is absent (never ships on `dev` or `main`).

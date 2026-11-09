@@ -49,6 +49,12 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Changed
 
+- **The roadmap moved to a GitHub project.** `ROADMAP.md` and `TODO.md`
+  are gone; planned work, open tasks and their design notes now live on the
+  [roadmap board](https://github.com/orgs/open-labdog/projects/1).
+  `CONTRIBUTING.md`, `CLAUDE.md` and the release checklist point there, and
+  the "out of scope" list moved to `CONTRIBUTING.md`.
+
 - **Workers take one task at a time** (`worker_prefetch_multiplier=1`), so a
   long sync no longer holds queued tasks that an idle worker could run. Only
   one booting worker runs the startup orphan sweep.

@@ -319,7 +319,7 @@ upgrade.
 ## Working with `plans/`
 
 When picking up substantive design work that needs more than a
-[`TODO.md`](TODO.md) line can hold, use `plans/` as a branch-scoped
+roadmap item can hold, use `plans/` as a branch-scoped
 scratchpad:
 
 1. Branch from `dev`.
@@ -330,8 +330,8 @@ scratchpad:
 4. **Delete `plans/` before opening the PR.** `dev` and `main` must
    never carry it.
 
-Roles of the four top-level tracking files: [`ROADMAP.md`](ROADMAP.md)
-(direction), [`TODO.md`](TODO.md) (open near-term tasks, open-only),
+Where work is tracked: the [roadmap board](https://github.com/orgs/open-labdog/projects/1)
+(direction and open tasks; research and design notes go in each item),
 [`BUGS.md`](BUGS.md) (open bug registry, open-only), `plans/` (private
 in-flight scratchpad on work branches). See
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full workflow.

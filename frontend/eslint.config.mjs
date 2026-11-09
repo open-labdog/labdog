@@ -43,7 +43,7 @@ export default defineConfig([
       // data, `Date.now()` in a relative-time helper called during render —
       // none of which is a bug, and restructuring them is React work, not
       // lint work. Warnings, like `no-unused-vars` below and for the same
-      // reason: advisory until someone takes the pass (see TODO.md).
+      // reason: advisory until someone takes the pass (roadmap board).
       "react-hooks/set-state-in-effect": "warn",
       "react-hooks/purity": "warn",
       ...nextPlugin.configs.recommended.rules,

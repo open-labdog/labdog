@@ -5,7 +5,7 @@ Prometheus-compatible scraper, while OpenMetrics 1.0 adds a mandatory
 ``# EOF`` terminator and different counter-naming semantics that commonly
 cause "half the metrics vanished" when a renderer gets it slightly wrong.
 True OpenMetrics support (via ``Accept`` content negotiation) is a purely
-additive follow-up — see ``TODO.md``.
+additive follow-up.
 
 Why hand-rolled instead of ``prometheus_client``: that library's value is
 its registry, and ``app.metrics.collector.collect`` can't use it —
