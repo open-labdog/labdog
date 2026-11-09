@@ -94,7 +94,7 @@ Two of them cover what comes *in* to LabDog:
 
 | Setting | Key | Default | Range | Description |
 |---------|-----|---------|-------|-------------|
-| Snapshot Max Age | `workflow.snapshot_max_age_hours` | `24` | 1 – 168 hours | Proxmox VM snapshots taken before a destructive scheduled action are automatically cleaned up after this many hours when the action completes successfully. |
+| Snapshot Max Age | `workflow.snapshot_max_age_hours` | `24` | 1 – 168 hours | A pre-run snapshot that is still on its VM after its action run (a failed host whose snapshot was kept, or a delete that failed) is removed by the hourly cleanup once it is this many hours old. A successful run deletes its own snapshot straight away. |
 | Locked VM Wait | `workflow.snapshot_lock_wait_minutes` | `30` | 0 – 240 minutes | How long the pre-run snapshot of a destructive action keeps retrying (every 30 seconds) while Proxmox reports the VM as locked, usually by a running backup. Each wait is logged in the run output; if the lock is still held after this long, that host fails before anything runs on it. `0` fails on the first lock. The wait is added to the action's time budget. |
 
 ### Alert intake
@@ -288,6 +288,11 @@ Two actions sit in the head:
 - **Clean up orphaned snapshots** deletes LabDog's snapshots that are no
   longer needed: those tied to a finished action run, and those older than
   `workflow.snapshot_max_age_hours` whose run LabDog does not know.
+  LabDog also runs this every hour on its own, more cautiously: it removes
+  only snapshots older than `workflow.snapshot_max_age_hours`, so a
+  snapshot a failed run kept for you stays at least that long. AI
+  sessions' `labdog-ai-` snapshots are left to their own retention
+  setting by both.
 
 ### TLS verification
 

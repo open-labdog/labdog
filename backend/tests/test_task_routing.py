@@ -89,6 +89,7 @@ def test_default_queue_is_consumed():
         "app.tasks.audit_retention.prune_old_ssh_transcripts",
         "app.tasks.action_sweeper.sweep_stale_action_runs",
         "app.tasks.sync_sweeper.sweep_stale_syncs",
+        "app.tasks.snapshot_reaper.reap_orphaned_snapshots",
     ],
 )
 def test_previously_stranded_tasks_are_registered_and_routed(task_name):
