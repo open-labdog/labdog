@@ -154,20 +154,6 @@ Checked and not filed:
       `_modules_by_host`, and declare `limit: int = Query(20, ge=1,
       le=500)`.
 
-- [ ] **BUG-164** `backend/app/user_mgmt/generator.py:107` — the users
-      play looks up each user's home directory in a task of its own
-
-      Symptom: every present user with keys gets an
-      `ansible.builtin.getent` task keyed on that user, before the
-      directory and key tasks: 50 users are 50 extra module runs.
-
-      Fix direction: one `getent` task with `database: passwd` and no
-      `key`, after the user tasks and before the per-user key tasks. It
-      fills `ansible_facts.getent_passwd` for every account, which the
-      home path already reads. A user missing in check mode is then
-      absent from the dict rather than `None`, so the `when:` becomes
-      `labdog_key_user in ansible_facts.getent_passwd`.
-
 - [ ] **BUG-165** `frontend/app/(dashboard)/hosts/[id]/client-page.tsx:19`
       — every host page downloads the terminal emulator
 
