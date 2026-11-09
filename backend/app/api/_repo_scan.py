@@ -16,6 +16,8 @@ import asyncio
 import logging
 import shutil
 import tempfile
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -29,10 +31,12 @@ from app.models.git_repository import GitRepository
 from app.models.user import User
 from app.packs.clone import clone_to_thread
 from app.packs.redact import redact
-from app.packs.repo_scanner import scan_repository
-from app.packs.scan_conflicts import annotate_scan
+from app.packs.repo_scanner import DetectedPack, ScanResult, scan_repository
+from app.packs.scan_conflicts import AnnotatedScanResult, annotate_scan
 from app.packs.service import _decrypt_repo_credentials
 from app.schemas.repo_scan import (
+    ActivatedGitopsBindingOut,
+    ActivatedPackOut,
     RepoActivateRequest,
     RepoActivateResponse,
     RepoScanResponse,
@@ -57,48 +61,12 @@ async def scan_repo(
     clone surface as HTTP 502 with credentials redacted from the
     error message.
     """
-    repo = (
-        await db.execute(select(GitRepository).where(GitRepository.id == repo_id))
-    ).scalar_one_or_none()
-    if repo is None:
-        raise HTTPException(status_code=404, detail="GitRepository not found")
+    repo = await _get_repo_or_404(db, repo_id)
 
-    try:
-        ssh_key, token = await _decrypt_repo_credentials(db, repo)
-    except Exception as exc:
-        # Credential decryption failure — the master key is missing or
-        # the linked SSHKey row is gone. Don't reveal anything beyond
-        # the failure mode.
-        logger.warning("scan: credential decryption failed for repo %r: %s", repo.name, exc)
-        raise HTTPException(
-            status_code=502,
-            detail="Could not decrypt repository credentials",
-        ) from None
-
-    clone_dir = Path(tempfile.mkdtemp(prefix="labdog-scan-"))
-    try:
-        try:
-            # BUG-71: the clone and the tree walk both run off the loop.
-            # git alone can hold it for 120 s against an unreachable
-            # remote, and this process serves every request there is.
-            head_sha, learned = await clone_to_thread(
-                repo.url,
-                repo.branch,
-                clone_dir,
-                ssh_key=ssh_key,
-                token=token,
-                host_key_entry=repo.ssh_host_key_entry,
-            )
-            # SEC-27: trust on first use, so later syncs are verified.
-            if learned:
-                repo.ssh_host_key_entry = learned
-                await db.commit()
-        except (GitSyncError, ValueError) as exc:
-            secrets = [s for s in (ssh_key, token) if s]
-            scrubbed = redact(str(exc), secrets) or "clone failed"
-            logger.warning("scan: clone failed for repo %r: %s", repo.name, scrubbed)
-            raise HTTPException(status_code=502, detail=scrubbed) from None
-
+    async with _fresh_checkout(db, repo, step="scan", repo_label=f"repo {repo.name!r}") as (
+        clone_dir,
+        head_sha,
+    ):
         result = await asyncio.to_thread(scan_repository, clone_dir, repo_name=repo.name)
         annotated = await annotate_scan(db, result)
 
@@ -112,8 +80,100 @@ async def scan_repo(
             scan_errors=[_err_out(e) for e in annotated.base.scan_errors],
             head_sha=head_sha,
         )
+
+
+# ---------------------------------------------------------------------------
+# Internal: the repo lookup and the throw-away checkout both endpoints share.
+# ---------------------------------------------------------------------------
+
+
+async def _get_repo_or_404(db: AsyncSession, repo_id: int) -> GitRepository:
+    repo = (
+        await db.execute(select(GitRepository).where(GitRepository.id == repo_id))
+    ).scalar_one_or_none()
+    if repo is None:
+        raise HTTPException(status_code=404, detail="GitRepository not found")
+    return repo
+
+
+@asynccontextmanager
+async def _fresh_checkout(
+    db: AsyncSession, repo: GitRepository, *, step: str, repo_label: str
+) -> AsyncIterator[tuple[Path, str]]:
+    """Clone ``repo`` into a fresh tmpdir and yield ``(clone_dir, head_sha)``.
+
+    The tmpdir is removed on exit whatever happens inside. ``step`` and
+    ``repo_label`` only shape the log lines (``"<step>: clone failed for
+    <repo_label>: ..."``).
+    """
+    ssh_key, token = await _decrypt_credentials_or_502(db, repo, step=step, repo_label=repo_label)
+
+    clone_dir = Path(tempfile.mkdtemp(prefix=f"labdog-{step}-"))
+    try:
+        head_sha = await _clone_or_502(
+            db,
+            repo,
+            clone_dir,
+            ssh_key=ssh_key,
+            token=token,
+            step=step,
+            repo_label=repo_label,
+        )
+        yield clone_dir, head_sha
     finally:
         await asyncio.to_thread(shutil.rmtree, clone_dir, ignore_errors=True)
+
+
+async def _decrypt_credentials_or_502(
+    db: AsyncSession, repo: GitRepository, *, step: str, repo_label: str
+) -> tuple[str | None, str | None]:
+    try:
+        return await _decrypt_repo_credentials(db, repo)
+    except Exception as exc:
+        # Credential decryption failure — the master key is missing or
+        # the linked SSHKey row is gone. Don't reveal anything beyond
+        # the failure mode.
+        logger.warning("%s: credential decryption failed for %s: %s", step, repo_label, exc)
+        raise HTTPException(
+            status_code=502,
+            detail="Could not decrypt repository credentials",
+        ) from None
+
+
+async def _clone_or_502(
+    db: AsyncSession,
+    repo: GitRepository,
+    clone_dir: Path,
+    *,
+    ssh_key: str | None,
+    token: str | None,
+    step: str,
+    repo_label: str,
+) -> str:
+    """Clone into ``clone_dir`` and return the HEAD sha; 502 on failure
+    with credentials redacted from the message."""
+    try:
+        # BUG-71: the clone and the tree walk both run off the loop.
+        # git alone can hold it for 120 s against an unreachable
+        # remote, and this process serves every request there is.
+        head_sha, learned = await clone_to_thread(
+            repo.url,
+            repo.branch,
+            clone_dir,
+            ssh_key=ssh_key,
+            token=token,
+            host_key_entry=repo.ssh_host_key_entry,
+        )
+        # SEC-27: trust on first use, so later syncs are verified.
+        if learned:
+            repo.ssh_host_key_entry = learned
+            await db.commit()
+    except (GitSyncError, ValueError) as exc:
+        secrets = [s for s in (ssh_key, token) if s]
+        scrubbed = redact(str(exc), secrets) or "clone failed"
+        logger.warning("%s: clone failed for %s: %s", step, repo_label, scrubbed)
+        raise HTTPException(status_code=502, detail=scrubbed) from None
+    return head_sha
 
 
 # ---------------------------------------------------------------------------
@@ -196,324 +256,397 @@ async def activate_repo(
     ``reload_registry_async`` once at the end. Failures in the
     post-commit hooks are logged but the rows persist.
     """
-    from app.actions.registry import reload_registry_async
-    from app.audit.logger import log_action
-    from app.models.host_group import GitOpsStatus, HostGroup
-    from app.packs.models import ActionPack, ActionResolution, PackSourceType
-    from app.packs.service import sync_pack
-    from app.schemas.repo_scan import ActivatedGitopsBindingOut, ActivatedPackOut
-
-    repo = (
-        await db.execute(select(GitRepository).where(GitRepository.id == repo_id))
-    ).scalar_one_or_none()
-    if repo is None:
-        raise HTTPException(status_code=404, detail="GitRepository not found")
+    repo = await _get_repo_or_404(db, repo_id)
 
     user_id = user.id  # capture eagerly for post-rollback audit safety
 
     # Re-clone + re-scan against the current HEAD. Operator's submission
     # may be stale if the repo got pushed-to between scan and activate;
     # we validate against the live tree, not the version we showed them.
-    try:
-        ssh_key, token = await _decrypt_repo_credentials(db, repo)
-    except Exception as exc:
-        logger.warning("activate: credential decryption failed for %r: %s", repo.name, exc)
-        raise HTTPException(
-            status_code=502, detail="Could not decrypt repository credentials"
-        ) from None
-
-    clone_dir = Path(tempfile.mkdtemp(prefix="labdog-activate-"))
-    try:
-        try:
-            head_sha, learned = await clone_to_thread(
-                repo.url,
-                repo.branch,
-                clone_dir,
-                ssh_key=ssh_key,
-                token=token,
-                host_key_entry=repo.ssh_host_key_entry,
-            )
-            # SEC-27: trust on first use, so later syncs are verified.
-            if learned:
-                repo.ssh_host_key_entry = learned
-                await db.commit()
-        except (GitSyncError, ValueError) as exc:
-            secrets = [s for s in (ssh_key, token) if s]
-            scrubbed = redact(str(exc), secrets) or "clone failed"
-            logger.warning("activate: clone failed for %r: %s", repo.name, scrubbed)
-            raise HTTPException(status_code=502, detail=scrubbed) from None
-
+    async with _fresh_checkout(db, repo, step="activate", repo_label=repr(repo.name)) as (
+        clone_dir,
+        head_sha,
+    ):
         scan = await asyncio.to_thread(scan_repository, clone_dir, repo_name=repo.name)
         annotated = await annotate_scan(db, scan)
-
-        # Validate each submitted pack still exists in the scan.
-        scanned_pack_paths = {p.path for p in scan.packs}
-        missing_paths = [p.path for p in body.packs if p.path not in scanned_pack_paths]
-        if missing_paths:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "kind": "scan_drift",
-                    "missing_pack_paths": missing_paths,
-                    "message": (
-                        "One or more selected packs are no longer present at HEAD. "
-                        "Re-scan the repo and re-submit."
-                    ),
-                },
-            )
-
-        # Re-validate intra-repo conflicts against the *submitted* set —
-        # if both sides of a conflict are still checked, reject.
         scanned_packs_by_path = {p.path: p for p in scan.packs}
-        submitted_keys: dict[str, list[str]] = {}
-        for sel in body.packs:
-            for k in scanned_packs_by_path[sel.path].contributed_keys:
-                submitted_keys.setdefault(k, []).append(sel.path)
-        active_conflicts = {k: paths for k, paths in submitted_keys.items() if len(paths) >= 2}
-        if active_conflicts:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "kind": "intra_repo_key_conflict",
-                    "conflicts": [
-                        {"key": k, "contributing_packs": sorted(paths)}
-                        for k, paths in sorted(active_conflicts.items())
-                    ],
-                    "message": (
-                        "Submitted set still has intra-repo key conflicts. "
-                        "Uncheck all but one contributing pack per key and re-submit."
-                    ),
-                },
-            )
 
-        # Validate gitops_bindings — group exists, not already bound to a
-        # different repo, and the file_path is in the scanned set.
-        scanned_gitops_paths = {g.path for g in scan.gitops_files}
-        for binding in body.gitops_bindings:
-            if binding.file_path not in scanned_gitops_paths:
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "kind": "gitops_file_missing",
-                        "file_path": binding.file_path,
-                    },
-                )
-            group = (
-                await db.execute(select(HostGroup).where(HostGroup.id == binding.host_group_id))
-            ).scalar_one_or_none()
-            if group is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"host_group_id={binding.host_group_id} does not exist",
-                )
-            if (
-                group.git_repository_id is not None
-                and group.git_repository_id != repo.id
-                and group.gitops_enabled
-            ):
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "kind": "group_bound_to_other_repo",
-                        "host_group_id": group.id,
-                        "current_repository_id": group.git_repository_id,
-                        "message": (
-                            f"Group {group.name!r} is already bound to a different "
-                            "repository. Disable GitOps on it first."
-                        ),
-                    },
-                )
+        _reject_missing_packs(body, scan)
+        _reject_intra_repo_key_conflicts(body, scanned_packs_by_path)
+        await _validate_gitops_bindings(db, body, repo, scan)
+        _reject_unresolved_contested_keys(body, scanned_packs_by_path, annotated)
+        _reject_ambiguous_key_resolutions(body)
 
-        # Validate the operator has resolved every key this activation
-        # makes contested. A key is "newly contested" when an existing
-        # pack already owns it (per existing_key_winners) AND a
-        # submitted pack also contributes
-        # it. The wizard surfaces a per-key radio for these and must
-        # echo the operator's pick in body.key_resolutions.
-        contested_keys: dict[str, list[str]] = {}
-        for sel in body.packs:
-            for k in scanned_packs_by_path[sel.path].contributed_keys:
-                if k in annotated.existing_key_winners:
-                    contested_keys.setdefault(k, []).append(sel.path)
-        resolved_keys = {r.action_key for r in body.key_resolutions}
-        unresolved = sorted(set(contested_keys) - resolved_keys)
-        if unresolved:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "kind": "unresolved_key_conflicts",
-                    "action_keys": unresolved,
-                    "message": (
-                        "Activation introduces action-key collisions that "
-                        "have no operator decision. Submit a winner for "
-                        "each contested key in key_resolutions."
-                    ),
-                },
-            )
-        for r in body.key_resolutions:
-            picks = sum(1 for v in (r.winner_pack_path, r.winner_existing_pack_id) if v)
-            if picks != 1:
-                raise HTTPException(
-                    status_code=422,
-                    detail={
-                        "kind": "ambiguous_key_resolution",
-                        "action_key": r.action_key,
-                        "message": (
-                            "Exactly one of winner_pack_path and "
-                            "winner_existing_pack_id must be set."
-                        ),
-                    },
-                )
-
-        # Insert packs (with name-collision suffix logic). Packs have
-        # no inherent precedence under the per-key-pinning model; we
-        # only persist the row + log the activation.
-        activated_packs: list[ActivatedPackOut] = []
-        path_to_pack_id: dict[str, int] = {}
-        existing_names = {row[0] for row in (await db.execute(select(ActionPack.name))).all()}
-        for sel in body.packs:
-            final_name = await _disambiguate_pack_name(
-                requested=sel.name,
-                repo_name=repo.name,
-                head_sha=head_sha or "",
-                taken=existing_names,
-            )
-            pack_row = ActionPack(
-                name=final_name,
-                source_type=PackSourceType.GIT,
-                git_repository_id=repo_id,
-                path=sel.path,
-                enabled=True,
-            )
-            db.add(pack_row)
-            await db.flush()
-            existing_names.add(final_name)
-            path_to_pack_id[sel.path] = pack_row.id
-
-            await log_action(
-                db=db,
-                action="pack.activated",
-                entity_type="action_pack",
-                entity_id=pack_row.id,
-                user_id=user_id,
-                after_state={
-                    "name": final_name,
-                    "path": sel.path,
-                    "contributed_keys": list(scanned_packs_by_path[sel.path].contributed_keys),
-                    "repo_id": repo_id,
-                },
-            )
-            activated_packs.append(
-                ActivatedPackOut(
-                    pack_id=pack_row.id,
-                    name=final_name,
-                    path=sel.path,
-                    requested_name=sel.name,
-                    name_was_disambiguated=(final_name != sel.name),
-                )
-            )
-
-        # Persist per-key resolutions. Wizard already validated the
-        # picks are consistent with the submitted set; we resolve
-        # winner_pack_path → just-inserted pack id here.
-        for r in body.key_resolutions:
-            if r.winner_pack_path is not None:
-                pack_id = path_to_pack_id.get(r.winner_pack_path)
-                if pack_id is None:
-                    raise HTTPException(
-                        status_code=422,
-                        detail={
-                            "kind": "key_resolution_unknown_pack",
-                            "action_key": r.action_key,
-                            "winner_pack_path": r.winner_pack_path,
-                        },
-                    )
-                resolved_pack_id = pack_id
-            else:
-                resolved_pack_id = r.winner_existing_pack_id
-            db.add(
-                ActionResolution(
-                    action_key=r.action_key,
-                    pack_id=resolved_pack_id,
-                    decided_by_user_id=user_id,
-                )
-            )
-
-        # Apply gitops bindings.
-        activated_bindings: list[ActivatedGitopsBindingOut] = []
-        for binding in body.gitops_bindings:
-            group = (
-                await db.execute(select(HostGroup).where(HostGroup.id == binding.host_group_id))
-            ).scalar_one()
-            before_state = {
-                "gitops_enabled": group.gitops_enabled,
-                "git_repository_id": group.git_repository_id,
-                "gitops_file_path": group.gitops_file_path,
-            }
-            group.git_repository_id = repo_id
-            group.gitops_enabled = True
-            group.gitops_file_path = binding.file_path
-            group.gitops_status = GitOpsStatus.disconnected
-
-            await log_action(
-                db=db,
-                action="gitops.bound",
-                entity_type="host_group",
-                entity_id=group.id,
-                user_id=user_id,
-                before_state=before_state,
-                after_state={
-                    "gitops_enabled": True,
-                    "git_repository_id": repo_id,
-                    "gitops_file_path": binding.file_path,
-                },
-            )
-            activated_bindings.append(
-                ActivatedGitopsBindingOut(host_group_id=group.id, file_path=binding.file_path)
-            )
-
-        # One summary row at the end so an auditor looking for "who did
-        # the bulk activation" finds a single entry.
-        await log_action(
-            db=db,
-            action="repo.scan_activated",
-            entity_type="git_repository",
-            entity_id=repo_id,
+        activated_packs, path_to_pack_id = await _insert_packs(
+            db,
+            body,
+            repo,
+            repo_id=repo_id,
+            head_sha=head_sha,
             user_id=user_id,
-            after_state={
-                "pack_count": len(activated_packs),
-                "binding_count": len(activated_bindings),
-                "head_sha": head_sha,
-            },
+            scanned_packs_by_path=scanned_packs_by_path,
+        )
+        _add_key_resolutions(db, body, path_to_pack_id, user_id=user_id)
+        activated_bindings = await _apply_gitops_bindings(
+            db, body, repo_id=repo_id, user_id=user_id
+        )
+        await _log_activation_summary(
+            db,
+            repo_id=repo_id,
+            user_id=user_id,
+            pack_count=len(activated_packs),
+            binding_count=len(activated_bindings),
+            head_sha=head_sha,
         )
 
         await db.commit()
 
-        # Best-effort post-commit hooks. Failures are logged but the
-        # activated rows are durable; operator can hit "Sync now" later.
-        new_pack_ids = [ap.pack_id for ap in activated_packs]
-        if new_pack_ids:
-            for pack_id in new_pack_ids:
-                pack = (
-                    await db.execute(select(ActionPack).where(ActionPack.id == pack_id))
-                ).scalar_one_or_none()
-                if pack is not None:
-                    try:
-                        await sync_pack(db, pack)
-                    except Exception:
-                        logger.exception("post-activate sync_pack failed for pack_id=%s", pack_id)
-            try:
-                await reload_registry_async(db)
-            except Exception:
-                logger.exception("post-activate reload_registry_async failed")
+        await _run_post_activation_hooks(db, [ap.pack_id for ap in activated_packs])
 
         return RepoActivateResponse(
             activated_packs=activated_packs,
             activated_gitops_bindings=activated_bindings,
             head_sha=head_sha,
         )
-    finally:
-        await asyncio.to_thread(shutil.rmtree, clone_dir, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# Internal: activation validators. Each raises the HTTPException the wizard
+# renders; they run in this order, so the first failing check wins.
+# ---------------------------------------------------------------------------
+
+
+def _reject_missing_packs(body: RepoActivateRequest, scan: ScanResult) -> None:
+    """Validate each submitted pack still exists in the scan."""
+    scanned_pack_paths = {p.path for p in scan.packs}
+    missing_paths = [p.path for p in body.packs if p.path not in scanned_pack_paths]
+    if missing_paths:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "kind": "scan_drift",
+                "missing_pack_paths": missing_paths,
+                "message": (
+                    "One or more selected packs are no longer present at HEAD. "
+                    "Re-scan the repo and re-submit."
+                ),
+            },
+        )
+
+
+def _reject_intra_repo_key_conflicts(
+    body: RepoActivateRequest, scanned_packs_by_path: dict[str, DetectedPack]
+) -> None:
+    """Re-validate intra-repo conflicts against the *submitted* set —
+    if both sides of a conflict are still checked, reject."""
+    submitted_keys: dict[str, list[str]] = {}
+    for sel in body.packs:
+        for k in scanned_packs_by_path[sel.path].contributed_keys:
+            submitted_keys.setdefault(k, []).append(sel.path)
+    active_conflicts = {k: paths for k, paths in submitted_keys.items() if len(paths) >= 2}
+    if active_conflicts:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "kind": "intra_repo_key_conflict",
+                "conflicts": [
+                    {"key": k, "contributing_packs": sorted(paths)}
+                    for k, paths in sorted(active_conflicts.items())
+                ],
+                "message": (
+                    "Submitted set still has intra-repo key conflicts. "
+                    "Uncheck all but one contributing pack per key and re-submit."
+                ),
+            },
+        )
+
+
+async def _validate_gitops_bindings(
+    db: AsyncSession, body: RepoActivateRequest, repo: GitRepository, scan: ScanResult
+) -> None:
+    """Validate gitops_bindings — group exists, not already bound to a
+    different repo, and the file_path is in the scanned set."""
+    from app.models.host_group import HostGroup
+
+    scanned_gitops_paths = {g.path for g in scan.gitops_files}
+    for binding in body.gitops_bindings:
+        if binding.file_path not in scanned_gitops_paths:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "kind": "gitops_file_missing",
+                    "file_path": binding.file_path,
+                },
+            )
+        group = (
+            await db.execute(select(HostGroup).where(HostGroup.id == binding.host_group_id))
+        ).scalar_one_or_none()
+        if group is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"host_group_id={binding.host_group_id} does not exist",
+            )
+        if (
+            group.git_repository_id is not None
+            and group.git_repository_id != repo.id
+            and group.gitops_enabled
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "kind": "group_bound_to_other_repo",
+                    "host_group_id": group.id,
+                    "current_repository_id": group.git_repository_id,
+                    "message": (
+                        f"Group {group.name!r} is already bound to a different "
+                        "repository. Disable GitOps on it first."
+                    ),
+                },
+            )
+
+
+def _reject_unresolved_contested_keys(
+    body: RepoActivateRequest,
+    scanned_packs_by_path: dict[str, DetectedPack],
+    annotated: AnnotatedScanResult,
+) -> None:
+    """Validate the operator has resolved every key this activation
+    makes contested. A key is "newly contested" when an existing
+    pack already owns it (per existing_key_winners) AND a
+    submitted pack also contributes
+    it. The wizard surfaces a per-key radio for these and must
+    echo the operator's pick in body.key_resolutions."""
+    contested_keys: dict[str, list[str]] = {}
+    for sel in body.packs:
+        for k in scanned_packs_by_path[sel.path].contributed_keys:
+            if k in annotated.existing_key_winners:
+                contested_keys.setdefault(k, []).append(sel.path)
+    resolved_keys = {r.action_key for r in body.key_resolutions}
+    unresolved = sorted(set(contested_keys) - resolved_keys)
+    if unresolved:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "kind": "unresolved_key_conflicts",
+                "action_keys": unresolved,
+                "message": (
+                    "Activation introduces action-key collisions that "
+                    "have no operator decision. Submit a winner for "
+                    "each contested key in key_resolutions."
+                ),
+            },
+        )
+
+
+def _reject_ambiguous_key_resolutions(body: RepoActivateRequest) -> None:
+    for r in body.key_resolutions:
+        picks = sum(1 for v in (r.winner_pack_path, r.winner_existing_pack_id) if v)
+        if picks != 1:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "kind": "ambiguous_key_resolution",
+                    "action_key": r.action_key,
+                    "message": (
+                        "Exactly one of winner_pack_path and winner_existing_pack_id must be set."
+                    ),
+                },
+            )
+
+
+# ---------------------------------------------------------------------------
+# Internal: activation writers. All of them only add to the session; the
+# endpoint commits once after the last one.
+# ---------------------------------------------------------------------------
+
+
+async def _insert_packs(
+    db: AsyncSession,
+    body: RepoActivateRequest,
+    repo: GitRepository,
+    *,
+    repo_id: int,
+    head_sha: str,
+    user_id: int,
+    scanned_packs_by_path: dict[str, DetectedPack],
+) -> tuple[list[ActivatedPackOut], dict[str, int]]:
+    """Insert packs (with name-collision suffix logic). Packs have
+    no inherent precedence under the per-key-pinning model; we
+    only persist the row + log the activation.
+
+    Returns the packs as inserted and each submitted path's new pack id.
+    """
+    from app.audit.logger import log_action
+    from app.packs.models import ActionPack, PackSourceType
+
+    activated_packs: list[ActivatedPackOut] = []
+    path_to_pack_id: dict[str, int] = {}
+    existing_names = {row[0] for row in (await db.execute(select(ActionPack.name))).all()}
+    for sel in body.packs:
+        final_name = await _disambiguate_pack_name(
+            requested=sel.name,
+            repo_name=repo.name,
+            head_sha=head_sha or "",
+            taken=existing_names,
+        )
+        pack_row = ActionPack(
+            name=final_name,
+            source_type=PackSourceType.GIT,
+            git_repository_id=repo_id,
+            path=sel.path,
+            enabled=True,
+        )
+        db.add(pack_row)
+        await db.flush()
+        existing_names.add(final_name)
+        path_to_pack_id[sel.path] = pack_row.id
+
+        await log_action(
+            db=db,
+            action="pack.activated",
+            entity_type="action_pack",
+            entity_id=pack_row.id,
+            user_id=user_id,
+            after_state={
+                "name": final_name,
+                "path": sel.path,
+                "contributed_keys": list(scanned_packs_by_path[sel.path].contributed_keys),
+                "repo_id": repo_id,
+            },
+        )
+        activated_packs.append(
+            ActivatedPackOut(
+                pack_id=pack_row.id,
+                name=final_name,
+                path=sel.path,
+                requested_name=sel.name,
+                name_was_disambiguated=(final_name != sel.name),
+            )
+        )
+    return activated_packs, path_to_pack_id
+
+
+def _add_key_resolutions(
+    db: AsyncSession, body: RepoActivateRequest, path_to_pack_id: dict[str, int], *, user_id: int
+) -> None:
+    """Persist per-key resolutions. Wizard already validated the
+    picks are consistent with the submitted set; we resolve
+    winner_pack_path → just-inserted pack id here."""
+    from app.packs.models import ActionResolution
+
+    for r in body.key_resolutions:
+        if r.winner_pack_path is not None:
+            pack_id = path_to_pack_id.get(r.winner_pack_path)
+            if pack_id is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "kind": "key_resolution_unknown_pack",
+                        "action_key": r.action_key,
+                        "winner_pack_path": r.winner_pack_path,
+                    },
+                )
+            resolved_pack_id = pack_id
+        else:
+            resolved_pack_id = r.winner_existing_pack_id
+        db.add(
+            ActionResolution(
+                action_key=r.action_key,
+                pack_id=resolved_pack_id,
+                decided_by_user_id=user_id,
+            )
+        )
+
+
+async def _apply_gitops_bindings(
+    db: AsyncSession, body: RepoActivateRequest, *, repo_id: int, user_id: int
+) -> list[ActivatedGitopsBindingOut]:
+    """Point each bound group at this repo's file, with one audit row each."""
+    from app.audit.logger import log_action
+    from app.models.host_group import GitOpsStatus, HostGroup
+
+    activated_bindings: list[ActivatedGitopsBindingOut] = []
+    for binding in body.gitops_bindings:
+        group = (
+            await db.execute(select(HostGroup).where(HostGroup.id == binding.host_group_id))
+        ).scalar_one()
+        before_state = {
+            "gitops_enabled": group.gitops_enabled,
+            "git_repository_id": group.git_repository_id,
+            "gitops_file_path": group.gitops_file_path,
+        }
+        group.git_repository_id = repo_id
+        group.gitops_enabled = True
+        group.gitops_file_path = binding.file_path
+        group.gitops_status = GitOpsStatus.disconnected
+
+        await log_action(
+            db=db,
+            action="gitops.bound",
+            entity_type="host_group",
+            entity_id=group.id,
+            user_id=user_id,
+            before_state=before_state,
+            after_state={
+                "gitops_enabled": True,
+                "git_repository_id": repo_id,
+                "gitops_file_path": binding.file_path,
+            },
+        )
+        activated_bindings.append(
+            ActivatedGitopsBindingOut(host_group_id=group.id, file_path=binding.file_path)
+        )
+    return activated_bindings
+
+
+async def _log_activation_summary(
+    db: AsyncSession,
+    *,
+    repo_id: int,
+    user_id: int,
+    pack_count: int,
+    binding_count: int,
+    head_sha: str,
+) -> None:
+    """One summary row at the end so an auditor looking for "who did
+    the bulk activation" finds a single entry."""
+    from app.audit.logger import log_action
+
+    await log_action(
+        db=db,
+        action="repo.scan_activated",
+        entity_type="git_repository",
+        entity_id=repo_id,
+        user_id=user_id,
+        after_state={
+            "pack_count": pack_count,
+            "binding_count": binding_count,
+            "head_sha": head_sha,
+        },
+    )
+
+
+async def _run_post_activation_hooks(db: AsyncSession, new_pack_ids: list[int]) -> None:
+    """Best-effort post-commit hooks. Failures are logged but the
+    activated rows are durable; operator can hit "Sync now" later."""
+    from app.actions.registry import reload_registry_async
+    from app.packs.models import ActionPack
+    from app.packs.service import sync_pack
+
+    if new_pack_ids:
+        for pack_id in new_pack_ids:
+            pack = (
+                await db.execute(select(ActionPack).where(ActionPack.id == pack_id))
+            ).scalar_one_or_none()
+            if pack is not None:
+                try:
+                    await sync_pack(db, pack)
+                except Exception:
+                    logger.exception("post-activate sync_pack failed for pack_id=%s", pack_id)
+        try:
+            await reload_registry_async(db)
+        except Exception:
+            logger.exception("post-activate reload_registry_async failed")
 
 
 async def _disambiguate_pack_name(
