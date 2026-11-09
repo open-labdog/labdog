@@ -367,22 +367,74 @@ async def get_host_module_counts(db: AsyncSession) -> list[tuple[str, str, int]]
 # ---------------------------------------------------------------------------
 
 
-async def get_sync_job_counts(db: AsyncSession) -> list[tuple[str, str, int]]:
-    """Return ``(status, module_type, count)`` — ALL-TIME, no time filter.
+@dataclass(frozen=True, slots=True)
+class SyncJobAggregates:
+    """Everything the exporter reads from ``sync_jobs``, from one scan."""
 
-    Serves both ``labdog_sync_jobs_total`` (every row) and
-    ``labdog_sync_jobs_inflight`` (the collector filters this same result
-    to pending/running) — ``SyncJob`` rows are mutated in place as a job
-    progresses rather than appended per transition, so "count of rows
-    currently status='running'" *is* the current in-flight count.
+    #: ``(status, module_type, count)``.
+    counts: list[tuple[str, str, int]]
+    duration: HistogramCounts
+
+
+async def get_sync_job_aggregates(db: AsyncSession) -> SyncJobAggregates:
+    """The job counts and the duration histogram in one pass over ``sync_jobs``.
+
+    BUG-160: these were two queries, each a scan of the whole table (50 ms
+    and 261 ms at 400 000 jobs). One ``GROUP BY status, module_type`` now
+    returns each group's count and its duration buckets, and the histogram
+    is the sum over the groups.
+
+    Counts are ALL-TIME, no time filter. They serve both
+    ``labdog_sync_jobs_total`` (every row) and ``labdog_sync_jobs_inflight``
+    (the collector filters to pending/running) — ``SyncJob`` rows are
+    mutated in place as a job progresses rather than appended per
+    transition, so "count of rows currently status='running'" *is* the
+    current in-flight count.
+
+    Duration is ``completed_at - started_at``, only for rows where both
+    timestamps are set and ``completed_at >= started_at`` (clock skew / bad
+    data guard). The buckets compare that interval with an interval and the
+    sum takes ``EXTRACT(EPOCH ...)`` once per group: ``EXTRACT`` returns
+    ``numeric``, and taking it per row for every bucket was most of the
+    old query's time.
     """
+    elapsed = SyncJob.completed_at - SyncJob.started_at
+    valid = and_(
+        SyncJob.started_at.isnot(None),
+        SyncJob.completed_at.isnot(None),
+        SyncJob.completed_at >= SyncJob.started_at,
+    )
+    bucket_cols = [
+        func.count().filter(and_(valid, elapsed <= timedelta(seconds=bound))).label(f"le_{i}")
+        for i, bound in enumerate(_BUCKETS_SYNC)
+    ]
     stmt = select(
         cast(SyncJob.status, String).label("status"),
         SyncJob.module_type,
         func.count().label("value"),
+        func.count().filter(valid).label("timed_count"),
+        func.extract("epoch", func.sum(elapsed).filter(valid)).label("timed_sum"),
+        *bucket_cols,
     ).group_by(SyncJob.status, SyncJob.module_type)
-    result = await db.execute(stmt)
-    return [(row.status, row.module_type, row.value) for row in result.all()]
+    rows = (await db.execute(stmt)).all()
+
+    buckets = [0] * len(_BUCKETS_SYNC)
+    for row in rows:
+        for i in range(len(_BUCKETS_SYNC)):
+            buckets[i] += getattr(row, f"le_{i}")
+    return SyncJobAggregates(
+        counts=[(row.status, row.module_type, row.value) for row in rows],
+        duration=HistogramCounts(
+            bucket_counts=buckets,
+            total_count=sum(row.timed_count for row in rows),
+            total_sum=float(sum(row.timed_sum or 0 for row in rows)),
+        ),
+    )
+
+
+async def get_sync_job_counts(db: AsyncSession) -> list[tuple[str, str, int]]:
+    """``(status, module_type, count)``; see :func:`get_sync_job_aggregates`."""
+    return (await get_sync_job_aggregates(db)).counts
 
 
 # ---------------------------------------------------------------------------
@@ -390,73 +442,160 @@ async def get_sync_job_counts(db: AsyncSession) -> list[tuple[str, str, int]]:
 # ---------------------------------------------------------------------------
 
 
-async def get_drift_counts(db: AsyncSession) -> list[tuple[str, str, int]]:
-    """Return ``(module_type, status, count)`` — ALL-TIME, live rows + rollup.
+@dataclass(frozen=True, slots=True)
+class DriftAggregates:
+    """Everything the exporter reads from ``drift_samples`` and its rollup."""
 
-    Feeds ``labdog_drift_checks_total``. Retention deletes old
+    #: ``(module_type, status, count)``, sorted.
+    counts: list[tuple[str, str, int]]
+    #: ``(module_type, add_sum, remove_sum, policy_change_sum)``, sorted.
+    change_sums: list[tuple[str, int, int, int]]
+    #: ``(module_type, histogram)``, sorted.
+    duration: list[tuple[str, HistogramCounts]]
+
+
+async def get_drift_aggregates(db: AsyncSession) -> DriftAggregates:
+    """The drift counters and the duration histogram in one pass over
+    ``drift_samples`` and one read of ``drift_sample_rollup``.
+
+    BUG-160: these were three queries over the live table with different
+    ``GROUP BY``s (352, 226 and 423 ms at 3.9 million samples) and three
+    reads of the rollup. One ``GROUP BY module_type, status`` now returns
+    each group's count, change sums and duration buckets, and the three
+    families are built from it.
+
+    All three are ALL-TIME, live rows plus rollup. Retention deletes old
     ``drift_samples`` rows after folding their totals into
     ``drift_sample_rollup`` (``app.tasks.drift_retention``), so the live
     table alone is no longer the all-time count. Adding the rollup back is
     what keeps a *counter* monotonic across a retention run — without it,
     every prune reads to Prometheus as a process restart.
+
+    - ``counts`` feeds ``labdog_drift_checks_total``.
+    - ``change_sums`` feeds ``labdog_drift_changes_total`` (the collector
+      unpivots each row into three ``kind`` series). Rollup rows are keyed
+      on ``(module_type, status)``, one grain finer, so they are summed
+      across statuses.
+    - ``duration`` is in seconds. ``duration_ms`` is nullable and rows
+      without it are left out of the histogram (they still count toward
+      ``labdog_drift_checks_total``; see the histogram's HELP text, since
+      it means ``..._count`` is NOT the drift-check count). A module with
+      no timed row has no histogram. A rollup row whose stored
+      ``duration_bounds`` no longer match ``_BUCKETS_DRIFT`` contributes
+      its ``_count`` and ``_sum`` but not its buckets — those two are
+      bucket-independent and still true, while adding mismatched bucket
+      arrays element-wise would produce a histogram whose buckets silently
+      mean two different things.
     """
+    # Compared and summed in whole milliseconds: dividing every row by
+    # 1000.0 made each of the bucket comparisons a ``numeric`` one, which
+    # was most of the old histogram query's time. NULL durations compare
+    # to NULL and are not counted.
+    bucket_cols = [
+        func.count().filter(DriftSample.duration_ms <= _ms(bound)).label(f"le_{i}")
+        for i, bound in enumerate(_BUCKETS_DRIFT)
+    ]
     live = select(
         DriftSample.module_type,
         DriftSample.status,
-        func.count().label("value"),
+        func.count().label("checks"),
+        func.coalesce(func.sum(DriftSample.add_count), 0).label("add_sum"),
+        func.coalesce(func.sum(DriftSample.remove_count), 0).label("remove_sum"),
+        func.coalesce(func.sum(DriftSample.policy_change_count), 0).label("policy_sum"),
+        func.count(DriftSample.duration_ms).label("timed_count"),
+        func.coalesce(func.sum(DriftSample.duration_ms), 0).label("timed_sum_ms"),
+        *bucket_cols,
     ).group_by(DriftSample.module_type, DriftSample.status)
-    result = await db.execute(live)
-    totals: dict[tuple[str, str], int] = {
-        (row.module_type, row.status): row.value for row in result.all()
-    }
+
+    counts: dict[tuple[str, str], int] = {}
+    sums: dict[str, list[int]] = {}
+    hist: dict[str, HistogramCounts] = {}
+    bounds = list(_BUCKETS_DRIFT)
+
+    def _add_hist(module: str, buckets: list[int] | None, count: int, total: float) -> None:
+        current = hist.get(module) or HistogramCounts(
+            bucket_counts=[0] * len(bounds), total_count=0, total_sum=0.0
+        )
+        hist[module] = HistogramCounts(
+            bucket_counts=(
+                [a + b for a, b in zip(current.bucket_counts, buckets, strict=True)]
+                if buckets is not None
+                else current.bucket_counts
+            ),
+            total_count=current.total_count + count,
+            total_sum=current.total_sum + total,
+        )
+
+    for row in (await db.execute(live)).all():
+        key = (row.module_type, row.status)
+        counts[key] = counts.get(key, 0) + row.checks
+        current = sums.setdefault(row.module_type, [0, 0, 0])
+        current[0] += row.add_sum
+        current[1] += row.remove_sum
+        current[2] += row.policy_sum
+        if row.timed_count:
+            _add_hist(
+                row.module_type,
+                [getattr(row, f"le_{i}") for i in range(len(bounds))],
+                row.timed_count,
+                row.timed_sum_ms / 1000.0,
+            )
 
     rolled = await db.execute(
         select(
             DriftSampleRollup.module_type,
             DriftSampleRollup.status,
             DriftSampleRollup.checks,
+            DriftSampleRollup.add_count,
+            DriftSampleRollup.remove_count,
+            DriftSampleRollup.policy_change_count,
+            DriftSampleRollup.duration_count,
+            DriftSampleRollup.duration_sum_seconds,
+            DriftSampleRollup.duration_buckets,
+            DriftSampleRollup.duration_bounds,
         )
     )
     for row in rolled.all():
         key = (row.module_type, row.status)
-        totals[key] = totals.get(key, 0) + row.checks
-    return [(module, status, value) for (module, status), value in sorted(totals.items())]
+        counts[key] = counts.get(key, 0) + row.checks
+        current = sums.setdefault(row.module_type, [0, 0, 0])
+        current[0] += row.add_count or 0
+        current[1] += row.remove_count or 0
+        current[2] += row.policy_change_count or 0
+        if row.duration_count == 0:
+            continue
+        usable = list(row.duration_bounds or []) == bounds and len(
+            row.duration_buckets or []
+        ) == len(bounds)
+        _add_hist(
+            row.module_type,
+            list(row.duration_buckets) if usable else None,
+            row.duration_count,
+            float(row.duration_sum_seconds),
+        )
+
+    return DriftAggregates(
+        counts=[(m, st, v) for (m, st), v in sorted(counts.items())],
+        change_sums=[(m, v[0], v[1], v[2]) for m, v in sorted(sums.items())],
+        duration=sorted(hist.items()),
+    )
+
+
+def _ms(seconds: float) -> int | float:
+    """A bucket bound in milliseconds, an integer when it is a whole one."""
+    ms = seconds * 1000
+    return int(ms) if float(ms).is_integer() else ms
+
+
+async def get_drift_counts(db: AsyncSession) -> list[tuple[str, str, int]]:
+    """``(module_type, status, count)``; see :func:`get_drift_aggregates`."""
+    return (await get_drift_aggregates(db)).counts
 
 
 async def get_drift_change_sums(db: AsyncSession) -> list[tuple[str, int, int, int]]:
-    """Return ``(module_type, add_sum, remove_sum, policy_change_sum)`` —
-    live rows + rollup. The collector unpivots each row into 3
-    ``kind``-labelled counter series for ``labdog_drift_changes_total``.
-
-    Rollup rows are keyed on ``(module_type, status)`` — one grain finer
-    than this needs — so they are summed across statuses here.
-    """
-    live = select(
-        DriftSample.module_type,
-        func.coalesce(func.sum(DriftSample.add_count), 0).label("add_sum"),
-        func.coalesce(func.sum(DriftSample.remove_count), 0).label("remove_sum"),
-        func.coalesce(func.sum(DriftSample.policy_change_count), 0).label("policy_change_sum"),
-    ).group_by(DriftSample.module_type)
-    result = await db.execute(live)
-    totals: dict[str, list[int]] = {
-        row.module_type: [row.add_sum, row.remove_sum, row.policy_change_sum]
-        for row in result.all()
-    }
-
-    rolled = await db.execute(
-        select(
-            DriftSampleRollup.module_type,
-            func.coalesce(func.sum(DriftSampleRollup.add_count), 0).label("add_sum"),
-            func.coalesce(func.sum(DriftSampleRollup.remove_count), 0).label("remove_sum"),
-            func.coalesce(func.sum(DriftSampleRollup.policy_change_count), 0).label("policy_sum"),
-        ).group_by(DriftSampleRollup.module_type)
-    )
-    for row in rolled.all():
-        current = totals.setdefault(row.module_type, [0, 0, 0])
-        current[0] += row.add_sum
-        current[1] += row.remove_sum
-        current[2] += row.policy_sum
-    return [(module, v[0], v[1], v[2]) for module, v in sorted(totals.items())]
+    """``(module_type, add_sum, remove_sum, policy_change_sum)``; see
+    :func:`get_drift_aggregates`."""
+    return (await get_drift_aggregates(db)).change_sums
 
 
 # ---------------------------------------------------------------------------
@@ -625,101 +764,12 @@ async def get_ca_cert_expiries(db: AsyncSession) -> list[tuple[str, str, datetim
 
 
 async def get_sync_duration_histogram(db: AsyncSession) -> HistogramCounts:
-    """Unlabelled sync-job duration histogram (seconds).
-
-    ``duration = EXTRACT(EPOCH FROM (completed_at - started_at))``, guarded
-    to only include rows where both timestamps are set and
-    ``completed_at >= started_at`` (clock skew / bad data guard).
-    """
-    duration = func.extract("epoch", SyncJob.completed_at - SyncJob.started_at)
-    valid = and_(
-        SyncJob.started_at.isnot(None),
-        SyncJob.completed_at.isnot(None),
-        SyncJob.completed_at >= SyncJob.started_at,
-    )
-    bucket_cols = [
-        func.count().filter(duration <= bound).label(f"le_{i}")
-        for i, bound in enumerate(_BUCKETS_SYNC)
-    ]
-    stmt = select(
-        *bucket_cols,
-        func.count().label("total_count"),
-        func.coalesce(func.sum(duration), 0.0).label("total_sum"),
-    ).where(valid)
-    row = (await db.execute(stmt)).one()
-    bucket_counts = [getattr(row, f"le_{i}") for i in range(len(_BUCKETS_SYNC))]
-    return HistogramCounts(
-        bucket_counts=bucket_counts, total_count=row.total_count, total_sum=float(row.total_sum)
-    )
+    """Unlabelled sync-job duration histogram (seconds); see
+    :func:`get_sync_job_aggregates`."""
+    return (await get_sync_job_aggregates(db)).duration
 
 
 async def get_drift_duration_histogram(db: AsyncSession) -> list[tuple[str, HistogramCounts]]:
-    """Per-module drift-check duration histogram (seconds).
-
-    ``drift_samples.duration_ms`` is milliseconds and nullable — rows with
-    ``duration_ms IS NULL`` are excluded entirely (they still count toward
-    ``labdog_drift_checks_total``; see the histogram's HELP text for this
-    caveat, since it means ``..._count`` is NOT the drift-check count).
-
-    Live rows plus ``drift_sample_rollup``, for the same reason as the two
-    counters above: ``_bucket``, ``_sum`` and ``_count`` are counters, so a
-    retention run that removed their rows would read as a reset. A rollup
-    row whose stored ``duration_bounds`` no longer match ``_BUCKETS_DRIFT``
-    contributes its ``_count`` and ``_sum`` but not its buckets — those two
-    are bucket-independent and still true, while adding mismatched bucket
-    arrays element-wise would produce a histogram whose buckets silently
-    mean two different things.
-    """
-    duration_seconds = DriftSample.duration_ms / 1000.0
-    bucket_cols = [
-        func.count().filter(duration_seconds <= bound).label(f"le_{i}")
-        for i, bound in enumerate(_BUCKETS_DRIFT)
-    ]
-    stmt = (
-        select(
-            DriftSample.module_type,
-            *bucket_cols,
-            func.count().label("total_count"),
-            func.coalesce(func.sum(duration_seconds), 0.0).label("total_sum"),
-        )
-        .where(DriftSample.duration_ms.isnot(None))
-        .group_by(DriftSample.module_type)
-    )
-    result = await db.execute(stmt)
-    merged: dict[str, HistogramCounts] = {}
-    for row in result.all():
-        merged[row.module_type] = HistogramCounts(
-            bucket_counts=[getattr(row, f"le_{i}") for i in range(len(_BUCKETS_DRIFT))],
-            total_count=row.total_count,
-            total_sum=float(row.total_sum),
-        )
-
-    bounds = list(_BUCKETS_DRIFT)
-    rolled = await db.execute(
-        select(
-            DriftSampleRollup.module_type,
-            DriftSampleRollup.duration_count,
-            DriftSampleRollup.duration_sum_seconds,
-            DriftSampleRollup.duration_buckets,
-            DriftSampleRollup.duration_bounds,
-        )
-    )
-    for row in rolled.all():
-        if row.duration_count == 0:
-            continue
-        current = merged.get(row.module_type) or HistogramCounts(
-            bucket_counts=[0] * len(bounds), total_count=0, total_sum=0.0
-        )
-        usable = list(row.duration_bounds or []) == bounds and len(
-            row.duration_buckets or []
-        ) == len(bounds)
-        merged[row.module_type] = HistogramCounts(
-            bucket_counts=(
-                [a + b for a, b in zip(current.bucket_counts, row.duration_buckets, strict=True)]
-                if usable
-                else current.bucket_counts
-            ),
-            total_count=current.total_count + row.duration_count,
-            total_sum=current.total_sum + float(row.duration_sum_seconds),
-        )
-    return sorted(merged.items())
+    """Per-module drift-check duration histogram (seconds); see
+    :func:`get_drift_aggregates`."""
+    return (await get_drift_aggregates(db)).duration

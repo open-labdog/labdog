@@ -80,35 +80,6 @@ Checked and not filed:
 
 ### Performance — Medium
 
-- [ ] **BUG-160** `backend/app/metrics/aggregates.py:393` — each metrics
-      scrape scans `drift_samples` three times and `sync_jobs` twice
-
-      Symptom: with 3.9 million drift samples (300 hosts, 6 modules, 48
-      checks a day, 45 days) and 400 000 sync jobs, one scrape took
-      1639 ms: drift counts 352 ms, drift change sums 226 ms
-      (`:426`), drift duration histogram 423 ms (`:656`), sync duration
-      histogram 261 ms (`:627`), sync job counts 50 ms (`:370`).
-      *Measured*. The time grows with retention (90 days by default,
-      twice the data measured). The collector's 15 s cache serves only
-      repeat scrapes inside that window, so at a 15 s scrape interval it
-      recomputes on nearly every scrape.
-
-      Root cause: each aggregate is its own query over the whole live
-      table: three over `drift_samples` with different `GROUP BY`s and
-      two over `sync_jobs`.
-
-      Fix direction: one pass per table. For drift, a single
-      `GROUP BY module_type, status` that returns the count, the three
-      sums and each bucket as `count(*) FILTER (WHERE duration_ms <=
-      b)`, from which the three families are built; the same for sync
-      jobs. Further: since samples are append-only and retention
-      already folds old rows into `drift_sample_rollup`, keep running
-      totals up to an id watermark and add only newer rows on each
-      scrape.
-
-      Severity Medium: metrics are off by default, but where they are on
-      this is a steady load on the database that grows every day.
-
 - [ ] **BUG-161** `backend/app/api/actions.py:549` — the run detail
       endpoint loads every host's full output, which it then drops, and
       it is polled every few seconds

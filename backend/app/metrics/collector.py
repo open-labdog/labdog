@@ -103,17 +103,16 @@ async def collect(db: AsyncSession) -> list[MetricFamily]:
     rule_counts = await agg.get_desired_state_rule_counts(db)
     max_ages = await agg.get_max_ages(db)
     host_module_counts = await agg.get_host_module_counts(db)
-    sync_job_counts = await agg.get_sync_job_counts(db)
-    drift_counts = await agg.get_drift_counts(db)
-    drift_change_sums = await agg.get_drift_change_sums(db)
+    # One scan each of sync_jobs and drift_samples for every family read
+    # from them (BUG-160).
+    sync_jobs = await agg.get_sync_job_aggregates(db)
+    drift = await agg.get_drift_aggregates(db)
     action_run_counts = await agg.get_action_run_counts(db)
     action_run_origin_counts = await agg.get_action_run_origin_counts(db)
     action_host_run_counts = await agg.get_action_host_run_counts(db)
     scheduled_action_state = await agg.get_scheduled_action_state(db)
     stale_ops = await agg.get_stale_operation_counts(db)
     ca_cert_expiries = await agg.get_ca_cert_expiries(db)
-    sync_duration_hist = await agg.get_sync_duration_histogram(db)
-    drift_duration_hist = await agg.get_drift_duration_histogram(db)
     broker = await broker_probe.probe()
 
     return [
@@ -127,13 +126,13 @@ async def collect(db: AsyncSession) -> list[MetricFamily]:
         *_scan_families(simple),
         *_user_families(simple),
         *_integration_families(simple),
-        *_sync_job_families(sync_job_counts, stale_ops),
-        *_drift_families(drift_counts, drift_change_sums),
+        *_sync_job_families(sync_jobs.counts, stale_ops),
+        *_drift_families(drift.counts, drift.change_sums),
         *_action_run_families(
             action_run_counts, action_run_origin_counts, action_host_run_counts, simple
         ),
         *_scheduling_and_pack_families(scheduled_action_state, stale_ops, max_ages, simple),
-        *_histogram_families(sync_duration_hist, drift_duration_hist),
+        *_histogram_families(sync_jobs.duration, drift.duration),
     ]
 
 
