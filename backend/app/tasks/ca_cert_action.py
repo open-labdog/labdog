@@ -135,12 +135,14 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
         from app.settings_service import get_setting_cached_typed
 
         playbook_timeout = int(get_setting_cached_typed("ansible.playbook_timeout"))
-        from app.ansible_runtime.runner import scrub_child_env
+        from app.ansible_runtime.runner import BASE_ANSIBLE_ENV, scrub_child_env
 
         runner = ansible_runner.interface.init_runner(
             private_data_dir=private_data_dir,
             playbook="playbook.yml",
             timeout=playbook_timeout,
+            # Pipelining and no colour codes, as every other run (BUG-154).
+            envvars=dict(BASE_ANSIBLE_ENV),
         )
         # SEC-46: no LabDog secrets in the ansible-playbook environment.
         runner.config.env = scrub_child_env(runner.config.env)

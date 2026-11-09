@@ -47,6 +47,24 @@ def generate_multi_host_inventory(
     return json.dumps(inventory, indent=2)
 
 
+#: Environment for every ansible-playbook run LabDog starts.
+#:
+#: Ansible output is captured into the DB and rendered in HTML, not a
+#: terminal. ansible-runner attaches a pty by default, which makes Ansible
+# emit ANSI SGR escape codes that show up as literal garbage in the UI.
+# ANSIBLE_NOCOLOR=1 tells Ansible to skip colouring regardless of tty.
+#
+# ANSIBLE_PIPELINING (BUG-154): without it every task makes a remote
+# temp directory, copies the module over SFTP, marks it executable,
+# runs it and removes the directory: several extra SSH round trips per
+# task, about 80 ms each at zero network latency. Pipelining sends the
+# module down the open session instead. With ``become`` it needs sudo
+# without ``requiretty``, the default on every current Debian, Ubuntu
+# and RHEL-family release (see docs/ui/hosts.md). A caller's envvars
+# can still turn it off.
+BASE_ANSIBLE_ENV: dict[str, str] = {"ANSIBLE_NOCOLOR": "1", "ANSIBLE_PIPELINING": "True"}
+
+
 def run_ansible(
     *,
     playbook_yaml: str | None = None,
@@ -137,14 +155,7 @@ def run_ansible(
         seen.add(s)
         combined_roles.append(s)
 
-    # Ansible output is captured into the DB and rendered in HTML, not a
-    # terminal. ansible-runner attaches a pty by default, which makes Ansible
-    # emit ANSI SGR escape codes that show up as literal garbage in the UI.
-    # ANSIBLE_NOCOLOR=1 tells Ansible to skip colouring regardless of tty.
-    merged_env = {
-        "ANSIBLE_ROLES_PATH": ":".join(combined_roles),
-        "ANSIBLE_NOCOLOR": "1",
-    }
+    merged_env = {"ANSIBLE_ROLES_PATH": ":".join(combined_roles), **BASE_ANSIBLE_ENV}
     if envvars:
         merged_env.update(envvars)
 

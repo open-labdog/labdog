@@ -51,6 +51,13 @@ host's page.
 The firewall backend is detected, not chosen — see
 [Firewall backend selection](#firewall-backend-selection).
 
+A non-root ssh user needs sudo, and sudo must not require a terminal.
+LabDog runs Ansible with pipelining, which sends each task down the open
+SSH session instead of copying a file over first, and pipelining cannot
+work with `Defaults requiretty` in sudoers. Current Debian, Ubuntu and
+RHEL-family releases do not set it; on a host that does, every sync and
+action fails until the line is removed.
+
 ---
 
 ## Host Detail

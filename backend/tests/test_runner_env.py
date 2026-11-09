@@ -43,3 +43,34 @@ def test_a_real_playbook_sees_no_labdog_variables(tmp_path, monkeypatch):
     assert os.environ["LABDOG_SECURITY__ENCRYPTION_KEY"] == "do-not-leak"
     artifacts = list((tmp_path / "run" / "artifacts").rglob("command"))
     assert artifacts and "do-not-leak" not in artifacts[0].read_text()
+
+
+def _effective_pipelining(tmp_path, **kwargs) -> bool:
+    """Run a real playbook and return the ANSIBLE_PIPELINING it ran with."""
+    out_file = tmp_path / "pipelining.json"
+    lookup = "lookup('ansible.builtin.config', 'ANSIBLE_PIPELINING') | to_json"
+    playbook = (
+        "- hosts: all\n  gather_facts: false\n  tasks:\n"
+        "    - ansible.builtin.copy:\n"
+        f"        dest: {out_file}\n"
+        f'        content: "{{{{ {lookup} }}}}"\n'
+    )
+    inventory = json.dumps({"all": {"hosts": {"localhost": {"ansible_connection": "local"}}}})
+    runner = run_ansible(
+        playbook_yaml=playbook,
+        inventory_json=inventory,
+        private_data_dir=str(tmp_path / "run"),
+        **kwargs,
+    )
+    assert runner.status == "successful", runner.stdout.read()
+    return json.loads(out_file.read_text())
+
+
+def test_a_real_playbook_runs_with_pipelining(tmp_path):
+    """BUG-154: every task paid for a temp dir, an SFTP copy, a chmod and a
+    cleanup before it. Pipelining sends the module down the open session."""
+    assert _effective_pipelining(tmp_path) is True
+
+
+def test_a_caller_can_turn_pipelining_off(tmp_path):
+    assert _effective_pipelining(tmp_path, envvars={"ANSIBLE_PIPELINING": "False"}) is False

@@ -152,34 +152,6 @@ Checked and not filed:
       Traced by reading; the pool exhaustion is the one BUG-152
       reproduces.
 
-- [ ] **BUG-154** `backend/app/ansible_runtime/runner.py:144` — Ansible
-      runs without pipelining, so every task pays several extra SSH
-      round trips
-
-      Symptom: a 20-task play against one host took ~8.6 s, and ~7.0 s
-      with `ANSIBLE_PIPELINING=True`: about 80 ms less per task, 19 %
-      of the run, with no network latency at all. *Measured*. A sync of
-      the PR #270 load-test host is 19 tasks plus fact gathering (58
-      with 20 packages and 5 users, 10 more with nftables), and that
-      load test found the LabDog box at ~86 % CPU on ansible-runner
-      work, so the per-task cost is what bounds sync throughput.
-
-      Root cause: `merged_env` sets only `ANSIBLE_ROLES_PATH` and
-      `ANSIBLE_NOCOLOR`, and nothing else in the tree enables
-      pipelining. Without it, each task makes a remote temp directory,
-      copies the module over SFTP, marks it executable, runs it and
-      removes the directory.
-
-      Fix direction: add `"ANSIBLE_PIPELINING": "True"` to `merged_env`
-      (callers' `envvars` can still override it). Pipelining with
-      `become` needs sudo without `requiretty`, which is the default on
-      current Debian, Ubuntu and RHEL-family releases; note it in the
-      host requirements docs.
-
-      Severity High: it is a one-line change on the hottest path in the
-      product (every sync, action and built-in), and it scales with the
-      task count and with the network round-trip time.
-
 - [ ] **BUG-155** `backend/app/tasks/action_orchestrator.py:837` — an
       action run waits for its slowest host before it starts the next
       batch, and each new batch joins the back of the queue
