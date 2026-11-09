@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -276,17 +276,31 @@ class SyncJobResponse(BaseModel):
 async def _modules_by_host(
     db: AsyncSession, host_ids: set[int]
 ) -> dict[int, list[ModuleSubStatus]]:
-    """Fetch per-module HostModuleStatus for the given hosts, grouped by host id."""
+    """Fetch per-module HostModuleStatus for the given hosts, grouped by host id.
+
+    Only the columns ``ModuleSubStatus`` shows (BUG-162): whole rows carry
+    each module's collected and desired state as JSON, and the Overview
+    polls a page of up to 500 jobs every 30 s.
+    """
     if not host_ids:
         return {}
-    rows = (
-        (await db.execute(select(HostModuleStatus).where(HostModuleStatus.host_id.in_(host_ids))))
-        .scalars()
-        .all()
+    rows = await db.execute(
+        select(
+            HostModuleStatus.host_id,
+            HostModuleStatus.module_type,
+            HostModuleStatus.sync_status,
+            HostModuleStatus.error_message,
+        ).where(HostModuleStatus.host_id.in_(host_ids))
     )
     out: dict[int, list[ModuleSubStatus]] = {}
-    for r in rows:
-        out.setdefault(r.host_id, []).append(ModuleSubStatus.model_validate(r))
+    for r in rows.all():
+        out.setdefault(r.host_id, []).append(
+            ModuleSubStatus(
+                module_type=r.module_type,
+                sync_status=r.sync_status,
+                error_message=r.error_message,
+            )
+        )
     return out
 
 
@@ -725,7 +739,9 @@ async def list_jobs(
     status: str | None = None,
     module_type: str | None = None,
     ids: str | None = None,
-    limit: int = 20,
+    # Capped like list_runs' (BUG-162): a bare int let ?limit=1000000 load
+    # the whole table.
+    limit: int = Query(20, ge=1, le=500),
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):

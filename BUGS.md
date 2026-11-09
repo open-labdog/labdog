@@ -80,23 +80,6 @@ Checked and not filed:
 
 ### Performance — Low
 
-- [ ] **BUG-162** `backend/app/api/sync.py:243` — listing sync jobs
-      loads every module's collected and desired state for three
-      columns, and its `limit` has no ceiling
-
-      Symptom: `_modules_by_host` selects whole `HostModuleStatus` rows,
-      JSON state included, to build `ModuleSubStatus` (module type, sync
-      status, error message). `list_jobs` (`:688`) calls it for every
-      host in the page, and the Overview polls
-      `/api/sync/jobs?limit=200`, or `500` for the 7-day view, every 30
-      s (`frontend/lib/activity.ts:147`). `limit` is a bare `int`, so
-      `?limit=1000000` loads the whole table, unlike `list_runs`, which
-      caps it at 500.
-
-      Fix direction: select only the three columns in
-      `_modules_by_host`, and declare `limit: int = Query(20, ge=1,
-      le=500)`.
-
 - [ ] **BUG-165** `frontend/app/(dashboard)/hosts/[id]/client-page.tsx:19`
       — every host page downloads the terminal emulator
 
