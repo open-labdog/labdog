@@ -3,11 +3,17 @@
 import logging
 
 from pydantic import ValidationError
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
-from app.gitops.importers.firewall import ModuleImportResult
+from app.gitops.importers._common import (
+    ModuleImportResult,
+    TupleDiff,
+    log_import_summary,
+    replace_group_rows,
+    warn_if_section_empty,
+)
 from app.gitops.schema import LabDogGroupYAML, ServiceYAML
 from app.models.host_group import HostGroup
 from app.services.constants import PROTECTED_SERVICES
@@ -76,6 +82,43 @@ def _yaml_to_tuple(entry: ServiceYAML) -> tuple:
     )
 
 
+def _new_rule(entry: ServiceYAML, group_id: int) -> ServiceRule:
+    return ServiceRule(
+        group_id=group_id,
+        service_name=entry.service_name,
+        state=ServiceState(entry.state),
+        enabled=entry.enabled,
+        priority=entry.priority,
+        comment=entry.comment,
+        unit_content=entry.unit_content,
+        deploy_mode=DeployMode(entry.deploy_mode),
+    )
+
+
+def _rule_state(r: ServiceRule) -> dict:
+    return {
+        "service_name": r.service_name,
+        "state": str(r.state),
+        "enabled": r.enabled,
+        "priority": r.priority,
+        "comment": r.comment,
+        "unit_content": r.unit_content,
+        "deploy_mode": str(r.deploy_mode),
+    }
+
+
+def _yaml_state(e: ServiceYAML) -> dict:
+    return {
+        "service_name": e.service_name,
+        "state": e.state,
+        "enabled": e.enabled,
+        "priority": e.priority,
+        "comment": e.comment,
+        "unit_content": e.unit_content,
+        "deploy_mode": e.deploy_mode,
+    }
+
+
 async def import_services(
     group: HostGroup,
     parsed: LabDogGroupYAML,
@@ -109,10 +152,7 @@ async def import_services(
     desired_entries: list[ServiceYAML] = []
 
     raw_entries = parsed.services or []  # None → wipe (same as [])
-    if parsed.services is None:
-        logger.warning("Group %d: YAML has no services section — wiping service rules", group_id)
-    elif not parsed.services:
-        logger.warning("Group %d: YAML has empty services list — wiping service rules", group_id)
+    warn_if_section_empty(logger, group_id, parsed.services, "services", "service rules")
 
     for entry in raw_entries:
         if entry.service_name in PROTECTED_SERVICES:
@@ -148,71 +188,24 @@ async def import_services(
     current_rules: list[ServiceRule] = list(current_result.scalars().all())
 
     # Diff by comparing sets of field tuples.
-    current_tuples = {_rule_to_tuple(r) for r in current_rules}
-    desired_tuples = {_yaml_to_tuple(e) for e in desired_entries}
-
-    tuples_added = desired_tuples - current_tuples
-    tuples_removed = current_tuples - desired_tuples
-    tuples_unchanged = current_tuples & desired_tuples
-
-    has_changes = bool(tuples_added or tuples_removed)
-
-    module_result = ModuleImportResult(
-        module="services",
-        added=len(tuples_added),
-        removed=len(tuples_removed),
-        unchanged=len(tuples_unchanged),
-        changed=has_changes,
+    diff = TupleDiff.of(
+        {_rule_to_tuple(r) for r in current_rules},
+        {_yaml_to_tuple(e) for e in desired_entries},
     )
+    module_result = diff.result("services")
 
-    if has_changes:
+    if diff.changed:
         # Capture before state for audit.
         before_state = {
-            "services": [
-                {
-                    "service_name": r.service_name,
-                    "state": str(r.state),
-                    "enabled": r.enabled,
-                    "priority": r.priority,
-                    "comment": r.comment,
-                    "unit_content": r.unit_content,
-                    "deploy_mode": str(r.deploy_mode),
-                }
-                for r in current_rules
-            ],
+            "services": [_rule_state(r) for r in current_rules],
             "count": len(current_rules),
         }
 
-        # Delete-and-replace: remove all existing group-scoped rows.
-        await db.execute(delete(ServiceRule).where(ServiceRule.group_id == group_id))
-
-        # Insert desired entries in list order.
-        for entry in desired_entries:
-            rule = ServiceRule(
-                group_id=group_id,
-                service_name=entry.service_name,
-                state=ServiceState(entry.state),
-                enabled=entry.enabled,
-                priority=entry.priority,
-                comment=entry.comment,
-                unit_content=entry.unit_content,
-                deploy_mode=DeployMode(entry.deploy_mode),
-            )
-            db.add(rule)
+        # Delete-and-replace, inserting desired entries in list order.
+        await replace_group_rows(db, ServiceRule, group_id, desired_entries, _new_rule)
 
         after_state = {
-            "services": [
-                {
-                    "service_name": e.service_name,
-                    "state": e.state,
-                    "enabled": e.enabled,
-                    "priority": e.priority,
-                    "comment": e.comment,
-                    "unit_content": e.unit_content,
-                    "deploy_mode": e.deploy_mode,
-                }
-                for e in desired_entries
-            ],
+            "services": [_yaml_state(e) for e in desired_entries],
             "count": len(desired_entries),
             "commit_sha": commit_sha,
             "file_path": group.gitops_file_path,
@@ -227,13 +220,6 @@ async def import_services(
             after_state=after_state,
         )
 
-    logger.info(
-        "GitOps services import for group %d: +%d -%d =%d (SHA: %s)",
-        group_id,
-        module_result.added,
-        module_result.removed,
-        module_result.unchanged,
-        commit_sha[:8],
-    )
+    log_import_summary(logger, "services", group_id, module_result, commit_sha)
 
     return module_result

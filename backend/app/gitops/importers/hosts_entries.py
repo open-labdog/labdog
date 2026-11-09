@@ -10,11 +10,17 @@ is preserved in the database for display consistency.
 import logging
 
 from pydantic import ValidationError
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
-from app.gitops.importers.firewall import ModuleImportResult
+from app.gitops.importers._common import (
+    ModuleImportResult,
+    TupleDiff,
+    log_import_summary,
+    replace_group_rows,
+    warn_if_section_empty,
+)
 from app.gitops.schema import HostsEntryYAML, LabDogGroupYAML
 from app.hosts_mgmt.models import HostsEntry
 from app.hosts_mgmt.schemas import HostsEntryCreate
@@ -71,6 +77,40 @@ def _yaml_to_tuple(entry: HostsEntryYAML) -> tuple:
     )
 
 
+def _new_entry(entry: HostsEntryYAML, group_id: int) -> HostsEntry:
+    return HostsEntry(
+        group_id=group_id,
+        ip_address=entry.ip_address,
+        hostname=entry.hostname,
+        host_ref_id=entry.host_ref_id,
+        aliases=list(entry.aliases),  # preserve user-provided order
+        comment=entry.comment,
+        priority=entry.priority,
+    )
+
+
+def _entry_state(e: HostsEntry) -> dict:
+    return {
+        "ip_address": e.ip_address,
+        "hostname": e.hostname,
+        "host_ref_id": e.host_ref_id,
+        "aliases": list(e.aliases or []),
+        "comment": e.comment,
+        "priority": e.priority,
+    }
+
+
+def _yaml_state(e: HostsEntryYAML) -> dict:
+    return {
+        "ip_address": e.ip_address,
+        "hostname": e.hostname,
+        "host_ref_id": e.host_ref_id,
+        "aliases": list(e.aliases),
+        "comment": e.comment,
+        "priority": e.priority,
+    }
+
+
 async def import_hosts_entries(
     group: HostGroup,
     parsed: LabDogGroupYAML,
@@ -108,16 +148,7 @@ async def import_hosts_entries(
     desired_entries: list[HostsEntryYAML] = []
 
     raw_entries = parsed.hosts_entries or []  # None → wipe (same as [])
-    if parsed.hosts_entries is None:
-        logger.warning(
-            "Group %d: YAML has no hosts_entries section — wiping hosts entries",
-            group_id,
-        )
-    elif not parsed.hosts_entries:
-        logger.warning(
-            "Group %d: YAML has empty hosts_entries list — wiping hosts entries",
-            group_id,
-        )
+    warn_if_section_empty(logger, group_id, parsed.hosts_entries, "hosts_entries", "hosts entries")
 
     for entry in raw_entries:
         # SEC-43: one rule per field. Round-trip through the API's create
@@ -143,37 +174,16 @@ async def import_hosts_entries(
     current_entries: list[HostsEntry] = list(current_result.scalars().all())
 
     # Diff by comparing sets of field tuples.
-    current_tuples = {_orm_to_tuple(e) for e in current_entries}
-    desired_tuples = {_yaml_to_tuple(e) for e in desired_entries}
-
-    tuples_added = desired_tuples - current_tuples
-    tuples_removed = current_tuples - desired_tuples
-    tuples_unchanged = current_tuples & desired_tuples
-
-    has_changes = bool(tuples_added or tuples_removed)
-
-    module_result = ModuleImportResult(
-        module="hosts_entries",
-        added=len(tuples_added),
-        removed=len(tuples_removed),
-        unchanged=len(tuples_unchanged),
-        changed=has_changes,
+    diff = TupleDiff.of(
+        {_orm_to_tuple(e) for e in current_entries},
+        {_yaml_to_tuple(e) for e in desired_entries},
     )
+    module_result = diff.result("hosts_entries")
 
-    if has_changes:
+    if diff.changed:
         # Capture before state for audit.
         before_state = {
-            "entries": [
-                {
-                    "ip_address": e.ip_address,
-                    "hostname": e.hostname,
-                    "host_ref_id": e.host_ref_id,
-                    "aliases": list(e.aliases or []),
-                    "comment": e.comment,
-                    "priority": e.priority,
-                }
-                for e in current_entries
-            ],
+            "entries": [_entry_state(e) for e in current_entries],
             "count": len(current_entries),
         }
 
@@ -182,34 +192,13 @@ async def import_hosts_entries(
         # deletion of a referenced *host* while entries referencing it exist —
         # it does not prevent deletion of the entries themselves.  Safe to
         # delete-and-replace here.
-        await db.execute(delete(HostsEntry).where(HostsEntry.group_id == group_id))
-
-        # Insert desired entries in YAML list order (display order).
+        #
+        # Desired entries are inserted in YAML list order (display order).
         # Emission order in /etc/hosts is priority-driven, not insertion order.
-        for entry in desired_entries:
-            row = HostsEntry(
-                group_id=group_id,
-                ip_address=entry.ip_address,
-                hostname=entry.hostname,
-                host_ref_id=entry.host_ref_id,
-                aliases=list(entry.aliases),  # preserve user-provided order
-                comment=entry.comment,
-                priority=entry.priority,
-            )
-            db.add(row)
+        await replace_group_rows(db, HostsEntry, group_id, desired_entries, _new_entry)
 
         after_state = {
-            "entries": [
-                {
-                    "ip_address": e.ip_address,
-                    "hostname": e.hostname,
-                    "host_ref_id": e.host_ref_id,
-                    "aliases": list(e.aliases),
-                    "comment": e.comment,
-                    "priority": e.priority,
-                }
-                for e in desired_entries
-            ],
+            "entries": [_yaml_state(e) for e in desired_entries],
             "count": len(desired_entries),
             "commit_sha": commit_sha,
             "file_path": group.gitops_file_path,
@@ -224,13 +213,6 @@ async def import_hosts_entries(
             after_state=after_state,
         )
 
-    logger.info(
-        "GitOps hosts_entries import for group %d: +%d -%d =%d (SHA: %s)",
-        group_id,
-        module_result.added,
-        module_result.removed,
-        module_result.unchanged,
-        commit_sha[:8],
-    )
+    log_import_summary(logger, "hosts_entries", group_id, module_result, commit_sha)
 
     return module_result

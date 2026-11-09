@@ -23,11 +23,17 @@ both the YAML and the current DB.
 import logging
 
 from pydantic import ValidationError
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
-from app.gitops.importers.firewall import ModuleImportResult
+from app.gitops.importers._common import (
+    ModuleImportResult,
+    TupleDiff,
+    log_import_summary,
+    replace_group_rows,
+    warn_if_section_empty,
+)
 from app.gitops.schema import LabDogGroupYAML, LinuxGroupYAML, LinuxUserYAML
 from app.models.host_group import HostGroup
 from app.user_mgmt.models import LinuxGroup, LinuxUser, UserState
@@ -149,6 +155,82 @@ def _yaml_to_user_tuple(entry: LinuxUserYAML) -> tuple:
 # ---------------------------------------------------------------------------
 
 
+def _new_linux_group(entry: LinuxGroupYAML, group_id: int) -> LinuxGroup:
+    return LinuxGroup(
+        group_id=group_id,
+        groupname=entry.groupname,
+        gid=entry.gid,
+        state=UserState(entry.state),
+        priority=entry.priority,
+    )
+
+
+def _new_linux_user(entry: LinuxUserYAML, group_id: int) -> LinuxUser:
+    return LinuxUser(
+        group_id=group_id,
+        username=entry.username,
+        uid=entry.uid,
+        shell=entry.shell,
+        home_dir=entry.home_dir,
+        state=UserState(entry.state),
+        comment=entry.comment,
+        sudo_rule=entry.sudo_rule,
+        # Preserve user-provided list order in DB; sorted copies are used
+        # only for the diff comparison.
+        authorized_keys=list(entry.authorized_keys),
+        supplementary_groups=list(entry.supplementary_groups),
+        priority=entry.priority,
+    )
+
+
+def _linux_group_state(r: LinuxGroup) -> dict:
+    return {
+        "groupname": r.groupname,
+        "gid": r.gid,
+        "state": str(r.state),
+        "priority": r.priority,
+    }
+
+
+def _linux_user_state(r: LinuxUser) -> dict:
+    return {
+        "username": r.username,
+        "uid": r.uid,
+        "shell": r.shell,
+        "home_dir": r.home_dir,
+        "state": str(r.state),
+        "comment": r.comment,
+        "sudo_rule": r.sudo_rule,
+        "authorized_keys": list(r.authorized_keys or []),
+        "supplementary_groups": list(r.supplementary_groups or []),
+        "priority": r.priority,
+    }
+
+
+def _yaml_group_state(e: LinuxGroupYAML) -> dict:
+    return {
+        "groupname": e.groupname,
+        "gid": e.gid,
+        "state": e.state,
+        "priority": e.priority,
+    }
+
+
+def _yaml_user_state(e: LinuxUserYAML) -> dict:
+    return {
+        "username": e.username,
+        "uid": e.uid,
+        "shell": e.shell,
+        "home_dir": e.home_dir,
+        "state": e.state,
+        "comment": e.comment,
+        "sudo_rule": e.sudo_rule,
+        "authorized_keys": list(e.authorized_keys),
+        "supplementary_groups": list(e.supplementary_groups),
+        "priority": e.priority,
+    }
+
+
 async def import_users(
     group: HostGroup,
     parsed: LabDogGroupYAML,
@@ -188,10 +270,7 @@ async def import_users(
     # ------------------------------------------------------------------
     desired_linux_groups: list[LinuxGroupYAML] = []
 
-    if parsed.linux_groups is None:
-        logger.warning("Group %d: YAML has no linux_groups section — wiping linux groups", group_id)
-    elif not parsed.linux_groups:
-        logger.warning("Group %d: YAML has empty linux_groups list — wiping linux groups", group_id)
+    warn_if_section_empty(logger, group_id, parsed.linux_groups, "linux_groups", "linux groups")
 
     for entry in parsed.linux_groups or []:
         try:
@@ -208,10 +287,7 @@ async def import_users(
     # ------------------------------------------------------------------
     desired_users: list[LinuxUserYAML] = []
 
-    if parsed.users is None:
-        logger.warning("Group %d: YAML has no users section — wiping linux users", group_id)
-    elif not parsed.users:
-        logger.warning("Group %d: YAML has empty users list — wiping linux users", group_id)
+    warn_if_section_empty(logger, group_id, parsed.users, "users", "linux users")
 
     # Build the set of group names defined in the YAML (for cross-ref check).
     yaml_group_names: set[str] = {g.groupname for g in desired_linux_groups}
@@ -255,13 +331,10 @@ async def import_users(
     current_lg_result = await db.execute(select(LinuxGroup).where(LinuxGroup.group_id == group_id))
     current_linux_groups: list[LinuxGroup] = list(current_lg_result.scalars().all())
 
-    current_lg_tuples = {_group_orm_to_tuple(r) for r in current_linux_groups}
-    desired_lg_tuples = {_yaml_to_group_tuple(e) for e in desired_linux_groups}
-
-    lg_added = len(desired_lg_tuples - current_lg_tuples)
-    lg_removed = len(current_lg_tuples - desired_lg_tuples)
-    lg_unchanged = len(current_lg_tuples & desired_lg_tuples)
-    lg_changed = bool(lg_added or lg_removed)
+    lg_diff = TupleDiff.of(
+        {_group_orm_to_tuple(r) for r in current_linux_groups},
+        {_yaml_to_group_tuple(e) for e in desired_linux_groups},
+    )
 
     # ------------------------------------------------------------------
     # 4. Diff linux users
@@ -269,112 +342,32 @@ async def import_users(
     current_lu_result = await db.execute(select(LinuxUser).where(LinuxUser.group_id == group_id))
     current_linux_users: list[LinuxUser] = list(current_lu_result.scalars().all())
 
-    current_lu_tuples = {_user_orm_to_tuple(r) for r in current_linux_users}
-    desired_lu_tuples = {_yaml_to_user_tuple(e) for e in desired_users}
-
-    lu_added = len(desired_lu_tuples - current_lu_tuples)
-    lu_removed = len(current_lu_tuples - desired_lu_tuples)
-    lu_unchanged = len(current_lu_tuples & desired_lu_tuples)
-    lu_changed = bool(lu_added or lu_removed)
-
-    has_changes = lg_changed or lu_changed
-
-    module_result = ModuleImportResult(
-        module="users",
-        added=lg_added + lu_added,
-        removed=lg_removed + lu_removed,
-        unchanged=lg_unchanged + lu_unchanged,
-        changed=has_changes,
+    lu_diff = TupleDiff.of(
+        {_user_orm_to_tuple(r) for r in current_linux_users},
+        {_yaml_to_user_tuple(e) for e in desired_users},
     )
 
-    if has_changes:
+    diff = lg_diff + lu_diff
+    module_result = diff.result("users")
+
+    if diff.changed:
         # Capture before-state for audit.
         before_state = {
-            "linux_groups": [
-                {
-                    "groupname": r.groupname,
-                    "gid": r.gid,
-                    "state": str(r.state),
-                    "priority": r.priority,
-                }
-                for r in current_linux_groups
-            ],
-            "users": [
-                {
-                    "username": r.username,
-                    "uid": r.uid,
-                    "shell": r.shell,
-                    "home_dir": r.home_dir,
-                    "state": str(r.state),
-                    "comment": r.comment,
-                    "sudo_rule": r.sudo_rule,
-                    "authorized_keys": list(r.authorized_keys or []),
-                    "supplementary_groups": list(r.supplementary_groups or []),
-                    "priority": r.priority,
-                }
-                for r in current_linux_users
-            ],
+            "linux_groups": [_linux_group_state(r) for r in current_linux_groups],
+            "users": [_linux_user_state(r) for r in current_linux_users],
         }
 
-        # Delete-and-replace groups first (groups before users).
-        if lg_changed:
-            await db.execute(delete(LinuxGroup).where(LinuxGroup.group_id == group_id))
-            for entry in desired_linux_groups:
-                row = LinuxGroup(
-                    group_id=group_id,
-                    groupname=entry.groupname,
-                    gid=entry.gid,
-                    state=UserState(entry.state),
-                    priority=entry.priority,
-                )
-                db.add(row)
-
-        # Delete-and-replace users.
-        if lu_changed:
-            await db.execute(delete(LinuxUser).where(LinuxUser.group_id == group_id))
-            for entry in desired_users:
-                row = LinuxUser(
-                    group_id=group_id,
-                    username=entry.username,
-                    uid=entry.uid,
-                    shell=entry.shell,
-                    home_dir=entry.home_dir,
-                    state=UserState(entry.state),
-                    comment=entry.comment,
-                    sudo_rule=entry.sudo_rule,
-                    # Preserve user-provided list order in DB; sorted copies
-                    # were used only for diff comparison above.
-                    authorized_keys=list(entry.authorized_keys),
-                    supplementary_groups=list(entry.supplementary_groups),
-                    priority=entry.priority,
-                )
-                db.add(row)
+        # Delete-and-replace each table only if it changed, groups before users.
+        if lg_diff.changed:
+            await replace_group_rows(
+                db, LinuxGroup, group_id, desired_linux_groups, _new_linux_group
+            )
+        if lu_diff.changed:
+            await replace_group_rows(db, LinuxUser, group_id, desired_users, _new_linux_user)
 
         after_state = {
-            "linux_groups": [
-                {
-                    "groupname": e.groupname,
-                    "gid": e.gid,
-                    "state": e.state,
-                    "priority": e.priority,
-                }
-                for e in desired_linux_groups
-            ],
-            "users": [
-                {
-                    "username": e.username,
-                    "uid": e.uid,
-                    "shell": e.shell,
-                    "home_dir": e.home_dir,
-                    "state": e.state,
-                    "comment": e.comment,
-                    "sudo_rule": e.sudo_rule,
-                    "authorized_keys": list(e.authorized_keys),
-                    "supplementary_groups": list(e.supplementary_groups),
-                    "priority": e.priority,
-                }
-                for e in desired_users
-            ],
+            "linux_groups": [_yaml_group_state(e) for e in desired_linux_groups],
+            "users": [_yaml_user_state(e) for e in desired_users],
             "commit_sha": commit_sha,
             "file_path": group.gitops_file_path,
         }
@@ -388,13 +381,6 @@ async def import_users(
             after_state=after_state,
         )
 
-    logger.info(
-        "GitOps users import for group %d: +%d -%d =%d (SHA: %s)",
-        group_id,
-        module_result.added,
-        module_result.removed,
-        module_result.unchanged,
-        commit_sha[:8],
-    )
+    log_import_summary(logger, "users", group_id, module_result, commit_sha)
 
     return module_result
