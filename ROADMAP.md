@@ -151,11 +151,14 @@ frequent bulk syncs, the CPU of the box running the workers is the limit,
 while Postgres, Redis, the API and the scheduler stay lightly loaded
 (load tests in PR #270).
 
-**In progress (PR #270).** One image, run as roles (`api`, `beat`,
-`orchestrator`, `worker`, `worker-drift`) with `--role` / `LABDOG_ROLE`.
-The single-container `all` install stays the default. Drift checks run on
-their own queue, fanned out per host. Next on that PR: an actions queue
-and worker role, so action host runs stop waiting behind bulk syncs.
+**Shipped (PR #270).** One image, run as roles (`api`, `beat`,
+`orchestrator`, `worker`, `worker-drift`) with `--role` / `LABDOG_ROLE`;
+see [`docs/scaling-out.md`](docs/scaling-out.md). The single-container
+`all` install stays the default. Drift checks run on their own queue,
+fanned out per host.
+
+**Next.** An actions queue and worker role, so the per-host part of an
+action run stops waiting behind bulk syncs ([TODO.md](TODO.md)).
 
 **Later.** Run `worker` containers (and their drift and actions
 counterparts) on more than one box against the same Postgres and Redis,

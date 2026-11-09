@@ -101,7 +101,10 @@ class FakeSSH:
         fake = self
 
         class _Conn:
-            async def run(self, command, check=False):  # noqa: ARG002
+            async def run(self, command, check=False, input=None):  # noqa: ARG002, A002
+                # The AI tool sends its command on stdin to /bin/bash (SEC-45).
+                if input is not None:
+                    command = input
                 fake.commands.append(command)
                 stdout = ""
                 if command == labdog_host.PROBE_COMMAND:

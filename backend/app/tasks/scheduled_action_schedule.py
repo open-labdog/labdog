@@ -26,6 +26,7 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
+from app.db import with_task_engine
 from app.tasks import celery_app
 
 logger = logging.getLogger(__name__)
@@ -37,24 +38,18 @@ logger = logging.getLogger(__name__)
 )
 def check_due() -> dict:
     """Walk scheduled_actions, dispatch any rows that are due."""
-    return asyncio.run(_check_due_async())
+    return asyncio.run(with_task_engine(_check_due_async()))
 
 
 async def _check_due_async() -> dict:
     from sqlalchemy import select
 
-    from app.actions.registry import ACTION_REGISTRY, ensure_registry_current
-    from app.actions.run_target import describe_target
-    from app.audit.logger import log_action
-    from app.cron_walk import get_schedule_timezone, next_fire_time
+    from app.actions.registry import ensure_registry_current
+    from app.cron_walk import get_schedule_timezone
     from app.db import task_session
-    from app.models.action_run import ActionRun
     from app.models.scheduled_action import ScheduledAction
-    from app.tasks.action_timeouts import per_host_deadline_seconds
 
-    dispatched = 0
-    skipped_in_flight = 0
-    skipped_orphan = 0
+    counts = {"dispatched": 0, "skipped_in_flight": 0, "skipped_orphan": 0}
 
     now = datetime.now(UTC)
 
@@ -65,118 +60,30 @@ async def _check_due_async() -> dict:
         # as unknown until a tick happened to land elsewhere (BUG-105).
         await ensure_registry_current(db)
         tz = await get_schedule_timezone(db)
-        rows = (
+        # Ids only, and each row loaded inside the loop (BUG-134). The
+        # per-row rollback below expires every ORM object in the session;
+        # walking a list of loaded rows meant the next row's attributes,
+        # and this row's ``sa.id`` in the log call, needed a lazy load,
+        # which raises MissingGreenlet under asyncio inside the handler,
+        # so one failing schedule ended the tick for every row after it.
+        schedule_ids = (
             (
                 await db.execute(
-                    select(ScheduledAction).where(
+                    select(ScheduledAction.id)
+                    .where(
                         ScheduledAction.enabled.is_(True),
                         ScheduledAction.schedule_cron.isnot(None),
                     )
+                    .order_by(ScheduledAction.id)
                 )
             )
             .scalars()
             .all()
         )
 
-        for sa in rows:
+        for sa_id in schedule_ids:
             try:
-                next_run_at = next_fire_time(sa.schedule_cron, sa.walk_start(), tz)
-                if now < next_run_at:
-                    continue
-
-                in_flight = (
-                    await db.execute(
-                        select(ActionRun.id, ActionRun.created_at, ActionRun.action_key)
-                        .where(
-                            ActionRun.scheduled_action_id == sa.id,
-                            ActionRun.status.in_(("queued", "running")),
-                        )
-                        .order_by(ActionRun.created_at.desc())
-                        .limit(1)
-                    )
-                ).first()
-                if in_flight is not None:
-                    # Age cap on the overlap guard: an in-flight row this
-                    # far past its action's deadline belongs to a dead
-                    # worker (the action sweeper will fail it within one
-                    # sweep). Without the cap, one orphaned ``running``
-                    # row silences the schedule forever.
-                    run_id, run_created_at, run_action_key = in_flight
-                    if run_created_at.tzinfo is None:
-                        run_created_at = run_created_at.replace(tzinfo=UTC)
-                    age_cap = per_host_deadline_seconds(run_action_key) * 4
-                    age = (now - run_created_at).total_seconds()
-                    if age <= age_cap:
-                        skipped_in_flight += 1
-                        continue
-                    logger.warning(
-                        "scheduled_action %d: ignoring wedged in-flight "
-                        "ActionRun %d (age %.0fs > cap %ds) — dispatching "
-                        "anyway; the action sweeper will reap it",
-                        sa.id,
-                        run_id,
-                        age,
-                        age_cap,
-                    )
-
-                action = ACTION_REGISTRY.get(sa.action_key)
-                if action is None:
-                    # The pack was disabled or removed; the schedule
-                    # outlived its action — the registry was brought up
-                    # to date above, so the miss is real. Log and move on
-                    # — operators see this in the row's UI as "action not
-                    # found".
-                    logger.warning(
-                        "scheduled_action %d references unknown action %r; skipping",
-                        sa.id,
-                        sa.action_key,
-                    )
-                    skipped_orphan += 1
-                    continue
-
-                run_host_id = sa.target_id if sa.target_kind == "host" else None
-                run_group_id = sa.target_id if sa.target_kind == "group" else None
-                target_kind, target_label = await describe_target(
-                    db, host_id=run_host_id, group_id=run_group_id
-                )
-                run = ActionRun(
-                    action_key=sa.action_key,
-                    action_version=action.version,
-                    host_id=run_host_id,
-                    group_id=run_group_id,
-                    target_kind=target_kind,
-                    target_label=target_label,
-                    scheduled_action_id=sa.id,
-                    parameters=sa.parameters,
-                    parallelism=sa.batch_size,
-                    snapshot_enabled=sa.snapshot_enabled,
-                    verify_enabled=sa.verify_enabled,
-                    auto_rollback=sa.auto_rollback,
-                    status="queued",
-                    triggered_by_user_id=None,
-                )
-                db.add(run)
-                sa.last_dispatched_at = now
-                await db.flush()
-                await db.refresh(run)
-                run_id = run.id
-
-                await log_action(
-                    db,
-                    action="scheduled_action.dispatched",
-                    entity_type="scheduled_action",
-                    entity_id=sa.id,
-                    user_id=None,
-                    after_state={"action_run_id": run_id, "manual": False},
-                )
-                await db.commit()
-
-                celery_app.send_task(
-                    "app.tasks.action_orchestrator.run_action",
-                    args=[run_id],
-                )
-                dispatched += 1
-
+                outcome = await _tick_schedule(db, sa_id, now, tz)
             except Exception:
                 # Don't let one bad schedule abort the rest of the walk.
                 #
@@ -189,13 +96,156 @@ async def _check_due_async() -> dict:
                 # so one broken row silently skipped every schedule ordered
                 # after it, on every tick, indefinitely.
                 await db.rollback()
-                logger.exception("scheduler: failed to evaluate scheduled_action %d", sa.id)
+                logger.exception("scheduler: failed to evaluate scheduled_action %d", sa_id)
+                continue
+            if outcome is not None:
+                counts[outcome] += 1
 
-    return {
-        "dispatched": dispatched,
-        "skipped_in_flight": skipped_in_flight,
-        "skipped_orphan": skipped_orphan,
-    }
+    return counts
+
+
+async def _tick_schedule(db, sa_id: int, now: datetime, tz) -> str | None:  # noqa: ANN001
+    """Evaluate one schedule and dispatch it when due.
+
+    Returns the counter the schedule lands in (``dispatched``,
+    ``skipped_in_flight`` or ``skipped_orphan``), or None when it is gone,
+    disabled or not due yet. Raises on anything unexpected; the caller
+    rolls back and moves on.
+    """
+    from app.actions.registry import ACTION_REGISTRY
+
+    sa = await _schedule_if_due(db, sa_id, now, tz)
+    if sa is None:
+        return None
+
+    if await _held_by_in_flight_run(db, sa, now):
+        return "skipped_in_flight"
+
+    action = ACTION_REGISTRY.get(sa.action_key)
+    if action is None:
+        # The pack was disabled or removed; the schedule
+        # outlived its action — the registry was brought up
+        # to date above, so the miss is real. Log and move on
+        # — operators see this in the row's UI as "action not
+        # found".
+        logger.warning(
+            "scheduled_action %d references unknown action %r; skipping",
+            sa.id,
+            sa.action_key,
+        )
+        return "skipped_orphan"
+
+    await _dispatch_scheduled_run(db, sa, action, now)
+    return "dispatched"
+
+
+async def _schedule_if_due(db, sa_id: int, now: datetime, tz):  # noqa: ANN001, ANN202
+    """The schedule, freshly loaded, when it is still enabled and its next
+    fire time since ``walk_start()`` has come; otherwise None."""
+    from app.cron_walk import next_fire_time
+    from app.models.scheduled_action import ScheduledAction
+
+    sa = await db.get(ScheduledAction, sa_id, populate_existing=True)
+    if sa is None or not sa.enabled or sa.schedule_cron is None:
+        return None
+    next_run_at = next_fire_time(sa.schedule_cron, sa.walk_start(), tz)
+    if now < next_run_at:
+        return None
+    return sa
+
+
+async def _held_by_in_flight_run(db, sa, now: datetime) -> bool:  # noqa: ANN001
+    """Whether a queued or running run of this schedule should hold it back."""
+    from sqlalchemy import select
+
+    from app.models.action_run import ActionRun
+    from app.tasks.action_timeouts import per_host_deadline_seconds
+
+    in_flight = (
+        await db.execute(
+            select(ActionRun.id, ActionRun.created_at, ActionRun.action_key)
+            .where(
+                ActionRun.scheduled_action_id == sa.id,
+                ActionRun.status.in_(("queued", "running")),
+            )
+            .order_by(ActionRun.created_at.desc())
+            .limit(1)
+        )
+    ).first()
+    if in_flight is None:
+        return False
+    # Age cap on the overlap guard: an in-flight row this
+    # far past its action's deadline belongs to a dead
+    # worker (the action sweeper will fail it within one
+    # sweep). Without the cap, one orphaned ``running``
+    # row silences the schedule forever.
+    run_id, run_created_at, run_action_key = in_flight
+    if run_created_at.tzinfo is None:
+        run_created_at = run_created_at.replace(tzinfo=UTC)
+    age_cap = per_host_deadline_seconds(run_action_key) * 4
+    age = (now - run_created_at).total_seconds()
+    if age <= age_cap:
+        return True
+    logger.warning(
+        "scheduled_action %d: ignoring wedged in-flight "
+        "ActionRun %d (age %.0fs > cap %ds) — dispatching "
+        "anyway; the action sweeper will reap it",
+        sa.id,
+        run_id,
+        age,
+        age_cap,
+    )
+    return False
+
+
+async def _dispatch_scheduled_run(db, sa, action, now: datetime) -> None:  # noqa: ANN001
+    """Store a ``queued`` run for the schedule, audit it, commit, and send
+    it to the orchestrator."""
+    from app.actions.run_target import describe_target
+    from app.audit.logger import log_action
+    from app.models.action_run import ActionRun
+
+    run_host_id = sa.target_id if sa.target_kind == "host" else None
+    run_group_id = sa.target_id if sa.target_kind == "group" else None
+    target_kind, target_label = await describe_target(
+        db, host_id=run_host_id, group_id=run_group_id
+    )
+    run = ActionRun(
+        action_key=sa.action_key,
+        action_version=action.version,
+        host_id=run_host_id,
+        group_id=run_group_id,
+        target_kind=target_kind,
+        target_label=target_label,
+        scheduled_action_id=sa.id,
+        parameters=sa.parameters,
+        parallelism=sa.batch_size,
+        snapshot_enabled=sa.snapshot_enabled,
+        verify_enabled=sa.verify_enabled,
+        auto_rollback=sa.auto_rollback,
+        status="queued",
+        triggered_by_user_id=None,
+    )
+    db.add(run)
+    sa.last_dispatched_at = now
+    await db.flush()
+    await db.refresh(run)
+    run_id = run.id
+
+    await log_action(
+        db,
+        action="scheduled_action.dispatched",
+        entity_type="scheduled_action",
+        entity_id=sa.id,
+        user_id=None,
+        after_state={"action_run_id": run_id, "manual": False},
+    )
+    await db.commit()
+
+    celery_app.send_task(
+        "app.tasks.action_orchestrator.run_action",
+        args=[run_id],
+    )
 
 
 # ---------------------------------------------------------------------------

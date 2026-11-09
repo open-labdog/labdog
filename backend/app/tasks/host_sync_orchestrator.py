@@ -52,7 +52,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 
-from app.db import task_session
+from app.db import task_session, with_task_engine
 from app.enum_utils import enum_str
 from app.sync.orchestrator import build_host_sync_plan, execute_host_sync_plan
 from app.tasks import celery_app
@@ -641,7 +641,6 @@ async def _async_run(
     the queued one), no dispatch happens: the in-flight task will
     handle that when it finishes.
     """
-    from app.crypto import decrypt_ssh_key
     from app.tasks.host_lock import release_host_queue
 
     # --- Phase 0+1: claim-and-prepare under one advisory lock --------
@@ -675,61 +674,14 @@ async def _async_run(
                     db, job_id, host_id, module_filter
                 )
     except Exception as exc:
-        # Was the post-commit window reached? Re-read the row.
-        from app.models.sync_job import SyncJob as _SyncJob
-
-        post_commit = False
-        try:
-            async with task_session() as probe:
-                row = (
-                    await probe.execute(select(_SyncJob).where(_SyncJob.id == job_id))
-                ).scalar_one_or_none()
-                if row is not None and enum_str(row.status) == "running":
-                    post_commit = True
-        except Exception:  # pragma: no cover - probe failure shouldn't mask root cause
-            logger.exception("post-commit probe failed for job_id=%s", job_id)
-
-        if post_commit:
-            logger.exception(
-                "_prepare_run raised post-commit for job_id=%s host_id=%s; compensating",
-                job_id,
-                host_id,
-            )
-            error_message = "prepare_run raised after commit"
-            firewall_pre_error = (
-                "firewall" in seeded_modules and "firewall" not in modules_to_orchestrate
-            )
-            # If _prepare_run raised before populating seeded_modules,
-            # fall back to the module set implied by the caller filter
-            # so audit + status rows still describe the requested run.
-            seeded_for_compensation = seeded_modules or _resolve_modules(module_filter)
-            module_outcomes_err = {
-                m: "error"
-                for m in seeded_for_compensation
-                if not (m == "firewall" and firewall_pre_error)
-            }
-            try:
-                async with task_session() as db:
-                    await _finalise_run(
-                        db,
-                        job_id=job_id,
-                        host_id=host_id,
-                        module_filter=module_filter,
-                        seeded_modules=seeded_for_compensation,
-                        module_outcomes=module_outcomes_err,
-                        triggered_by_user_id=triggered_by_user_id,
-                        firewall_pre_error=firewall_pre_error,
-                        error_message=error_message,
-                    )
-            except Exception:
-                logger.exception(
-                    "compensating finalise failed for job_id=%s host_id=%s", job_id, host_id
-                )
-            await release_host_queue(
-                host_id,
-                after=f"job_id={job_id} (BUG-39 compensation path)",
-                exclude_sync_job_id=job_id,
-            )
+        await _compensate_failed_prepare(
+            job_id,
+            host_id,
+            module_filter,
+            modules_to_orchestrate=modules_to_orchestrate,
+            seeded_modules=seeded_modules,
+            triggered_by_user_id=triggered_by_user_id,
+        )
         raise exc
 
     if not claimed:
@@ -746,56 +698,16 @@ async def _async_run(
         )
 
         # --- Phase 2: orchestrate ------------------------------------
-        timeout = _compute_timeout(modules_to_orchestrate)
-
-        # The orchestrator wants the *filtered* canonical module list
-        # when the caller supplied one, otherwise None to mean "all".
-        # When the firewall guard removes firewall from a None-filter
-        # run we must convert to an explicit list so the orchestrator
-        # skips firewall.
-        if module_filter is None and not firewall_pre_error:
-            orchestrator_filter: list[str] | None = None
-        else:
-            orchestrator_filter = modules_to_orchestrate
-
-        module_outcomes: dict[str, str] = {}
-        orchestrator_error: str | None = None
-
-        try:
-            if modules_to_orchestrate:
-                from app.ansible_runtime.runner import run_ansible
-
-                # BUG-71: the session closes here, before the run. It was
-                # held open for the whole playbook — up to the full
-                # timeout, computed above — which parks one connection
-                # from a small pool per concurrent sync.
-                async with task_session() as db:
-                    plan = await build_host_sync_plan(
-                        host_id,
-                        orchestrator_filter,
-                        db,
-                        decrypt_key_fn=decrypt_ssh_key,
-                        ssh_key_path=ssh_key_path,
-                    )
-                module_outcomes, _playbook, _inventory = execute_host_sync_plan(
-                    plan,
-                    run_ansible_fn=run_ansible,
-                    private_data_dir=private_data_dir,
-                    timeout=timeout,
-                )
-        except Exception as exc:
-            # SEC-06: redact tmpfs SSH-key paths from the captured
-            # message before it lands in DB columns the API surfaces.
-            orchestrator_error = _redact_path(str(exc) or exc.__class__.__name__)
-            # Synthesise an all-error outcome map so _finalise_run marks
-            # every seeded module as error. The firewall pre-error path
-            # is left alone (its row already says "backend not detected").
-            module_outcomes = {
-                m: "error" for m in seeded_modules if not (m == "firewall" and firewall_pre_error)
-            }
-            logger.exception(
-                "host sync orchestration raised for job_id=%s host_id=%s", job_id, host_id
-            )
+        module_outcomes, orchestrator_error = await _orchestrate(
+            job_id,
+            host_id,
+            module_filter,
+            modules_to_orchestrate=modules_to_orchestrate,
+            seeded_modules=seeded_modules,
+            firewall_pre_error=firewall_pre_error,
+            private_data_dir=private_data_dir,
+            ssh_key_path=ssh_key_path,
+        )
 
         # --- Phase 3: finalise (atomic) ------------------------------
         async with task_session() as db:
@@ -818,20 +730,12 @@ async def _async_run(
             # runs the per-host dispatch step.
             raise RuntimeError(orchestrator_error)
 
-        # Build the per-module-outcome map exposed to Celery result
-        # inspection. We use the seeded_modules set so the firewall-guard
-        # case still surfaces ``firewall: error`` in the result dict.
-        result_outcomes: dict[str, str] = {}
-        for m in seeded_modules:
-            if m == "firewall" and firewall_pre_error:
-                result_outcomes[m] = "error"
-            else:
-                result_outcomes[m] = module_outcomes.get(m, "error")
-
         return {
             "job_id": job_id,
             "status": final_status,
-            "module_outcomes": result_outcomes,
+            "module_outcomes": _result_outcomes(
+                seeded_modules, module_outcomes, firewall_pre_error
+            ),
         }
     finally:
         # --- Phase 4: dispatch the next pending sync for this host ---
@@ -846,6 +750,166 @@ async def _async_run(
             after=f"job_id={job_id}",
             exclude_sync_job_id=job_id,
         )
+
+
+async def _compensate_failed_prepare(
+    job_id: int,
+    host_id: int,
+    module_filter: list[str] | None,
+    *,
+    modules_to_orchestrate: list[str],
+    seeded_modules: list[str],
+    triggered_by_user_id: int | None,
+) -> None:
+    """BUG-39: finalise a job that ``_prepare_run`` left ``running``.
+
+    Called from the claim-and-prepare ``except``. Does nothing unless the
+    row reads ``running``, which means the prepare commit landed but
+    orchestration never started; then the job is finalised as failed and
+    the host's queue released. The caller re-raises either way.
+    """
+    from app.tasks.host_lock import release_host_queue
+
+    if not await _prepare_committed(job_id):
+        return
+
+    logger.exception(
+        "_prepare_run raised post-commit for job_id=%s host_id=%s; compensating",
+        job_id,
+        host_id,
+    )
+    error_message = "prepare_run raised after commit"
+    firewall_pre_error = "firewall" in seeded_modules and "firewall" not in modules_to_orchestrate
+    # If _prepare_run raised before populating seeded_modules,
+    # fall back to the module set implied by the caller filter
+    # so audit + status rows still describe the requested run.
+    seeded_for_compensation = seeded_modules or _resolve_modules(module_filter)
+    module_outcomes_err = {
+        m: "error" for m in seeded_for_compensation if not (m == "firewall" and firewall_pre_error)
+    }
+    try:
+        async with task_session() as db:
+            await _finalise_run(
+                db,
+                job_id=job_id,
+                host_id=host_id,
+                module_filter=module_filter,
+                seeded_modules=seeded_for_compensation,
+                module_outcomes=module_outcomes_err,
+                triggered_by_user_id=triggered_by_user_id,
+                firewall_pre_error=firewall_pre_error,
+                error_message=error_message,
+            )
+    except Exception:
+        logger.exception("compensating finalise failed for job_id=%s host_id=%s", job_id, host_id)
+    await release_host_queue(
+        host_id,
+        after=f"job_id={job_id} (BUG-39 compensation path)",
+        exclude_sync_job_id=job_id,
+    )
+
+
+async def _prepare_committed(job_id: int) -> bool:
+    """Was the post-commit window reached? Re-read the row: ``running``
+    means ``_prepare_run``'s commit succeeded."""
+    from app.models.sync_job import SyncJob as _SyncJob
+
+    post_commit = False
+    try:
+        async with task_session() as probe:
+            row = (
+                await probe.execute(select(_SyncJob).where(_SyncJob.id == job_id))
+            ).scalar_one_or_none()
+            if row is not None and enum_str(row.status) == "running":
+                post_commit = True
+    except Exception:  # pragma: no cover - probe failure shouldn't mask root cause
+        logger.exception("post-commit probe failed for job_id=%s", job_id)
+    return post_commit
+
+
+async def _orchestrate(
+    job_id: int,
+    host_id: int,
+    module_filter: list[str] | None,
+    *,
+    modules_to_orchestrate: list[str],
+    seeded_modules: list[str],
+    firewall_pre_error: bool,
+    private_data_dir: str,
+    ssh_key_path: str,
+) -> tuple[dict[str, str], str | None]:
+    """Phase 2: build the plan and run the playbook.
+
+    Returns ``(module_outcomes, orchestrator_error)``. A raise is caught
+    and becomes an all-error outcome map plus its redacted message, so
+    the caller still finalises.
+    """
+    from app.crypto import decrypt_ssh_key
+
+    timeout = _compute_timeout(modules_to_orchestrate)
+
+    # The orchestrator wants the *filtered* canonical module list
+    # when the caller supplied one, otherwise None to mean "all".
+    # When the firewall guard removes firewall from a None-filter
+    # run we must convert to an explicit list so the orchestrator
+    # skips firewall.
+    if module_filter is None and not firewall_pre_error:
+        orchestrator_filter: list[str] | None = None
+    else:
+        orchestrator_filter = modules_to_orchestrate
+
+    module_outcomes: dict[str, str] = {}
+    orchestrator_error: str | None = None
+
+    try:
+        if modules_to_orchestrate:
+            from app.ansible_runtime.runner import run_ansible
+
+            # BUG-71: the session closes here, before the run. It was
+            # held open for the whole playbook — up to the full
+            # timeout, computed above — which parks one connection
+            # from a small pool per concurrent sync.
+            async with task_session() as db:
+                plan = await build_host_sync_plan(
+                    host_id,
+                    orchestrator_filter,
+                    db,
+                    decrypt_key_fn=decrypt_ssh_key,
+                    ssh_key_path=ssh_key_path,
+                )
+            module_outcomes, _playbook, _inventory = execute_host_sync_plan(
+                plan,
+                run_ansible_fn=run_ansible,
+                private_data_dir=private_data_dir,
+                timeout=timeout,
+            )
+    except Exception as exc:
+        # SEC-06: redact tmpfs SSH-key paths from the captured
+        # message before it lands in DB columns the API surfaces.
+        orchestrator_error = _redact_path(str(exc) or exc.__class__.__name__)
+        # Synthesise an all-error outcome map so _finalise_run marks
+        # every seeded module as error. The firewall pre-error path
+        # is left alone (its row already says "backend not detected").
+        module_outcomes = {
+            m: "error" for m in seeded_modules if not (m == "firewall" and firewall_pre_error)
+        }
+        logger.exception("host sync orchestration raised for job_id=%s host_id=%s", job_id, host_id)
+    return module_outcomes, orchestrator_error
+
+
+def _result_outcomes(
+    seeded_modules: list[str], module_outcomes: dict[str, str], firewall_pre_error: bool
+) -> dict[str, str]:
+    """Build the per-module-outcome map exposed to Celery result
+    inspection. We use the seeded_modules set so the firewall-guard
+    case still surfaces ``firewall: error`` in the result dict."""
+    result_outcomes: dict[str, str] = {}
+    for m in seeded_modules:
+        if m == "firewall" and firewall_pre_error:
+            result_outcomes[m] = "error"
+        else:
+            result_outcomes[m] = module_outcomes.get(m, "error")
+    return result_outcomes
 
 
 # ---------------------------------------------------------------------------
@@ -886,12 +950,14 @@ def run_host_sync(
     private_data_dir, ssh_key_path = _make_tmpfs_workspace()
     try:
         payload = asyncio.run(
-            _async_run(
-                job_id=job_id,
-                host_id=host_id,
-                module_filter=module_filter,
-                private_data_dir=private_data_dir,
-                ssh_key_path=ssh_key_path,
+            with_task_engine(
+                _async_run(
+                    job_id=job_id,
+                    host_id=host_id,
+                    module_filter=module_filter,
+                    private_data_dir=private_data_dir,
+                    ssh_key_path=ssh_key_path,
+                )
             )
         )
         # A job the host queue re-dispatched may be the one a deferred
@@ -902,7 +968,7 @@ def run_host_sync(
         # and closes its own row.
         from app.tasks.builtin_dispatchers import close_origin_host_run  # noqa: PLC0415
 
-        asyncio.run(close_origin_host_run(job_id, payload))
+        asyncio.run(with_task_engine(close_origin_host_run(job_id, payload)))
         return payload
     finally:
         _cleanup_tmpfs(private_data_dir)

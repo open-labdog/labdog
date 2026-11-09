@@ -86,35 +86,54 @@ async def fetch_current_firewall_state(host_id: int, db):
     """
     from sqlalchemy import select
 
-    from app.crypto import decrypt_ssh_key, get_master_key
     from app.models.host import Host
-    from app.models.ssh_key import SSHKey
-    from app.rules.model import ChainPolicies
-    from app.sync.collector import CollectedFirewallState, collect_firewall_state
+    from app.sync.collector import CollectedFirewallState
 
     host_result = await db.execute(select(Host).where(Host.id == host_id))
     host = host_result.scalar_one_or_none()
     if not host:
         return CollectedFirewallState(rules=[], policies=ChainPolicies())
+    return await read_firewall_state(host, await firewall_ssh_key(host, db), db)
 
-    backend = enum_str(host.firewall_backend)
-    if backend == "unknown" or not host.ssh_key_id:
-        return CollectedFirewallState(rules=[], policies=ChainPolicies())
 
+async def firewall_ssh_key(host, db) -> str | None:
+    """The host's decrypted SSH key when its firewall can be read: the
+    backend is known and the host has a key. ``None`` otherwise."""
+    from sqlalchemy import select
+
+    from app.crypto import decrypt_ssh_key, get_master_key
+    from app.models.ssh_key import SSHKey
+
+    if enum_str(host.firewall_backend) == "unknown" or not host.ssh_key_id:
+        return None
     key_result = await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
     ssh_key = key_result.scalar_one_or_none()
     if not ssh_key:
+        return None
+    return decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
+
+
+async def read_firewall_state(host, private_key_pem: str | None, db=None, *, conn=None):
+    """The host's firewall rules and policies, read over SSH.
+
+    Empty when ``private_key_pem`` is ``None`` (see
+    :func:`firewall_ssh_key`) or the backend is unknown. ``db`` is used
+    only to record the host key the first time the host is reached
+    (TOFU), and not at all when ``conn`` is given. Raises
+    :class:`SSHFetchError` when the host cannot be read.
+    """
+    from app.sync.collector import CollectedFirewallState, collect_firewall_state
+
+    backend = enum_str(host.firewall_backend)
+    if backend == "unknown" or private_key_pem is None:
         return CollectedFirewallState(rules=[], policies=ChainPolicies())
-
-    master_key = get_master_key()
-    private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, master_key)
-
     try:
         return await collect_firewall_state(
             host=host,
             db=db,
             private_key_pem=private_key_pem,
             firewall_backend=backend,
+            conn=conn,
         )
     except Exception as exc:
         logger.warning(

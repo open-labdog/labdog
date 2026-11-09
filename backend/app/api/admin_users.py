@@ -3,7 +3,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi_users.password import PasswordHelper
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.password_policy import PasswordPolicyError, check_password
@@ -112,15 +112,23 @@ async def update_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    if body.is_superuser is False:
-        count_result = await db.execute(
-            select(func.count())
-            .select_from(User)
-            .where(User.is_superuser.is_(True), User.id != user_id)
+    # BUG-140: deactivating the last active superuser locks everyone out
+    # of user administration as surely as demoting them, and an inactive
+    # superuser cannot log in, so only active ones count as "others". The
+    # rows are locked so two concurrent demotions cannot both pass.
+    if (
+        user.is_superuser
+        and user.is_active
+        and (body.is_superuser is False or body.is_active is False)
+    ):
+        others = await db.execute(
+            select(User.id)
+            .where(User.is_superuser.is_(True), User.is_active.is_(True), User.id != user_id)
+            .with_for_update()
         )
-        other_superusers = count_result.scalar()
-        if other_superusers == 0:
-            raise HTTPException(status_code=400, detail="Cannot demote the last superuser")
+        if not others.first():
+            what = "demote" if body.is_superuser is False else "deactivate"
+            raise HTTPException(status_code=400, detail=f"Cannot {what} the last superuser")
 
     update_data = body.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -145,14 +153,13 @@ async def delete_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    if user.is_superuser:
-        count_result = await db.execute(
-            select(func.count())
-            .select_from(User)
-            .where(User.is_superuser.is_(True), User.id != user_id)
+    if user.is_superuser and user.is_active:
+        others = await db.execute(
+            select(User.id)
+            .where(User.is_superuser.is_(True), User.is_active.is_(True), User.id != user_id)
+            .with_for_update()
         )
-        other_superusers = count_result.scalar()
-        if other_superusers == 0:
+        if not others.first():
             raise HTTPException(status_code=400, detail="Cannot delete the last superuser")
 
     await db.delete(user)

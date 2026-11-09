@@ -199,37 +199,6 @@ class TestPerContainerBootWork:
         assert len(sent) == 2
 
 
-class TestAllAtOnceIsCapped:
-    def test_parallelism_zero_batches_at_the_cap(self, monkeypatch):
-        from app.config import settings
-        from app.tasks.action_orchestrator import _batches
-
-        monkeypatch.setattr(settings.celery, "all_at_once_cap", 20)
-        sizes = [len(b) for b in _batches(list(range(50)), 0)]
-        assert sizes == [20, 20, 10]
-
-    def test_a_cap_of_zero_keeps_one_batch(self, monkeypatch):
-        from app.config import settings
-        from app.tasks.action_orchestrator import _batches
-
-        monkeypatch.setattr(settings.celery, "all_at_once_cap", 0)
-        assert [len(b) for b in _batches(list(range(50)), 0)] == [50]
-
-    def test_the_run_deadline_counts_the_capped_batches(self, monkeypatch):
-        from app.config import settings
-        from app.tasks.action_timeouts import run_deadline_seconds
-
-        monkeypatch.setattr(settings.celery, "all_at_once_cap", 20)
-        assert run_deadline_seconds("x", 50, 0) == run_deadline_seconds("x", 50, 20)
-
-    def test_an_explicit_parallelism_is_untouched(self, monkeypatch):
-        from app.config import settings
-        from app.tasks.action_orchestrator import _batches
-
-        monkeypatch.setattr(settings.celery, "all_at_once_cap", 20)
-        assert [len(b) for b in _batches(list(range(50)), 30)] == [30, 20]
-
-
 class TestTheEntrypoint:
     def test_a_bad_role_is_a_usage_error(self, monkeypatch):
         import app.__main__ as entry

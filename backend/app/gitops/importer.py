@@ -5,10 +5,11 @@ from datetime import UTC, datetime
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.gitops.importers._common import ModuleImportResult
 from app.gitops.importers.cron_jobs import import_cron_jobs
 from app.gitops.importers.discovery import import_discovery
 from app.gitops.importers.drift import import_drift
-from app.gitops.importers.firewall import ModuleImportResult, import_firewall
+from app.gitops.importers.firewall import import_firewall
 from app.gitops.importers.hosts_entries import import_hosts_entries
 from app.gitops.importers.packages import import_packages
 from app.gitops.importers.resolver import import_resolver

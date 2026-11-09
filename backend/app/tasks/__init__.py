@@ -273,6 +273,8 @@ celery_app.conf.include = [
     "app.tasks.drift_sweep",
     "app.tasks.action_orchestrator",
     "app.tasks.action_host",
+    # BUG-127: the orchestrator dispatches run_action_group by name
+    # (send_task), and nothing else a worker imports pulls this module in.
     "app.tasks.action_group",
     "app.tasks.builtin_dispatchers",
     "app.tasks.scheduled_action_schedule",
@@ -287,6 +289,7 @@ celery_app.conf.include = [
     "app.tasks.ai_task",
     "app.tasks.ai_approvals",
     "app.tasks.ai_snapshots",
+    "app.tasks.snapshot_reaper",
     "app.tasks.ai_sessions",
     "app.tasks.ai_alerts",
     "app.tasks.alert_handling",

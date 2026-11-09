@@ -25,6 +25,8 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
+from sqlalchemy import update
+
 from app.ai.loop import AgentLoop, LoopCaps, redis_publisher
 from app.ai.models import AIProvider, AISession
 from app.ai.providers.factory import runs_on_agent_sdk
@@ -36,7 +38,7 @@ from app.ai.service import (
     load_transcript,
     resolve_provider,
 )
-from app.db import task_session
+from app.db import task_session, with_task_engine
 from app.tasks import celery_app
 
 logger = logging.getLogger(__name__)
@@ -229,7 +231,7 @@ async def _report_remediation(db, session_id: int) -> None:
 )
 def run_chat_session(session_id: int) -> dict:
     """Drive one chat session to completion."""
-    return asyncio.run(_run_session_async(session_id))
+    return asyncio.run(with_task_engine(_run_session_async(session_id)))
 
 
 # ---------------------------------------------------------------------------
@@ -261,6 +263,21 @@ async def _resume_session_async(session_id: int) -> dict:
         if approval is None or approval.status == "pending":
             logger.warning("ai_task: session %s has no decided approval to resume", session_id)
             return {"session_id": session_id, "status": "waiting_approval"}
+
+        # BUG-138: claim the session before running anything. Two resume
+        # tasks for one decision both passed the status check above, and
+        # both ran the approved command. Only the one whose conditional
+        # update lands goes on.
+        claimed = await db.execute(
+            update(AISession)
+            .where(AISession.id == session_id, AISession.status == "waiting_approval")
+            .values(status="running")
+            .returning(AISession.id)
+        )
+        if claimed.scalar_one_or_none() is None:
+            await db.rollback()
+            return {"session_id": session_id, "status": "already_resumed"}
+        await db.commit()
 
         redis_client = _redis_client()
         publish = redis_publisher(redis_client, SESSION_CHANNEL.format(id=session_id))
@@ -341,7 +358,7 @@ async def _resume_session_async(session_id: int) -> dict:
 )
 def resume_session(session_id: int) -> dict:
     """Continue a session whose approval request has been decided."""
-    return asyncio.run(_resume_session_async(session_id))
+    return asyncio.run(with_task_engine(_resume_session_async(session_id)))
 
 
 # ---------------------------------------------------------------------------
@@ -560,7 +577,7 @@ async def _run_builtin_ai_task_async(action_run_id: int, host_run_id: int) -> No
 )
 def run_builtin_ai_task(action_run_id: int, host_run_id: int) -> dict:
     """Run an AI investigation against one host."""
-    asyncio.run(_run_builtin_ai_task_async(action_run_id, host_run_id))
+    asyncio.run(with_task_engine(_run_builtin_ai_task_async(action_run_id, host_run_id)))
     return {"action_run_id": action_run_id, "host_run_id": host_run_id}
 
 
@@ -674,5 +691,5 @@ async def _run_builtin_ai_task_group_async(action_run_id: int) -> None:
 )
 def run_builtin_ai_task_group(action_run_id: int) -> dict:
     """Run one AI investigation across a whole group."""
-    asyncio.run(_run_builtin_ai_task_group_async(action_run_id))
+    asyncio.run(with_task_engine(_run_builtin_ai_task_group_async(action_run_id)))
     return {"action_run_id": action_run_id}

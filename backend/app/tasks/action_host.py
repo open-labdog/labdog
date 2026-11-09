@@ -43,6 +43,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from app.db import with_task_engine
 from app.tasks import celery_app
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ def run_action_host(self, action_run_id: int, host_run_id: int) -> dict:
         A dict summarising the outcome, e.g.
         ``{"action_run_id": 1, "host_run_id": 2}``.
     """
-    asyncio.run(_run_action_host_async(action_run_id, host_run_id))
+    asyncio.run(with_task_engine(_run_action_host_async(action_run_id, host_run_id)))
     return {"action_run_id": action_run_id, "host_run_id": host_run_id}
 
 

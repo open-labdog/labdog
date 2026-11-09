@@ -39,7 +39,6 @@ docker compose -f dev/docker-compose.split.yml up -d --scale worker=2 --scale wo
 | `celery.concurrency` (`LABDOG_CELERY__CONCURRENCY`) | `work` in `all`, `worker` | 4 |
 | `celery.drift_concurrency` | `worker-drift` | 4 |
 | `celery.orchestrator_concurrency` | `orchestrator` | 4 |
-| `celery.all_at_once_cap` | action runs with parallelism "all at once" | 20 (0 = no cap) |
 
 Every container needs the same `LABDOG_DATABASE__URL`, `LABDOG_REDIS__URL`,
 `LABDOG_SECURITY__SECRET_KEY` and `LABDOG_SECURITY__ENCRYPTION_KEY`.
@@ -54,21 +53,16 @@ running is not enqueued again in the same tick. The per-host lock rules
 are unchanged: a host busy with a sync or action run is skipped for that
 tick, and a verdict gathered while a sync claimed the host is discarded.
 
-## "All at once" action runs
-
-An action run with parallelism "all at once" now runs in batches of
-`celery.all_at_once_cap` hosts (default 20). Without the cap, one such run
-on 300 hosts queues 300 host runs ahead of every sync and scheduled run
-that comes after it. Set the cap to `0` for the old behaviour.
-
 ## Postgres connections
 
-Every task opens its own small connection pool, and connections are not
-always closed the moment a task ends. In load tests a single container
-with 16 worker and 12 orchestrator slots peaked at 183 connections, so
-budget about six per slot plus 15 per `api` container, and raise Postgres
-`max_connections` (default 100) to match. The example compose file sets
-200; at the default slot counts (4 + 4 + 4) that is plenty.
+Budget about six Postgres connections per worker slot, counting every
+role's slots (`concurrency` per `worker` container, `drift_concurrency`,
+`orchestrator_concurrency`), plus the API's pool; see
+[Sizing Postgres connections](production-deploy.md#sizing-postgres-connections).
+In load tests at 300 hosts, the split topology with 28 slots peaked at
+130 connections. The example compose file sets `max_connections` to 200,
+plenty at the default slot counts. Put PgBouncer (transaction mode) in
+front of Postgres once the total grows.
 
 ## What stays single-instance
 

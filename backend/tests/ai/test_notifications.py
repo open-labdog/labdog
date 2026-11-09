@@ -435,7 +435,7 @@ class TestRemediationReportsTheExitStatus:
         from types import SimpleNamespace
 
         class _Conn:
-            async def run(self, command, check=False):  # noqa: ARG002
+            async def run(self, command, check=False, input=None):  # noqa: ARG002, A002
                 return SimpleNamespace(stdout="", stderr="sed: -e expression #1", exit_status=4)
 
         @asynccontextmanager

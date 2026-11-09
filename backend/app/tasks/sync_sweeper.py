@@ -23,7 +23,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
-from app.db import task_session
+from app.db import task_session, with_task_engine
 from app.tasks import celery_app
 
 logger = logging.getLogger(__name__)
@@ -35,6 +35,13 @@ logger = logging.getLogger(__name__)
 # Operators running with a much-bumped ``ansible.playbook_timeout`` should
 # raise this constant in tandem.
 STALE_THRESHOLD_MINUTES = 30
+
+# A ``pending`` job this old, on a host where nothing is running, has lost
+# its Celery message (BUG-131): its task died before claiming the host, so
+# no finishing op will ever hand the host on to it. Generous on purpose —
+# a long queue backlog keeps rows pending legitimately, and a duplicate
+# dispatch is harmless anyway (``_claim_or_defer`` runs a job at most once).
+PENDING_STALE_MINUTES = 15
 
 # How often the sweeper runs. 5 minutes means a stuck job is detected at
 # most ``STALE_THRESHOLD_MINUTES + 5min`` after it started; the queue
@@ -134,7 +141,65 @@ async def _sweep_stale_syncs_async() -> dict:
             len(dispatched),
         )
 
-    return {"swept": swept, "dispatched": dispatched}
+    revived = await _revive_orphaned_pending()
+    return {"swept": swept, "dispatched": dispatched, "revived": revived}
+
+
+async def _revive_orphaned_pending() -> list[int]:
+    """Hand idle hosts on to ``pending`` jobs nothing will ever dispatch.
+
+    BUG-131: the next pending job for a host is dispatched only when an
+    op on that host finishes. A job whose task died before claiming the
+    host (in the load test, Postgres connection errors) sat ``pending``
+    for good, and ``uq_sync_job_active`` then refused every later sync
+    for that host. This pass releases the host queue for each such host
+    that has nothing running, which dispatches its oldest pending op.
+    """
+    from app.models.sync_job import JobStatus, SyncJob
+    from app.tasks.host_lock import (
+        acquire_host_lock,
+        check_host_busy,
+        dispatch_next_pending_for_host,
+    )
+
+    cutoff = datetime.now(UTC) - timedelta(minutes=PENDING_STALE_MINUTES)
+    async with task_session() as db:
+        host_ids = (
+            (
+                await db.execute(
+                    select(SyncJob.host_id)
+                    .where(
+                        SyncJob.status == JobStatus.pending,
+                        SyncJob.host_id.isnot(None),
+                        SyncJob.created_at < cutoff,
+                    )
+                    .distinct()
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    revived: list[int] = []
+    for host_id in host_ids:
+        async with task_session() as db:
+            await acquire_host_lock(db, host_id)
+            busy = await check_host_busy(db, host_id)
+            await db.commit()
+        if busy is not None:
+            continue
+        async with task_session() as db:
+            if await dispatch_next_pending_for_host(db, host_id) is not None:
+                revived.append(host_id)
+
+    if revived:
+        logger.warning(
+            "sync_sweeper: re-dispatched the queue of %d idle host(s) with orphaned "
+            "pending jobs: %s",
+            len(revived),
+            revived,
+        )
+    return revived
 
 
 @celery_app.task(
@@ -145,7 +210,7 @@ def sweep_stale_syncs() -> dict:
     """Celery entrypoint. Drives the async sweeper inside ``asyncio.run``."""
     import asyncio
 
-    return asyncio.run(_sweep_stale_syncs_async())
+    return asyncio.run(with_task_engine(_sweep_stale_syncs_async()))
 
 
 # ---------------------------------------------------------------------------

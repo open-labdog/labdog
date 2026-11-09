@@ -84,6 +84,15 @@ def _firewall_backend_str(host: Host) -> str:
     return enum_str(raw) or "nftables"
 
 
+def _runner_failed(runner: Any) -> bool:
+    """True when ansible-runner says the playbook run as a whole failed."""
+    status = getattr(runner, "status", None)
+    rc = getattr(runner, "rc", None)
+    if isinstance(status, str) and status in ("failed", "timeout", "canceled"):
+        return True
+    return isinstance(rc, int) and not isinstance(rc, bool) and rc != 0
+
+
 def _runner_events_to_task_events(runner_events: Any) -> list[dict[str, Any]]:
     """Convert ansible-runner's event stream into the shape ``aggregate_module_outcomes`` expects.
 
@@ -107,6 +116,14 @@ def _runner_events_to_task_events(runner_events: Any) -> list[dict[str, Any]]:
     (defence against playbooks the orchestrator didn't compose, or play
     renames the map hasn't been updated for — caught by the
     same-commit invariant on ``PLAY_NAME_TO_MODULE``).
+
+    BUG-167: a task with ``ignore_errors`` that fails still sends
+    ``runner_on_failed``, with ``event_data.ignore_errors`` true. Ansible
+    counts it as ``ok`` and ``ignored``, not as a failure, and so does
+    this. It used to count as a failure, so the generators' own best-effort
+    steps (the dual-stack teardown, the first-sync config backup, the
+    iptables persistence installs on an RPM host) marked a module that had
+    applied cleanly as ``error``.
     """
     out: list[dict[str, Any]] = []
     for event in runner_events or []:
@@ -121,7 +138,7 @@ def _runner_events_to_task_events(runner_events: Any) -> list[dict[str, Any]]:
         out.append(
             {
                 "tags": [module],
-                "failed": et == "runner_on_failed",
+                "failed": et == "runner_on_failed" and not event_data.get("ignore_errors"),
                 "unreachable": et == "runner_on_unreachable",
             }
         )
@@ -378,6 +395,17 @@ def execute_host_sync_plan(
 
     task_events = _runner_events_to_task_events(getattr(runner, "events", []))
     module_outcomes = aggregate_module_outcomes(task_events, plan.modules_to_run)
+    if _runner_failed(runner):
+        # BUG-129: ``no_tasks`` cannot tell "already matched" from "never
+        # ran". A playbook that fails to parse (a missing collection, a
+        # bad template) emits no task events at all, and a host that fails
+        # in one module's play never reaches the later plays. Both used to
+        # collapse to in_sync. When the run itself failed, a module with no
+        # events was not applied, so it is an error.
+        module_outcomes = {
+            module: ("error" if outcome == "no_tasks" else outcome)
+            for module, outcome in module_outcomes.items()
+        }
 
     # `inventory_json` is already a JSON string from generate_inventory;
     # it is returned verbatim for audit. Parsing it back is the caller's

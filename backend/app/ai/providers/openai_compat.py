@@ -14,16 +14,17 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import AsyncIterator
+from contextlib import aclosing
 from typing import Any
 
 import httpx
 
+from app.ai.providers._streaming import parse_tool_calls, stream_json_events
 from app.ai.providers.base import (
     LLMProviderError,
     NormalizedMessage,
     StreamEvent,
     TextDelta,
-    ToolCall,
     ToolCallEnd,
     ToolSpec,
     TurnEnd,
@@ -90,14 +91,13 @@ class OpenAICompatProvider:
             wire.append(entry)
         return wire
 
-    async def stream_turn(
+    def _payload(
         self,
         messages: list[NormalizedMessage],
         tools: list[ToolSpec],
-        *,
         max_tokens: int,
         temperature: float,
-    ) -> AsyncIterator[StreamEvent]:
+    ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": self._to_wire(messages),
@@ -120,6 +120,17 @@ class OpenAICompatProvider:
                 for tool in tools
             ]
             payload["tool_choice"] = "auto"
+        return payload
+
+    async def stream_turn(
+        self,
+        messages: list[NormalizedMessage],
+        tools: list[ToolSpec],
+        *,
+        max_tokens: int,
+        temperature: float,
+    ) -> AsyncIterator[StreamEvent]:
+        payload = self._payload(messages, tools, max_tokens, temperature)
 
         url = f"{self.base_url}/chat/completions"
         # Fragments keyed by the index the server assigns each tool call.
@@ -127,73 +138,47 @@ class OpenAICompatProvider:
         finish_reason = "stop"
         saw_usage = False
 
-        try:
-            async with httpx.AsyncClient(verify=self._verify, timeout=REQUEST_TIMEOUT) as client:
-                async with client.stream(
-                    "POST", url, json=payload, headers=self._headers()
-                ) as response:
-                    if response.status_code >= 400:
-                        body = (await response.aread()).decode(errors="replace")[:500]
-                        raise LLMProviderError(
-                            f"Chat completions returned HTTP {response.status_code}: {body}",
-                            response.status_code,
-                        )
-                    async for line in response.aiter_lines():
-                        if not line.startswith("data:"):
-                            continue
-                        data = line[5:].strip()
-                        if not data or data == "[DONE]":
-                            continue
-                        try:
-                            chunk = json.loads(data)
-                        except json.JSONDecodeError:
-                            logger.warning("openai_compat: skipping unparseable chunk")
-                            continue
+        chunks = stream_json_events(
+            url,
+            payload,
+            self._headers(),
+            verify=self._verify,
+            timeout=REQUEST_TIMEOUT,
+            api_name="Chat completions",
+            log=logger,
+            unparseable_message="openai_compat: skipping unparseable chunk",
+            done_marker="[DONE]",
+        )
+        async with aclosing(chunks):
+            async for chunk in chunks:
+                if usage := chunk.get("usage"):
+                    saw_usage = True
+                    yield Usage(
+                        prompt_tokens=int(usage.get("prompt_tokens") or 0),
+                        completion_tokens=int(usage.get("completion_tokens") or 0),
+                    )
 
-                        if usage := chunk.get("usage"):
-                            saw_usage = True
-                            yield Usage(
-                                prompt_tokens=int(usage.get("prompt_tokens") or 0),
-                                completion_tokens=int(usage.get("completion_tokens") or 0),
-                            )
-
-                        for choice in chunk.get("choices") or []:
-                            if reason := choice.get("finish_reason"):
-                                finish_reason = reason
-                            delta = choice.get("delta") or {}
-                            if text := delta.get("content"):
-                                yield TextDelta(text)
-                            for fragment in delta.get("tool_calls") or []:
-                                idx = int(fragment.get("index") or 0)
-                                slot = pending.setdefault(idx, {"id": "", "name": "", "args": ""})
-                                if fragment_id := fragment.get("id"):
-                                    slot["id"] = fragment_id
-                                fn = fragment.get("function") or {}
-                                if name := fn.get("name"):
-                                    slot["name"] = name
-                                if args := fn.get("arguments"):
-                                    slot["args"] += args
-        except httpx.HTTPError as exc:
-            raise LLMProviderError(f"Request failed: {exc}") from exc
+                for choice in chunk.get("choices") or []:
+                    if reason := choice.get("finish_reason"):
+                        finish_reason = reason
+                    delta = choice.get("delta") or {}
+                    if text := delta.get("content"):
+                        yield TextDelta(text)
+                    for fragment in delta.get("tool_calls") or []:
+                        idx = int(fragment.get("index") or 0)
+                        slot = pending.setdefault(idx, {"id": "", "name": "", "args": ""})
+                        if fragment_id := fragment.get("id"):
+                            slot["id"] = fragment_id
+                        fn = fragment.get("function") or {}
+                        if name := fn.get("name"):
+                            slot["name"] = name
+                        if args := fn.get("arguments"):
+                            slot["args"] += args
 
         wants_tools = False
-        for idx in sorted(pending):
-            slot = pending[idx]
-            if not slot["name"]:
-                continue
-            try:
-                arguments = json.loads(slot["args"]) if slot["args"].strip() else {}
-            except json.JSONDecodeError:
-                # A truncated or malformed argument blob is the model's error to
-                # recover from, so surface it as a tool error rather than
-                # aborting the whole turn.
-                raise LLMProviderError(
-                    f"Model produced invalid JSON arguments for tool {slot['name']!r}"
-                ) from None
+        for call in parse_tool_calls(pending, "call_"):
             wants_tools = True
-            yield ToolCallEnd(
-                ToolCall(id=slot["id"] or f"call_{idx}", name=slot["name"], arguments=arguments)
-            )
+            yield ToolCallEnd(call)
 
         if not saw_usage:
             yield Usage(prompt_tokens=0, completion_tokens=0, unknown=True)

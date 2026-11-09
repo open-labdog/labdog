@@ -1,8 +1,9 @@
-# Load test harness (plans/scaling step 2)
+# Load test harness
 
-Runs a published LabDog image against N fake SSH hosts on one Docker
-host and measures queues, waits, drift sweeps and resources. LabDog's
-own code is not changed.
+Runs a LabDog image against N fake SSH hosts and measures queues,
+waits, drift sweeps and resources. Used to size the worker roles in
+[`docs/scaling-out.md`](../../docs/scaling-out.md); the results are in
+PR #270.
 
 Needs Docker with Compose v2, python3, and enough room for N small
 containers (300 hosts used about 6 GB RAM in total).
@@ -40,17 +41,37 @@ Results land in `results/<SID>-n<N>-<cfg>/`: `measure.txt` (the
 | S4 | S3 + one all-hosts run with parallelism 0 at window minute 20 |
 | S5 | S3 with 4 of the schedules on the same minute |
 
-Configs: `default` = celery 4 / orchestrator 4; `raised` = 16 / 12
-(`LABDOG_CELERY__CONCURRENCY`, `LABDOG_CELERY__ORCHESTRATOR_CONCURRENCY`).
+Configs (the third argument of `run_one.sh`; anything after the prefix
+is a free label for the results directory):
 
-## Deviations from the plan
+| Config | Topology | Slots |
+|---|---|---|
+| `default` | one `all` container | celery 4 / orchestrator 4 |
+| `raised*` | one `all` container | 16 / 12 |
+| `split*` | role containers (`docker-compose.split.yml`): `api`, `beat`, `orchestrator` 12, `worker` 2 × 6, `worker-drift` 4 | 28, as `raised` |
 
-- `service` drift is skipped (needs systemd as PID 1), as the plan allows.
-- The image lacks the `ansible.posix` collection; `prepare.sh` installs it
-  into `.state/collections` and the compose mounts it. Without it every
-  sync with a linux user fails to parse (see results).
+## Two hosts
+
+With `FAKEHOST_DOCKER=ssh://user@host` the fake hosts run on a second
+Docker host, so their CPU does not compete with LabDog's. The fake-host
+network there is a NAT bridge on 172.30.0.0/16 (`gateway_mode_ipv4:
+nat-unprotected`), and the LabDog host needs a route to it:
+`ip route replace 172.30.0.0/16 via <second host>`. The LabDog stack
+uses 172.29.0.0/16. Raise `MaxStartups` in the second host's sshd
+config: Compose opens many SSH sessions at once.
+
+`MATRIX="S1:300:split2h S2:300:split2h" ./run_matrix.sh` runs just those
+runs (`SID:N:config`).
+
+## Notes
+
+- `service` drift is skipped (needs systemd as PID 1).
+- Images built before the BUG-128 fix lack `ansible.posix`, which
+  linux-user sync needed; `prepare.sh` installs it into
+  `.state/collections` and the compose mounts it. Newer images do not
+  need it, and the mount is harmless.
 - Postgres `max_connections` is 400 for the raised config (`PG_MAX_CONNECTIONS`);
   16/12 needs more than the default 100.
 - 10 min warm-up, 60 min window, then up to 15 min drain before measuring.
-- LabDog and all fake hosts share the same machine, so CPU contention
-  from the fake hosts is part of the numbers.
+- On one host, LabDog and the fake hosts share the CPU, so contention
+  from the fake hosts is part of the numbers; use two hosts to avoid it.

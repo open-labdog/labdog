@@ -21,6 +21,8 @@ without a release, and a reviewer can read it as a list.
 
 from __future__ import annotations
 
+import fnmatch
+import ipaddress
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -34,18 +36,25 @@ MODES = ("any", "operands", "exact")
 
 #: Commands that run other commands or code, so nothing about them can be
 #: read from the command line. The policy refuses to call any of them
-#: read-only, whatever a policy file says: a rule for ``awk`` or ``xargs``
+#: read-only, whatever a policy file says: a rule for ``xargs`` or ``sed``
 #: would make every command a read.
 NEVER_READ_ONLY = frozenset(
     {
         "sh", "bash", "zsh", "dash", "ksh", "ash", "fish", "csh", "tcsh", "busybox",
         "python", "python2", "python3", "perl", "ruby", "php", "node", "nodejs", "lua", "tclsh",
-        "awk", "gawk", "mawk", "nawk", "sed", "xargs", "parallel", "watch", "eval", "exec",
+        "nawk", "sed", "xargs", "parallel", "watch", "eval", "exec",
         "source", ".", "su", "runuser", "chroot", "nsenter", "unshare", "systemd-run",
         "script", "expect", "tmux", "screen", "ssh", "scp", "sftp", "rsync", "socat",
         "nc", "ncat", "telnet",
     }
 )  # fmt: skip
+
+#: Languages whose ways out of stdout are few and spelled with fixed words
+#: (awk: system, getline, a pipe, a redirection after print, gawk's @). The
+#: policy may call one read-only only together with the gates that refuse
+#: those words, so a rule that lists one without a gate is refused (BUG-171).
+#: The gates themselves live in command_policy.yaml.
+NEEDS_GATES = frozenset({"awk", "gawk", "mawk"})
 
 #: Where a command may be named by its full path. Anything else with a
 #: ``/`` in it, ``./cat`` or ``/tmp/cat``, is not the system's ``cat``.
@@ -153,9 +162,20 @@ class Gate:
     pattern: re.Pattern[str] | None = None
     if_value: re.Pattern[str] | None = None
     unless_value: re.Pattern[str] | None = None
+    #: Fires on any argument naming a credential file (SEC-47).
+    secrets: bool = False
+    #: ``urls``: fires on an operand naming a host other than loopback.
+    #: ``names``: fires on an operand that is a dotted DNS name.
+    remote: str = ""
 
     def fires(self, args: list[str], options: Options) -> bool:
         if self.words and any(arg in self.words for arg in args):
+            return True
+        if self.secrets and any(names_secret(arg) for arg in args):
+            return True
+        if self.remote == "urls" and any(_remote_url(w) for w in _operands(args, options)):
+            return True
+        if self.remote == "names" and any(_remote_name(w) for w in _operands(args, options)):
             return True
         if self.pattern is not None and self.pattern.search(" ".join(args)):
             return True
@@ -232,6 +252,160 @@ class Gate:
             if gated.startswith(name) and f"--{name}" not in options.names:
                 return True
         return False
+
+
+def _operands(args: list[str], options: Options):
+    """Yield the plain words, skipping the values of declared options.
+
+    An option the command does not declare is read as a flag, so a value it
+    takes is yielded as an operand: that can only make a gate fire.
+    """
+    i = 0
+    while i < len(args):
+        word = args[i]
+        if word == "--":
+            yield from args[i + 1 :]
+            return
+        if word.startswith("-") and word != "-":
+            i += options.consume(args, i) or 1
+            continue
+        yield word
+        i += 1
+
+
+# -- SEC-47: credential files and outbound targets ---------------------------
+#
+# A read-only command that prints a secret, followed by one that names a host
+# of the model's choosing, is a way out for that secret with no approval at
+# any step. These two checks make each half need approval. They are a
+# hardening, not a data-loss barrier: see the policy file's header.
+
+_SECRET_BASENAMES = frozenset(
+    {
+        "shadow", "shadow-", "gshadow", "gshadow-", "opasswd", "master.passwd",
+        ".pgpass", ".netrc", ".git-credentials", ".my.cnf", ".vault-token",
+    }
+)  # fmt: skip
+_SECRET_BASENAME_RE = re.compile(
+    r"id_(?:rsa|dsa|ecdsa|ed25519)(?:_sk)?|.*_key|.*\.(?:key|p12|pfx|jks|keystore)|privkey.*"
+)
+_SECRET_PATH_RE = re.compile(
+    r"(?:^|.*/)(?:\.kube/config|\.docker/config\.json|\.aws/credentials|\.config/gcloud/.*)$"
+    r"|^/etc/ssl/private(?:/.*)?$|^/etc/kubernetes/(?:admin|super-admin|controller-manager|scheduler|kubelet)\.conf$"
+)
+#: What may be read in ``~/.ssh``: public material and client configuration.
+_SSH_PUBLIC = frozenset(
+    {"known_hosts", "known_hosts.old", "authorized_keys", "authorized_keys2", "config"}
+)
+#: Directories that hold CA certificates, where a ``.pem`` is public.
+_CERT_DIRS = (
+    "/etc/ssl/certs/", "/usr/share/ca-certificates/", "/usr/local/share/ca-certificates/",
+    "/etc/pki/ca-trust/", "/etc/pki/tls/certs/", "/etc/ca-certificates/",
+)  # fmt: skip
+_PUBLIC_PEM = re.compile(r".*(?:cert|chain|bundle).*\.pem|ca[-_.].*\.pem|ca\.pem")
+#: Stand-ins a glob is tried against: `cat /etc/sha*` is `cat /etc/shadow`.
+_SECRET_EXAMPLES = (
+    "/etc/shadow", "/etc/gshadow", "/etc/security/opasswd", "/etc/ssh/ssh_host_ed25519_key",
+    "/root/.ssh/id_ed25519", "/home/_/.ssh/id_rsa", "/etc/ssl/private/server.key",
+    "/etc/kubernetes/admin.conf", "/root/.kube/config",
+)  # fmt: skip
+_GLOB = re.compile(r"[*?\[]")
+_HOME = re.compile(r"^(?:~[^/]*|\$HOME|\$\{HOME\})(?=/|$)")
+
+
+def _secret_literal(path: str) -> bool:
+    base = path.rstrip("/").rsplit("/", 1)[-1]
+    if base in _SECRET_BASENAMES or _SECRET_PATH_RE.match(path):
+        return True
+    parts = path.rstrip("/").split("/")
+    if ".ssh" in parts:
+        if parts[-1] == ".ssh":
+            return True  # the directory itself: grep -r, cat ~/.ssh/*
+        if base not in _SSH_PUBLIC and not base.endswith(".pub"):
+            return True
+    if base.endswith(".pub"):
+        return False
+    if base.endswith(".pem"):
+        if base.startswith("privkey"):
+            return True
+        return not (path.startswith(_CERT_DIRS) or _PUBLIC_PEM.fullmatch(base))
+    return bool(_SECRET_BASENAME_RE.fullmatch(base))
+
+
+def _secret_glob(pattern: str) -> bool:
+    anchored = pattern if pattern.startswith("/") else "*/" + pattern
+    return any(fnmatch.fnmatchcase(example, anchored) for example in _SECRET_EXAMPLES)
+
+
+def names_secret(word: str) -> bool:
+    """Whether *word* (or the value in ``--opt=word`` / ``@word``) names a credential file."""
+    candidates = {word}
+    if "=" in word:
+        candidates.add(word.split("=", 1)[1])
+    candidates |= {c[1:] for c in list(candidates) if c.startswith("@")}
+    for candidate in candidates:
+        if not candidate:
+            continue
+        path = _HOME.sub("/home/_", candidate)
+        if _GLOB.search(path):
+            if _secret_glob(path):
+                return True
+        elif _secret_literal(path):
+            return True
+    return False
+
+
+_URLISH = re.compile(
+    r"(?:(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*)://)?(?:[^@/?#\s]*@)?"
+    r"(?P<host>\[[^\]\s]*\]|[^:/?#\s\[\]@]+)(?::[0-9]*)?(?:[/?#]\S*)?"
+)
+_HOSTNAME = re.compile(r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+\.?")
+
+
+def _is_ip(host: str) -> bool:
+    try:
+        ipaddress.ip_address(host.strip("[]"))
+    except ValueError:
+        return False
+    return True
+
+
+def _is_loopback(host: str) -> bool:
+    host = host.lower().rstrip(".")
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        addr = ipaddress.ip_address(host.strip("[]"))
+    except ValueError:
+        return False
+    return addr.is_loopback or addr.is_unspecified
+
+
+def _remote_url(word: str) -> bool:
+    """Whether a curl operand points anywhere but this host."""
+    match = _URLISH.fullmatch(word)
+    if match is None:
+        return False
+    host = match["host"]
+    if not (match["scheme"] or "." in host or host.startswith("[")):
+        return False  # a single label: a name on the host's own search path
+    return not _is_loopback(host)
+
+
+def _remote_name(word: str) -> bool:
+    """Whether a lookup operand is a DNS name the model chose.
+
+    Addresses and single labels are allowed: the first carries no name to
+    smuggle data in, the second resolves inside the host's search domains.
+    """
+    host = word[1:] if word.startswith("@") else word
+    host = re.sub(r":[0-9]+$", "", host).rstrip(".")
+    if not _HOSTNAME.fullmatch(host + ".") and not _HOSTNAME.fullmatch(host):
+        return False
+    lowered = host.lower()
+    if _is_ip(host) or _is_loopback(host):
+        return False
+    return not lowered.endswith((".in-addr.arpa", ".ip6.arpa"))
 
 
 def _count_operands(args: list[str], options: Options) -> int:
@@ -368,6 +542,13 @@ class CommandPolicy:
                     f"{', '.join(sorted(node.children))} mean nothing"
                 )
             _check_gate_values(node, effective)
+
+        for name in NEEDS_GATES & root.keys():
+            if root[name].mode is not None and not root[name].gates:
+                raise PolicyError(
+                    f"{name}: it runs commands through words in its program, so it is "
+                    f"read-only only with gates that refuse them"
+                )
 
         environment = tuple(str(name) for name in data.get("environment") or [])
         for name in environment:
@@ -662,7 +843,18 @@ def _gate(spec: Any, where: str) -> Gate:
         raise PolicyError(f"{where}: each gate is a mapping")
     _only_keys(
         spec,
-        {"reason", "short", "long", "words", "operands", "pattern", "if_value", "unless_value"},
+        {
+            "reason",
+            "short",
+            "long",
+            "words",
+            "operands",
+            "pattern",
+            "if_value",
+            "unless_value",
+            "secrets",
+            "remote",
+        },
         where,
     )
     reason = spec.get("reason")
@@ -686,8 +878,20 @@ def _gate(spec: Any, where: str) -> Gate:
         pattern=_regex(spec.get("pattern"), where),
         if_value=_regex(spec.get("if_value"), where),
         unless_value=_regex(spec.get("unless_value"), where),
+        secrets=bool(spec.get("secrets", False)),
+        remote=str(spec.get("remote") or ""),
     )
-    if not (gate.short or gate.long or gate.words or gate.pattern or gate.operands is not None):
+    if gate.remote not in ("", "urls", "names"):
+        raise PolicyError(f"{where}: remote is urls or names")
+    if not (
+        gate.short
+        or gate.long
+        or gate.words
+        or gate.pattern
+        or gate.operands is not None
+        or gate.secrets
+        or gate.remote
+    ):
         raise PolicyError(f"{where}: a gate must say what it fires on")
     if (gate.if_value or gate.unless_value) and not (gate.short or gate.long):
         raise PolicyError(f"{where}: if_value and unless_value apply to an option's value")

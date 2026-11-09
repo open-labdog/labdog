@@ -9,6 +9,23 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Added
 
+- **Run LabDog as separate containers, one per role.** `LABDOG_ROLE` (or
+  `--role`) picks `api`, `beat`, `orchestrator`, `worker` or
+  `worker-drift`; the default `all` is the single container as before.
+  Only `api` runs migrations; the other roles wait for the schema. The
+  image's health check checks each role, and
+  `dev/docker-compose.split.yml` is a working example. See
+  `docs/scaling-out.md`.
+- **Drift checks get their own queue and run in parallel.** Each periodic
+  sweep enqueues one check per host on the new `drift` queue instead of
+  walking the hosts one by one, so a sweep no longer waits behind syncs and
+  finishes faster. New setting `celery.drift_concurrency` (slots of a
+  `worker-drift` container). In a load test at 300 hosts with a bulk sync
+  every 15 minutes, sweeps kept their 30-minute interval (up to 51 minutes
+  before) and took about half as long.
+- **A load-test harness** in `dev/loadtest/`: N fake SSH hosts, scenarios
+  for drift, bulk syncs and action schedules, on one or two Docker hosts.
+
 - **Re-run an action from its run page.** A finished run's head has a
   **Re-run…** button that opens the run dialog on the same host or group,
   filled in with the run's parameters, metrics destinations and
@@ -25,6 +42,10 @@ The format follows [Keep a Changelog]; LabDog follows
   and `subject_key` (alembic 0056).
 
 ### Changed
+
+- **Workers take one task at a time** (`worker_prefetch_multiplier=1`), so a
+  long sync no longer holds queued tasks that an idle worker could run. Only
+  one booting worker runs the startup orphan sweep.
 
 - **A tidier group Overview.** The fifteen panels in five rows, which left
   gaps beside the shorter ones, are now four full-width parts: one strip
@@ -50,6 +71,36 @@ The format follows [Keep a Changelog]; LabDog follows
   under spellings the backend doesn't write (`services`, `packages`,
   `linux-users` instead of `service`, `package`, `linux_user`), so their
   states never showed.
+- **A rolled-back host keeps no snapshot.** Deleting the pre-run snapshot
+  right after a rollback hit the VM lock Proxmox holds for about 30 s
+  while it cleans up the killed QEMU process, so it failed every time.
+  LabDog now retries a locked delete for up to two minutes (BUG-168).
+- **Leftover snapshots are cleaned up on their own.** An hourly sweep
+  removes action-run snapshots older than `workflow.snapshot_max_age_hours`
+  that no running action uses. Before, only **Clean up orphaned
+  snapshots** did, by hand. Neither touches AI sessions' `labdog-ai-`
+  snapshots any more: the manual cleanup used to read their session number
+  as a run id (BUG-169).
+- **The AI snapshot sweep accepts a snapshot already gone.** One deleted
+  by hand was retried, with a warning, every day (BUG-170).
+- **Read-only AI pipelines through `awk` or `paste` take no snapshot.**
+  `paste`, and `awk`, `gawk` and `mawk` programs without `system()`,
+  pipes, `getline`, a redirection after `print`, gawk's `@` forms or
+  `ARGV`, now count as reads (BUG-171).
+- **Users with keys or a sudo rule no longer drift for ever when LabDog
+  logs in as a non-root user.** The `authorized_keys` file and the
+  sudoers drop-in are read through `sudo -n`, and a file that exists but
+  cannot be read is reported as an error instead of an empty one
+  (BUG-172).
+- **`~/.ssh` and `authorized_keys` get the user's primary group**, not
+  `root` (BUG-173).
+- **A cron schedule with stray whitespace no longer drifts for ever.**
+  Schedules are stored five fields one space apart, and the drift check
+  ignores whitespace in ones stored before (BUG-174).
+- **The Plans page no longer shows a host whose module preview failed as
+  "no change".** It shows the module error, and the Reachability check
+  names the host (BUG-175).
+- **Playbook output no longer floods the worker log at WARNING** (BUG-176).
 
 ## [1.1.0] — 2026-11-06
 

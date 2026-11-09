@@ -171,6 +171,37 @@ class TestTheSweep:
 
         assert result == {"deleted": 0, "failed": 0, "retention_days": 0}
 
+    async def test_a_snapshot_already_gone_is_marked_pruned(self, db, make_session) -> None:
+        """BUG-170: deleted by hand, it was retried and warned about every
+        day for ever. Proxmox saying the snapshot does not exist is final."""
+        from app.proxmox.client import ProxmoxError
+        from app.tasks.ai_snapshots import _prune_ai_snapshots
+
+        key = await create_ssh_key(db)
+        host = await create_host(db, ssh_key_id=key.id)
+        session = await make_session(autonomy_level="full_auto", target_host_ids=[host.id])
+        call = await _call_with_snapshot(db, session, host, age_days=30)
+        await set_setting(db, "ai.snapshot_retention_days", "7")
+        await db.commit()
+
+        async def fake_target(_db, host_id):
+            return SnapshotTarget(client=object(), pve_node="pve", vmid=101, vm_type="qemu")
+
+        async def gone(*a, **kw):
+            raise ProxmoxError(f"Task failed: snapshot '{call.snapshot_name}' does not exist")
+
+        with (
+            patch("app.db.task_session", _session_cm(db)),
+            patch("app.ai.snapshots.resolve_target", fake_target),
+            patch("app.workflows.steps.cleanup.delete_snapshot", gone),
+        ):
+            result = await _prune_ai_snapshots()
+
+        await db.refresh(call)
+        assert result["gone"] == 1
+        assert result["failed"] == 0
+        assert call.snapshot_pruned_at is not None
+
     async def test_a_failed_delete_is_retried_next_sweep(self, db, make_session) -> None:
         """Left unmarked deliberately. Forgetting a rollback point that is
         still occupying the datastore is the worse of the two failures."""

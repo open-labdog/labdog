@@ -2,11 +2,12 @@
 
 import asyncio
 import re
+import shlex
 from typing import TYPE_CHECKING
 
 import asyncssh
 
-from app.ssh_utils import ssh_connect_host
+from app.ssh_utils import host_connection
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,11 +17,16 @@ if TYPE_CHECKING:
 _ANSIBLE_MARKER_RE = re.compile(r"^#Ansible:\s+(.+)$")
 
 
+class CronCollectionError(RuntimeError):
+    """A user's crontab could not be read, as opposed to being empty."""
+
+
 async def collect_cron_jobs(
     host: "Host",
     db: "AsyncSession",
     private_key_pem: str,
     users: list[str],
+    conn=None,
 ) -> list[dict]:
     """SSH into a host and parse Ansible-managed crontab entries for each user.
 
@@ -32,19 +38,18 @@ async def collect_cron_jobs(
     results: list[dict] = []
 
     try:
-        private_key = asyncssh.import_private_key(private_key_pem)
 
         async def _run() -> list[dict]:
-            async with ssh_connect_host(host, db, client_keys=[private_key]) as conn:
+            async with host_connection(host, db, private_key_pem, conn) as c:
                 for user in users:
-                    try:
-                        entries = await _collect_user_crontab(conn, user)
-                        results.extend(entries)
-                    except Exception:
-                        pass
+                    results.extend(await _collect_user_crontab(c, user))
             return results
 
         return await asyncio.wait_for(_run(), timeout=30.0)
+    except CronCollectionError:
+        # BUG-130: an unreadable crontab is not an empty one. Reporting it
+        # as empty made every managed entry look missing.
+        raise
     except Exception:
         return []
 
@@ -55,10 +60,25 @@ async def _collect_user_crontab(
     conn: asyncssh.SSHClientConnection,
     user: str,
 ) -> list[dict]:
-    result = await conn.run(f"crontab -l -u {user} 2>/dev/null", check=False)
+    # BUG-130: `crontab -l -u` needs root. As a non-root SSH user it failed
+    # with "must be privileged to use -u", which read as an empty crontab,
+    # so cron drift was always out_of_sync. Go through `sudo -n` unless
+    # already root (a root-only host may have no sudo at all).
+    quoted = shlex.quote(user)
+    result = await conn.run(
+        f'if [ "$(id -u)" = 0 ]; then crontab -l -u {quoted}; '
+        f"else sudo -n crontab -l -u {quoted}; fi",
+        check=False,
+    )
 
     if result.exit_status != 0:
-        return []
+        stderr = result.stderr or ""
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
+        if "no crontab for" in stderr:
+            return []
+        reason = stderr.strip() or f"exit status {result.exit_status}"
+        raise CronCollectionError(f"could not read the crontab of {user!r}: {reason}")
 
     stdout = result.stdout
     if stdout is None:

@@ -1,9 +1,7 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import asyncssh
-
-from app.ssh_utils import ssh_connect_host
+from app.ssh_utils import host_connection
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,10 +16,16 @@ class ParsedHostsEntry:
     aliases: list[str]
 
 
+def hosts_entry_dict(entry: ParsedHostsEntry) -> dict:
+    """A collected /etc/hosts line as ``HostModuleStatus.collected_state`` stores it."""
+    return {"ip_address": entry.ip_address, "hostname": entry.hostname, "aliases": entry.aliases}
+
+
 async def collect_hosts_file(
     host: "Host",
     db: "AsyncSession",
     private_key_pem: str,
+    conn=None,
 ) -> list[ParsedHostsEntry]:
     """
     SSH into host, cat /etc/hosts, parse entries.
@@ -30,9 +34,8 @@ async def collect_hosts_file(
     """
     results = []
     try:
-        private_key = asyncssh.import_private_key(private_key_pem)
-        async with ssh_connect_host(host, db, client_keys=[private_key]) as conn:
-            result = await conn.run("cat /etc/hosts", check=True)
+        async with host_connection(host, db, private_key_pem, conn) as c:
+            result = await c.run("cat /etc/hosts", check=True)
             content = result.stdout
 
             for line in content.splitlines():

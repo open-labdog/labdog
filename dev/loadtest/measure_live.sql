@@ -1,4 +1,4 @@
--- Read-only. plans/scaling/01-measure.md, plus :from/:to bounds for the harness.
+-- Read-only measurement queries, bounded by :from/:to (the harness window).
 \pset footer off
 \echo == drift per module
 SELECT module_type, count(*) checks, round(avg(duration_ms)) avg_ms,

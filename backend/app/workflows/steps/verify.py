@@ -178,42 +178,8 @@ async def run_verification(
         load and disk readings do not affect it — they are context for the
         AI verdict and for the operator, not thresholds.
     """
-    service_results: list[dict[str, Any]] = []
-    package_results: list[dict[str, Any]] = []
-    # None means "not collected", which is not the same as zero. These
-    # used to default to 0.0 and 0 with their read errors swallowed below,
-    # so a host whose load and disk checks had both failed was described
-    # to the AI verifier as load 0.00 and disk 0% — the healthiest
-    # possible host. The journal read already got this right, substituting
-    # an explicit error string; these two now match it.
-    load_avg: float | None = None
-    disk_pct: int | None = None
-    # ``None`` means the journal could not be read, which is not the same
-    # as a host with nothing to report — see :func:`_read_journal_errors`.
-    journal_errors: str | None = ""
-    journal_error_reason: str = ""
-    unmanaged_services: list[str] = []
-    ai_result: dict[str, Any] | None = None
-
-    # ------------------------------------------------------------------
-    # Filter to only the rules that require verification
-    # ------------------------------------------------------------------
-    services_to_check = [
-        s for s in effective_services if getattr(s, "desired_state", None) == "running"
-    ]
-    # EffectiveServiceResponse uses .state, not .desired_state — handle both
-    if not services_to_check:
-        services_to_check = [
-            s for s in effective_services if getattr(s, "state", None) == "running"
-        ]
-
-    packages_to_check = [
-        p for p in effective_packages if getattr(p, "desired_state", None) in ("present", "latest")
-    ]
-    if not packages_to_check:
-        packages_to_check = [
-            p for p in effective_packages if getattr(p, "state", None) in ("present", "latest")
-        ]
+    services_to_check = _services_needing_check(effective_services)
+    packages_to_check = _packages_needing_check(effective_packages)
 
     # ------------------------------------------------------------------
     # Open a single SSH connection for all checks
@@ -229,130 +195,21 @@ async def run_verification(
     except Exception as exc:
         logger.error("verify: SSH connection failed to %s: %s", host.ip_address, exc)
         # Cannot run any checks — return a failed result immediately
-        return {
-            "passed": False,
-            "hard_checks": {
-                "services": [],
-                "packages": [],
-                # Nothing was collected, so nothing is reported. Zeros here
-                # would describe an unreachable host as an idle healthy one.
-                "load": None,
-                "disk_pct": None,
-                # None, not the error text: a reason rendered where the
-                # entries belong reads like something the journal said.
-                "journal_errors": None,
-                "journal_error_reason": f"the SSH connection failed: {exc}",
-            },
-            "ai_result": None,
-        }
+        return _unreachable_result(exc)
 
     try:
-        # ------------------------------------------------------------------
-        # Service checks
-        # ------------------------------------------------------------------
-        for svc in services_to_check:
-            svc_name = svc.service_name
-            try:
-                result = await conn.run(f"systemctl is-active {svc_name}", check=False)
-                actual = result.stdout.strip()
-            except Exception as exc:
-                logger.warning("verify: service check failed for %s: %s", svc_name, exc)
-                actual = f"error: {exc}"
-
-            ok = actual == "active"
-            service_results.append(
-                {"name": svc_name, "expected": "active", "actual": actual, "ok": ok}
-            )
-            if not ok:
-                logger.warning(
-                    "verify: service %s is %s (expected active) on %s",
-                    svc_name,
-                    actual,
-                    host.ip_address,
-                )
-
-        # ------------------------------------------------------------------
-        # Package checks (Debian first, RHEL fallback)
-        # ------------------------------------------------------------------
-        for pkg in packages_to_check:
-            pkg_name = pkg.package_name
-            installed = False
-            try:
-                # Debian/Ubuntu: dpkg-query
-                deb_result = await conn.run(
-                    f"dpkg-query -W -f='${{Status}}' {pkg_name} 2>/dev/null",
-                    check=False,
-                )
-                if deb_result.stdout.strip() == "install ok installed":
-                    installed = True
-                else:
-                    # RHEL/CentOS: rpm -q (exit 0 = installed)
-                    rpm_result = await conn.run(f"rpm -q {pkg_name}", check=False)
-                    installed = rpm_result.exit_status == 0
-            except Exception as exc:
-                logger.warning("verify: package check failed for %s: %s", pkg_name, exc)
-
-            expected_state = getattr(pkg, "desired_state", None) or getattr(pkg, "state", "present")
-            ok = installed
-            package_results.append(
-                {"name": pkg_name, "expected": expected_state, "installed": installed, "ok": ok}
-            )
-            if not ok:
-                logger.warning(
-                    "verify: package %s not installed on %s",
-                    pkg_name,
-                    host.ip_address,
-                )
-
-        # ------------------------------------------------------------------
-        # System health: load average
-        # ------------------------------------------------------------------
-        try:
-            load_result = await conn.run("cat /proc/loadavg", check=False)
-            raw_load = load_result.stdout.strip()
-            load_avg = float(raw_load.split()[0])
-            if load_avg > _LOAD_WARN_THRESHOLD:
-                logger.warning("verify: high load average %.2f on %s", load_avg, host.ip_address)
-        except Exception as exc:
-            # load_avg stays None, and is reported as unavailable rather
-            # than as a number nobody measured.
-            logger.warning("verify: load average check failed on %s: %s", host.ip_address, exc)
-
-        # ------------------------------------------------------------------
-        # System health: disk usage
-        # ------------------------------------------------------------------
-        try:
-            disk_result = await conn.run("df --output=pcent / | tail -1", check=False)
-            disk_pct = int(disk_result.stdout.strip().rstrip("%"))
-            if disk_pct > _DISK_WARN_THRESHOLD:
-                logger.warning("verify: disk usage %d%% on %s", disk_pct, host.ip_address)
-        except Exception as exc:
-            # disk_pct stays None. See the load average note above.
-            logger.warning("verify: disk check failed on %s: %s", host.ip_address, exc)
-
-        # ------------------------------------------------------------------
-        # Journal errors (last 10 minutes, error priority and above)
-        # ------------------------------------------------------------------
+        service_results = await _check_services(conn, services_to_check, host.ip_address)
+        package_results = await _check_packages(conn, packages_to_check, host.ip_address)
+        load_avg = await _read_load_average(conn, host.ip_address)
+        disk_pct = await _read_disk_usage(conn, host.ip_address)
+        # Journal errors (last 10 minutes, error priority and above).
+        # ``None`` means the journal could not be read, which is not the
+        # same as a host with nothing to report — see
+        # :func:`_read_journal_errors`.
         journal_errors, journal_error_reason = await _read_journal_errors(conn, host.ip_address)
-
-        # ------------------------------------------------------------------
-        # Unmanaged service detection
-        # ------------------------------------------------------------------
-        try:
-            active_result = await conn.run(
-                "systemctl list-units --type=service --state=active --no-pager --plain --no-legend",
-                check=False,
-            )
-            managed_names = {s.service_name for s in effective_services}
-            for line in (active_result.stdout or "").splitlines():
-                parts = line.strip().split(maxsplit=4)
-                if len(parts) >= 1:
-                    unit = parts[0].removesuffix(".service")
-                    if unit not in managed_names:
-                        unmanaged_services.append(unit)
-        except Exception as exc:
-            logger.warning("verify: unmanaged service scan failed on %s: %s", host.ip_address, exc)
-
+        unmanaged_services = await _find_unmanaged_services(
+            conn, effective_services, host.ip_address
+        )
     finally:
         try:
             await conn_ctx.__aexit__(None, None, None)
@@ -389,36 +246,16 @@ async def run_verification(
     # a preview of a destructive action on a VM-mapped host already
     # reaches here — and without this it would open a billed AI session to
     # judge a host that check mode deliberately left untouched.
+    ai_result: dict[str, Any] | None = None
     should_run_ai = hard_passed and not dry_run and (verification_prompt or journal_errors)
     if should_run_ai:
-        from app.workflows.steps.ai_verify import run_ai_verification
-
-        system_state: dict[str, Any] = {
-            "host_hostname": getattr(host, "hostname", host.ip_address),
-            "host_ip": host.ip_address,
-            "hard_checks": hard_checks,
-        }
-        try:
-            ai_result = await run_ai_verification(
-                system_state,
-                verification_prompt or "",
-                fail_closed=ai_fail_closed,
-                host_id=getattr(host, "id", None),
-                action_run_id=action_run_id,
-            )
-        except Exception as exc:
-            # run_ai_verification does not raise — every failure inside it
-            # is already an inconclusive verdict decided by the policy. If
-            # something got past it anyway, the same rule applies here
-            # rather than a hardcoded pass, so a fail-closed action cannot
-            # be let through by a bug in the verifier.
-            logger.warning("verify: AI verification raised an exception: %s", exc)
-            ai_result = {
-                "passed": not ai_fail_closed,
-                "verdict": "inconclusive",
-                "output": f"AI verification errored before reaching a verdict: {exc}",
-                "session_id": None,
-            }
+        ai_result = await _run_ai_verification(
+            host,
+            hard_checks,
+            verification_prompt,
+            ai_fail_closed=ai_fail_closed,
+            action_run_id=action_run_id,
+        )
 
     overall_passed = hard_passed and (ai_result is None or ai_result.get("passed", True))
 
@@ -442,3 +279,229 @@ async def run_verification(
         "hard_checks": hard_checks,
         "ai_result": ai_result,
     }
+
+
+# ----------------------------------------------------------------------
+# Which rules need checking
+# ----------------------------------------------------------------------
+
+
+def _services_needing_check(effective_services: list[Any]) -> list[Any]:
+    """Services whose desired state is ``running``."""
+    services_to_check = [
+        s for s in effective_services if getattr(s, "desired_state", None) == "running"
+    ]
+    # EffectiveServiceResponse uses .state, not .desired_state — handle both
+    if not services_to_check:
+        services_to_check = [
+            s for s in effective_services if getattr(s, "state", None) == "running"
+        ]
+    return services_to_check
+
+
+def _packages_needing_check(effective_packages: list[Any]) -> list[Any]:
+    """Packages whose desired state is ``present`` or ``latest``."""
+    packages_to_check = [
+        p for p in effective_packages if getattr(p, "desired_state", None) in ("present", "latest")
+    ]
+    if not packages_to_check:
+        packages_to_check = [
+            p for p in effective_packages if getattr(p, "state", None) in ("present", "latest")
+        ]
+    return packages_to_check
+
+
+def _unreachable_result(exc: Exception) -> dict[str, Any]:
+    """The failed result for a host the SSH connection never reached."""
+    return {
+        "passed": False,
+        "hard_checks": {
+            "services": [],
+            "packages": [],
+            # Nothing was collected, so nothing is reported. Zeros here
+            # would describe an unreachable host as an idle healthy one.
+            "load": None,
+            "disk_pct": None,
+            # None, not the error text: a reason rendered where the
+            # entries belong reads like something the journal said.
+            "journal_errors": None,
+            "journal_error_reason": f"the SSH connection failed: {exc}",
+        },
+        "ai_result": None,
+    }
+
+
+# ----------------------------------------------------------------------
+# Hard checks, each over the one shared connection
+# ----------------------------------------------------------------------
+
+
+async def _check_services(conn: Any, services: list[Any], host_ip: str) -> list[dict[str, Any]]:
+    """``systemctl is-active`` for each service; ``ok`` when it says active."""
+    service_results: list[dict[str, Any]] = []
+    for svc in services:
+        svc_name = svc.service_name
+        try:
+            result = await conn.run(f"systemctl is-active {svc_name}", check=False)
+            actual = result.stdout.strip()
+        except Exception as exc:
+            logger.warning("verify: service check failed for %s: %s", svc_name, exc)
+            actual = f"error: {exc}"
+
+        ok = actual == "active"
+        service_results.append({"name": svc_name, "expected": "active", "actual": actual, "ok": ok})
+        if not ok:
+            logger.warning(
+                "verify: service %s is %s (expected active) on %s",
+                svc_name,
+                actual,
+                host_ip,
+            )
+    return service_results
+
+
+async def _check_packages(conn: Any, packages: list[Any], host_ip: str) -> list[dict[str, Any]]:
+    """Whether each package is installed; ``ok`` when it is."""
+    package_results: list[dict[str, Any]] = []
+    for pkg in packages:
+        pkg_name = pkg.package_name
+        installed = await _package_installed(conn, pkg_name)
+
+        expected_state = getattr(pkg, "desired_state", None) or getattr(pkg, "state", "present")
+        ok = installed
+        package_results.append(
+            {"name": pkg_name, "expected": expected_state, "installed": installed, "ok": ok}
+        )
+        if not ok:
+            logger.warning(
+                "verify: package %s not installed on %s",
+                pkg_name,
+                host_ip,
+            )
+    return package_results
+
+
+async def _package_installed(conn: Any, pkg_name: str) -> bool:
+    """Debian first, RHEL fallback. False when neither says installed, or
+    the check itself failed."""
+    installed = False
+    try:
+        # Debian/Ubuntu: dpkg-query
+        deb_result = await conn.run(
+            f"dpkg-query -W -f='${{Status}}' {pkg_name} 2>/dev/null",
+            check=False,
+        )
+        if deb_result.stdout.strip() == "install ok installed":
+            installed = True
+        else:
+            # RHEL/CentOS: rpm -q (exit 0 = installed)
+            rpm_result = await conn.run(f"rpm -q {pkg_name}", check=False)
+            installed = rpm_result.exit_status == 0
+    except Exception as exc:
+        logger.warning("verify: package check failed for %s: %s", pkg_name, exc)
+    return installed
+
+
+async def _read_load_average(conn: Any, host_ip: str) -> float | None:
+    """The 1-minute load average, or None when it could not be read.
+
+    None means "not collected", which is not the same as zero. This used
+    to default to 0.0 with its read error swallowed, so a host whose load
+    and disk checks had both failed was described to the AI verifier as
+    load 0.00 and disk 0% — the healthiest possible host. The journal
+    read already got this right, substituting an explicit error string;
+    the load and disk readings now match it.
+    """
+    load_avg: float | None = None
+    try:
+        load_result = await conn.run("cat /proc/loadavg", check=False)
+        raw_load = load_result.stdout.strip()
+        load_avg = float(raw_load.split()[0])
+        if load_avg > _LOAD_WARN_THRESHOLD:
+            logger.warning("verify: high load average %.2f on %s", load_avg, host_ip)
+    except Exception as exc:
+        # load_avg stays None, and is reported as unavailable rather
+        # than as a number nobody measured.
+        logger.warning("verify: load average check failed on %s: %s", host_ip, exc)
+    return load_avg
+
+
+async def _read_disk_usage(conn: Any, host_ip: str) -> int | None:
+    """Percent used on ``/``, or None when it could not be read (see
+    :func:`_read_load_average` on why not zero)."""
+    disk_pct: int | None = None
+    try:
+        disk_result = await conn.run("df --output=pcent / | tail -1", check=False)
+        disk_pct = int(disk_result.stdout.strip().rstrip("%"))
+        if disk_pct > _DISK_WARN_THRESHOLD:
+            logger.warning("verify: disk usage %d%% on %s", disk_pct, host_ip)
+    except Exception as exc:
+        # disk_pct stays None. See the load average note above.
+        logger.warning("verify: disk check failed on %s: %s", host_ip, exc)
+    return disk_pct
+
+
+async def _find_unmanaged_services(
+    conn: Any, effective_services: list[Any], host_ip: str
+) -> list[str]:
+    """Active services no effective rule mentions."""
+    unmanaged_services: list[str] = []
+    try:
+        active_result = await conn.run(
+            "systemctl list-units --type=service --state=active --no-pager --plain --no-legend",
+            check=False,
+        )
+        managed_names = {s.service_name for s in effective_services}
+        for line in (active_result.stdout or "").splitlines():
+            parts = line.strip().split(maxsplit=4)
+            if len(parts) >= 1:
+                unit = parts[0].removesuffix(".service")
+                if unit not in managed_names:
+                    unmanaged_services.append(unit)
+    except Exception as exc:
+        logger.warning("verify: unmanaged service scan failed on %s: %s", host_ip, exc)
+    return unmanaged_services
+
+
+# ----------------------------------------------------------------------
+# AI verification
+# ----------------------------------------------------------------------
+
+
+async def _run_ai_verification(
+    host: Any,
+    hard_checks: dict[str, Any],
+    verification_prompt: str | None,
+    *,
+    ai_fail_closed: bool,
+    action_run_id: int | None,
+) -> dict[str, Any]:
+    """Hand everything collected to the AI verifier and return its result."""
+    from app.workflows.steps.ai_verify import run_ai_verification
+
+    system_state: dict[str, Any] = {
+        "host_hostname": getattr(host, "hostname", host.ip_address),
+        "host_ip": host.ip_address,
+        "hard_checks": hard_checks,
+    }
+    try:
+        return await run_ai_verification(
+            system_state,
+            verification_prompt or "",
+            fail_closed=ai_fail_closed,
+            host_id=getattr(host, "id", None),
+            action_run_id=action_run_id,
+        )
+    except Exception as exc:
+        # run_ai_verification does not raise — every failure inside it
+        # is already an inconclusive verdict decided by the policy. If
+        # something got past it anyway, the same rule applies here
+        # rather than a hardcoded pass, so a fail-closed action cannot
+        # be let through by a bug in the verifier.
+        logger.warning("verify: AI verification raised an exception: %s", exc)
+        return {
+            "passed": not ai_fail_closed,
+            "verdict": "inconclusive",
+            "output": f"AI verification errored before reaching a verdict: {exc}",
+            "session_id": None,
+        }

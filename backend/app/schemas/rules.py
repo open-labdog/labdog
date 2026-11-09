@@ -11,6 +11,46 @@ def _validate_side(cidr: str | None, host_id: int | None, side: str) -> None:
         raise ValueError(f"{side} cannot set both CIDR and host reference")
 
 
+# Each field check below is written once and used by both RuleCreate and
+# RuleUpdate. None (a field an update leaves out) passes every check.
+
+
+def _check_action(v):
+    if v is not None and v not in ("allow", "deny", "reject"):
+        raise ValueError("action must be allow, deny, or reject")
+    return v
+
+
+def _check_protocol(v):
+    if v is not None and v not in ("tcp", "udp", "icmp", "any"):
+        raise ValueError("protocol must be tcp, udp, icmp, or any")
+    return v
+
+
+def _check_direction(v):
+    if v is not None and v not in ("input", "output"):
+        raise ValueError("direction must be input or output")
+    return v
+
+
+def _check_cidr(v):
+    if v is None:
+        return v
+    try:
+        ipaddress.ip_network(v, strict=False)
+    except ValueError as e:
+        raise ValueError(f"Invalid CIDR: {e}") from e
+    return v
+
+
+def _check_port(v):
+    if v is None:
+        return v
+    if not (1 <= v <= 65535):
+        raise ValueError(f"Port {v} out of range (1-65535)")
+    return v
+
+
 class RuleCreate(BaseModel):
     action: str  # allow | deny | reject
     protocol: str  # tcp | udp | icmp | any
@@ -30,46 +70,11 @@ class RuleCreate(BaseModel):
         _validate_side(self.destination_cidr, self.destination_host_id, "destination")
         return self
 
-    @field_validator("action")
-    @classmethod
-    def validate_action(cls, v):
-        if v not in ("allow", "deny", "reject"):
-            raise ValueError("action must be allow, deny, or reject")
-        return v
-
-    @field_validator("protocol")
-    @classmethod
-    def validate_protocol(cls, v):
-        if v not in ("tcp", "udp", "icmp", "any"):
-            raise ValueError("protocol must be tcp, udp, icmp, or any")
-        return v
-
-    @field_validator("direction")
-    @classmethod
-    def validate_direction(cls, v):
-        if v not in ("input", "output"):
-            raise ValueError("direction must be input or output")
-        return v
-
-    @field_validator("source_cidr", "destination_cidr", mode="before")
-    @classmethod
-    def validate_cidr(cls, v):
-        if v is None:
-            return v
-        try:
-            ipaddress.ip_network(v, strict=False)
-        except ValueError as e:
-            raise ValueError(f"Invalid CIDR: {e}") from e
-        return v
-
-    @field_validator("port_start", "port_end", mode="before")
-    @classmethod
-    def validate_port(cls, v):
-        if v is None:
-            return v
-        if not (1 <= v <= 65535):
-            raise ValueError(f"Port {v} out of range (1-65535)")
-        return v
+    validate_action = field_validator("action")(_check_action)
+    validate_protocol = field_validator("protocol")(_check_protocol)
+    validate_direction = field_validator("direction")(_check_direction)
+    validate_cidr = field_validator("source_cidr", "destination_cidr", mode="before")(_check_cidr)
+    validate_port = field_validator("port_start", "port_end", mode="before")(_check_port)
 
 
 class RuleUpdate(BaseModel):
@@ -85,46 +90,11 @@ class RuleUpdate(BaseModel):
     comment: str | None = None
     priority: int | None = Field(default=None, ge=0, le=10000)
 
-    @field_validator("action")
-    @classmethod
-    def validate_action(cls, v):
-        if v is not None and v not in ("allow", "deny", "reject"):
-            raise ValueError("action must be allow, deny, or reject")
-        return v
-
-    @field_validator("protocol")
-    @classmethod
-    def validate_protocol(cls, v):
-        if v is not None and v not in ("tcp", "udp", "icmp", "any"):
-            raise ValueError("protocol must be tcp, udp, icmp, or any")
-        return v
-
-    @field_validator("direction")
-    @classmethod
-    def validate_direction(cls, v):
-        if v is not None and v not in ("input", "output"):
-            raise ValueError("direction must be input or output")
-        return v
-
-    @field_validator("source_cidr", "destination_cidr", mode="before")
-    @classmethod
-    def validate_cidr(cls, v):
-        if v is None:
-            return v
-        try:
-            ipaddress.ip_network(v, strict=False)
-        except ValueError as e:
-            raise ValueError(f"Invalid CIDR: {e}") from e
-        return v
-
-    @field_validator("port_start", "port_end", mode="before")
-    @classmethod
-    def validate_port(cls, v):
-        if v is None:
-            return v
-        if not (1 <= v <= 65535):
-            raise ValueError(f"Port {v} out of range (1-65535)")
-        return v
+    validate_action = field_validator("action")(_check_action)
+    validate_protocol = field_validator("protocol")(_check_protocol)
+    validate_direction = field_validator("direction")(_check_direction)
+    validate_cidr = field_validator("source_cidr", "destination_cidr", mode="before")(_check_cidr)
+    validate_port = field_validator("port_start", "port_end", mode="before")(_check_port)
 
 
 class RuleResponse(BaseModel):

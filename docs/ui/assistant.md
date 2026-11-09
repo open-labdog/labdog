@@ -206,11 +206,21 @@ the read-only level.
 What counts as read-only is a list of commands, and of the subcommands and
 options that only read: `docker ps` and `docker logs` but not `docker rm`,
 `systemctl status` but not `systemctl restart`, `curl` for a GET or HEAD
-request but not one that posts data or saves a file. The list ships with
+request to the host itself but not one that posts data, saves a file or
+goes to another machine. The list ships with
 LabDog in `backend/app/ai/command_policy.yaml`, and the file explains its
 own format. When a session is refused a command, the refusal names the
 read-only forms of that command, so the assistant can usually find one that
 answers the same question.
+
+Two kinds of read still need approval, because together they would let a
+model that has been misled by something it read (a log line, a file) send
+a secret off the host without anyone noticing: reading a credential file
+(`/etc/shadow`, private keys, anything in `~/.ssh` but public keys and
+`known_hosts`, a Kubernetes Secret), and naming another machine — `curl`
+to anything but `localhost`, or a DNS lookup or `ping` of a dotted name.
+Lookups of an IP address or of a single-label name such as `nas` stay
+read-only. This is a hardening, not a guarantee that nothing can leave.
 
 **A denylist applies at every level, including full auto.** Commands that
 destroy data or take a host off the network — `rm -rf /`, `mkfs`, writing

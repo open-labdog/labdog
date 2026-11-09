@@ -29,6 +29,17 @@ async function gapAbove(win: Locator) {
 
 const LOG = Array.from({ length: 80 }, (_, i) => `ok: [web1] => line ${i + 1}`).join("\n")
 
+/** Wait for the combined log. A run of more than ten hosts loads it only
+ *  when asked (BUG-161), so for one of those press the button first. */
+async function showCombinedLog(page: Page, hosts: number) {
+  const log = page.getByTestId("run-log")
+  if (hosts > 10) {
+    await expect(log).toContainText("Pick a host above")
+    await page.getByTestId("load-combined-log").click()
+  }
+  await expect(log).toContainText("line 80")
+}
+
 test.describe("Run log window", () => {
   test("text size, maximize, minimize and drag", async ({ page }) => {
     const url = await mockRun(page, { log: LOG })
@@ -90,7 +101,7 @@ test.describe("Run page with many hosts", () => {
   test("the log grows upwards over the host table, and no further", async ({ page }) => {
     await page.goto(await mockRun(page, { log: LOG, hosts: 17 }))
     const win = page.getByTestId("log-window")
-    await expect(page.getByTestId("run-log")).toContainText("line 80")
+    await showCombinedLog(page, 17)
     const start = (await win.boundingBox())!
     await drag(page, win.getByRole("separator"), -150)
     const grown = (await win.boundingBox())!
@@ -108,7 +119,7 @@ test.describe("Run page with many hosts", () => {
     test(`the log opens just under a table of ${hosts} hosts`, async ({ page }) => {
       await page.goto(await mockRun(page, { log: LOG, hosts }))
       const win = page.getByTestId("log-window")
-      await expect(page.getByTestId("run-log")).toContainText("line 80")
+      await showCombinedLog(page, hosts)
       // gap-3 between the table and the log, and every row of the page shown.
       expect(await gapAbove(win)).toBe(12)
       const last = page.getByText(`host-${String(Math.min(hosts, 10)).padStart(2, "0")}`, { exact: true })

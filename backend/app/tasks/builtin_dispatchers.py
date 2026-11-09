@@ -23,6 +23,7 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
+from app.db import with_task_engine
 from app.tasks import celery_app
 
 logger = logging.getLogger(__name__)
@@ -259,7 +260,7 @@ async def _load_action_run_parameters(action_run_id: int) -> dict:
 )
 def run_builtin_collect_state(action_run_id: int, host_run_id: int) -> dict:
     """Refresh cached host facts for one host."""
-    asyncio.run(_collect_state_async(action_run_id, host_run_id))
+    asyncio.run(with_task_engine(_collect_state_async(action_run_id, host_run_id)))
     return {"action_run_id": action_run_id, "host_run_id": host_run_id}
 
 
@@ -377,7 +378,7 @@ async def _collect_state_async(action_run_id: int, host_run_id: int) -> None:
 )
 def run_builtin_drift_check(action_run_id: int, host_run_id: int) -> dict:
     """Drift-check one host using the same logic as the periodic sweep."""
-    asyncio.run(_drift_check_async(action_run_id, host_run_id))
+    asyncio.run(with_task_engine(_drift_check_async(action_run_id, host_run_id)))
     return {"action_run_id": action_run_id, "host_run_id": host_run_id}
 
 
@@ -440,7 +441,7 @@ def run_builtin_sync(action_run_id: int, host_run_id: int) -> dict:
     SyncJob's terminal status maps to our ActionHostRun status:
     ``success → succeeded``, anything else → ``failed``.
     """
-    asyncio.run(_sync_async(action_run_id, host_run_id))
+    asyncio.run(with_task_engine(_sync_async(action_run_id, host_run_id)))
     return {"action_run_id": action_run_id, "host_run_id": host_run_id}
 
 
@@ -534,6 +535,7 @@ async def close_origin_host_run(job_id: int, payload: dict | None) -> None:
 
 async def _sync_async(action_run_id: int, host_run_id: int) -> None:
     from sqlalchemy import select
+    from sqlalchemy.exc import IntegrityError
 
     from app.db import task_session
     from app.models.sync_job import JobStatus, SyncJob
@@ -561,14 +563,28 @@ async def _sync_async(action_run_id: int, host_run_id: int) -> None:
         # pointer back to this run's per-host row: if the sync defers, the
         # queue re-dispatches the job later and whoever runs it then has to
         # close the row this task deliberately leaves open (BUG-81).
+        #
+        # BUG-120: it records what it will do. Without ``module_type`` the
+        # column took its server default ``firewall``, and without
+        # ``module_filter`` a deferred job was re-dispatched from the row as
+        # a firewall-only sync, and the insert collided with an operator's
+        # pending firewall sync on ``uq_sync_job_active``.
         async with task_session() as db:
             job = SyncJob(
                 host_id=host_id,
                 status=JobStatus.pending,
+                module_type="bulk",
+                module_filter=module_filter,
                 origin_action_host_run_id=host_run_id,
             )
             db.add(job)
-            await db.flush()
+            try:
+                await db.flush()
+            except IntegrityError:
+                raise RuntimeError(
+                    "a multi-module sync is already queued or running for this host; "
+                    "it applies the current configuration when it runs"
+                ) from None
             job_id = job.id
             await db.commit()
 

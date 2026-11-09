@@ -33,9 +33,211 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-171`, `SEC-38`,
+ID counter as of last housekeeping pass: `BUG-176`, `SEC-51`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
-when filing a new entry.
+when filing a new entry. (`BUG-127` to `BUG-133` are taken on the
+PR #270 branch, not yet on `dev`. `BUG-168` to `BUG-171` were filed
+on the PR #270 branch and are fixed on the PR #279 branch.)
+
+---
+
+## Open — 2026-11-09 found during the Phase 2 refactor
+
+Filed 2026-11-09 by the Phase 2 readability pass (PR #276), which moved
+code without changing what it does. These are bugs that pass ran into in
+the code it moved, and kept as they are. Each was checked against
+`d63308b` (the PR #275 head that PR #276 starts from), so none comes from
+the refactor. *Reproduced* entries were run through the API in the test
+suite, or in a browser for the frontend one. The rest were traced by
+reading. Each carries a fix direction for a fix thread. None is fixed
+here.
+
+### Medium
+
+- [ ] **BUG-147** `backend/app/api/rules.py` — firewall rule changes
+      leave no audit row
+
+      Symptom: creating, editing, deleting or reordering a firewall rule,
+      on a group or a host, writes nothing to the audit log. Every other
+      configuration module (packages, repositories, services, cron jobs,
+      hosts entries, CA certificates, Linux users and groups) audits its
+      create, update and delete through `RuleAudit` in
+      `app/api/_scoped_rules.py`. `rules.py` has no `log_action` call at
+      all.
+
+      Fix direction: give `rules.py` a `RuleAudit("firewall_rule", ...)`
+      and end its endpoints with `commit_created` / `commit_updated` /
+      `delete_and_commit`, and write one row for a reorder.
+
+      Severity Medium: every account has the same rights, so the audit
+      log is the only record of who opened a port, and firewall rules are
+      where that record matters most.
+
+### Low
+
+- [ ] **BUG-143** `backend/app/api/packages.py:368` — renaming a package
+      repository to a name the group already has returns 500, not 409
+
+      Symptom: `PUT /api/groups/{id}/package-repos/{repo_id}` with the
+      `name` of another repository in the group fails with
+      `MissingGreenlet`. *Reproduced.*
+
+      Root cause: `flush_or_409` rolls the session back and then builds
+      the detail, and this endpoint's detail reads `repo.name`. The
+      rollback expired the row, so reading it starts a lazy load outside
+      the async context.
+
+      Fix direction: build the detail from `body.name`. The same
+      after-rollback read sits in the package rule and cron job updates,
+      but neither can reach it: `PackageRuleUpdate` has no
+      `package_name`, and `cron_jobs` has no unique constraint
+      (BUG-146).
+
+- [ ] **BUG-144** `backend/app/tasks/drift_sweep.py:305` — a drift check
+      that times out reports "Host unreachable: " with nothing after it
+
+      Symptom: `record_unreachable` formats `{error or 'connection timed
+      out'}`. An exception object is always truthy, so the fallback never
+      shows, and `str(TimeoutError())` is empty. The cron, hosts,
+      package, resolver, service and user drift checks all go through it.
+
+      Fix direction: `str(error) or 'connection timed out'`, as
+      `app/api/host_state.py:312` and `app/tasks/action_host.py:151`
+      already do.
+
+- [ ] **BUG-145** `backend/app/schemas/rules.py:46` — a firewall port sent
+      as a JSON string, list or object returns 500, not 422
+
+      Symptom: `port_start` or `port_end` given as `"22"`, `["22"]` or
+      `{}` raises `TypeError: '<=' not supported` from `_check_port`.
+      Pydantic turns only `ValueError` and `AssertionError` into a
+      validation error, so the request fails with a 500. `true` is taken
+      as port 1. *Reproduced* on the group rule create.
+
+      Root cause: the check runs in `mode="before"`, on the raw input,
+      before pydantic has parsed it as an integer.
+
+      Fix direction: check the range after parsing (`mode="after"`, or
+      `Annotated[int, Field(ge=1, le=65535)]`). Decide at the same time
+      whether a string `"22"` should be accepted, as lax parsing would,
+      and whether to refuse booleans (`StrictInt`).
+
+- [ ] **BUG-146** `backend/app/cron/models.py:28` (and services, Linux
+      users, Linux groups) — a duplicate rule is accepted and then never
+      applied
+
+      Symptom: two cron jobs with the same name and user in one group,
+      two services with the same `service_name`, two Linux users with the
+      same `username`, or two Linux groups with the same `groupname` are
+      both created with 201, and both are listed. The merge keeps the
+      first (`first_wins` on that key), so the host gets one and the
+      second is silently dropped. *Reproduced* for all four at group
+      scope. The host-scoped tables have no unique constraint either.
+
+      Root cause: these tables have no unique constraint on their merge
+      key, unlike `package_rules` and `ca_cert_rules`. The
+      `IntegrityError` → 409 handling in `app/api/cron_jobs.py` can
+      never run.
+
+      Fix direction: unique constraints on `(group_id, key)` and
+      `(host_id, key)`, with a migration that first reports or merges
+      existing duplicates. That makes the cron 409 path live. The other
+      three need the same `flush_or_409`.
+
+- [ ] **BUG-148** `backend/app/api/rules.py:68` — creating a firewall rule
+      for a group that does not exist returns 500, not 404
+
+      Symptom: `POST /api/groups/999999/rules` fails with a foreign-key
+      `IntegrityError`. *Reproduced.* `check_gitops_lock` returns quietly
+      when the group is missing, and the endpoint never calls
+      `require_group`, as the other modules' group creates do. Related:
+      the six module group syncs answer a missing group with 400 "No
+      hosts in this group" (`app/api/_group_sync.py:34`), because an
+      empty member list and a missing group look the same there.
+
+      Fix direction: `require_group` before the insert, and a 404 for a
+      missing group in `group_member_ids_or_400`.
+
+- [ ] **BUG-149** `backend/app/ai/loop.py:788` — a session that hits a cap
+      partway through a turn ends without its summary
+
+      Symptom: when one tool call in a turn of several uses up a cap
+      (commands, tokens, iterations or time), `_run_turn_tools` returns
+      at once, and the turn's remaining calls get no result. The wrap-up
+      turn in `_summarize_partial` then sends a transcript with those
+      unanswered calls. Both wire formats refuse that (the comment on the
+      parked branch just above says so), so the wrap-up fails, is logged
+      at info, and the session ends "failed" with no summary. A resume
+      would replay the same transcript. Traced by reading.
+
+      Fix direction: fill the remaining calls with a "not run, the
+      session reached its limit" result before returning, as the parked
+      branch does with `SKIPPED_RESULT`.
+
+- [ ] **BUG-150** `frontend/app/(dashboard)/plans/_hooks/use-plan-computation.ts:58`
+      — the plan page starts a dry run as soon as a scope is picked
+
+      Symptom: on a fresh `/plans`, picking a group or a host computes
+      the plan at once, over every module, before the operator has chosen
+      modules or pressed Compute. The effect is meant for plans opened
+      from a URL (its comment says so), but it fires the first time the
+      scope is defined, however that happened. *Reproduced* in a browser
+      against the static export, on the page before and after its split.
+
+      Fix direction: arm the effect only when the URL defined the scope
+      on first render.
+
+- [ ] **BUG-151** `backend/app/main.py:687,704` — the middleware comments
+      describe the opposite of the order the middleware runs in
+
+      Symptom: the comments say the HTTPS redirect "must be outermost"
+      and that CSRF "runs after CORS". Starlette runs the middleware
+      added last first. The real order, outermost first, is login rate
+      limit, API rate limit, CSRF, CORS, security headers, HTTPS
+      redirect. So with `tls.force_https` on, a plain-HTTP request goes
+      through both rate limiters and the CSRF check before it is
+      redirected, and CSRF runs before CORS.
+
+      Fix direction: decide which order is wanted, then make the code or
+      the comments match. Moving the redirect outermost changes
+      behaviour, which is why the refactor left both alone.
+
+---
+
+## Open — 2026-11-08 security and bug audit
+
+Filed 2026-11-08 from a whitebox review of the backend at `9e0f8b0`
+(`dev`), aimed at injection, authentication, data handling, logic bugs,
+edge cases and races. BUGS.md on every open branch was read first, so
+nothing here repeats an entry on `dev` or on the PR #270 branch
+(`BUG-127` to `BUG-133`). Entries marked *Reproduced* were run against
+the real code (ansible-core 2.21.1 from `uv.lock` where Ansible is
+involved); the rest were traced by reading. Each carries a fix direction
+for the fix thread; none is fixed here.
+
+### Security — Low
+
+- [ ] **SEC-50** `backend/app/crypto/encryption.py:21,35` — stored secrets
+      are encrypted without binding them to their row
+
+      Symptom: `context_id` (the AES-GCM associated data) is never passed
+      by any caller, so a ciphertext copied from one row to another
+      decrypts fine; someone with database write access can swap which SSH
+      key a host or repo uses without knowing the master key.
+
+      Fix direction: pass `"<table>:<id>:<column>"` as `context_id` on
+      encrypt and decrypt, with a migration that re-encrypts existing rows
+      (try with context, fall back to none, rewrite).
+
+      Severity Low: needs database write access.
+
+      Left open by the 2026-11-08 fix pass (PR #275): the binding needs
+      the row's id at all 67 encrypt/decrypt call sites, several of which
+      pass ciphertext around without its row (`clone_repo`,
+      `ssh_connect_host`), plus a re-encrypting migration and a change to
+      the key-rotation script. That is a refactor of its own, and someone
+      with database write access can already make themselves superuser,
+      so it buys little until the database is otherwise trusted less.
 
 ---
 
@@ -73,306 +275,3 @@ content policy.
       follow redirects by default — and a documented homelab decision. Git
       repo URLs *do* block these (`app/schemas/git_repos.py:18-25`). Filed
       so it is not re-discovered as new, not because it needs changing.
-
----
-
-## Open — 2026-10-29 valheim
-
-Filed 2026-10-29 while tracing why a hosts sync rewrote `/etc/hosts` on
-the valheim game-server VM (BUG-115 to BUG-117 and BUG-119, since fixed),
-against lin-manager's `sync_jobs` and audit rows. BUG-120 and BUG-121
-turned up while fixing those, by reading the code.
-
-### Correctness — Medium
-
-- [ ] **BUG-118** `backend/app/hosts_mgmt/merge.py:95`,
-      `backend/app/hosts_mgmt/diff.py:34-35` — hosts entries that share an
-      address collapse into one line, and the lower-priority names are
-      dropped without a word
-
-      Symptom: lin-manager's `add-hosts` group maps both
-      `loki.lan.tyresson.se` (priority 100) and `mimir.lan.tyresson.se`
-      (priority 101) to 10.10.200.3. nextcloud's effective view and its
-      file preview carry only the mimir line, and nothing in the UI says
-      why. Its `/etc/hosts` still has both: the file was last written
-      2026-08-21, five minutes after LabDog's sync, apparently by hand. The
-      next hosts sync there drops loki.
-
-      Root cause: the merge is keyed on the resolved address (`first_wins`
-      with the IP as key), so per address only the highest-priority entry
-      survives and its names replace the others'. An `/etc/hosts` line may
-      carry any number of names, and two lines for one address are valid
-      too. The diff and the collector use the same key, so a host file with
-      two lines for one address is also read as one.
-
-      Workaround: put every name for an address in one entry, as hostname
-      plus aliases.
-
-      Severity Medium: a configured name silently does not resolve.
-
-- [ ] **BUG-120** `backend/app/tasks/builtin_dispatchers.py:565-569` — a
-      `_builtin.sync` row records neither its module type nor its modules
-
-      Symptom (by reading): `_sync_async` creates its `SyncJob` with no
-      `module_type`, so the column takes its server default `firewall`, and
-      no `module_filter`. The modules are passed to the inner run only. If
-      the host is busy the job defers, and the queue later re-dispatches it
-      from the row: `module_filter_for` reads `firewall`, so a scheduled
-      sync of every module applies the firewall alone and reports success.
-      The same default makes the insert collide with an operator's pending
-      firewall sync on `uq_sync_job_active`, and the run fails with a
-      duplicate-key error.
-
-      Severity Medium: a scheduled sync silently does less than it says.
-
-### Correctness — Low
-
-- [ ] **BUG-121** `backend/app/ca_certs/actions.py:72-78` — a CA
-      certificate deploy is dispatched before its row is committed
-
-      Symptom (by reading): `enqueue_ca_cert_action_for_host` flushes the
-      `SyncJob` and calls `run_ca_cert_action.delay` at once, leaving the
-      commit to its five callers — the BUG-37 pattern. A worker that picks
-      the task up first cannot see the row. It used to raise and leave the
-      row `pending` for good; since the deploy takes its turn in the host
-      queue (BUG-119) it returns "deferred", and the row waits for the next
-      operation on the host to release it.
-
-      Severity Low: a deploy that should start at once can wait; it is no
-      longer lost.
-
-## Open — 2026-11-08 k8s-upgrade
-
-Filed 2026-11-08 from the first `k8s-upgrade` runs on lin-manager
-(LabDog 1.1.0, pack action 1.3).
-
-### Correctness — Low
-
-- [ ] **BUG-133** `frontend/components/sync-tray.tsx:132-141` — the
-      activity card keeps a finished run's hosts `running`
-
-      Symptom: after `k8s-upgrade` run 396 finished (run and all five host
-      runs `succeeded` at 2026-11-08 20:27:26 UTC), the activity card's
-      header said "1 finished" and its bar showed 5/5 hosts done, but every
-      host row under it still said `running`. The run page showed them all
-      `succeeded`.
-
-      Root cause: `RunHosts` polls `/api/actions/runs/{id}` for the host
-      rows every 4 s only while `runActive(run)`, and `run` comes from the
-      separate list query that drives the header. When the list sees the
-      run finish, `refetchInterval` drops to `false` with no final fetch,
-      so the rows keep whatever the last poll saw. A group-dispatch run
-      always hits this: its host runs finish together, within a few
-      hundredths of a second of the run itself, so the last poll before
-      the switch sees them all running. Per-host runs usually finish
-      hosts earlier, which hides it.
-
-      Fix direction: refetch the run once when `active` turns false (or
-      invalidate the `["action-run", id, "tray"]` query when the list
-      reports the run finished).
-
-      Severity Low: display only; the run page and the database are right.
-
-### Correctness — Medium
-
-- [ ] **BUG-168** `backend/app/tasks/action_group.py:1287-1307` — the
-      pre-run snapshot of a rolled-back host is never deleted
-
-      Symptom: `k8s-upgrade` runs 397, 406 and 411 each failed on k8s-0
-      (VM 208), and LabDog rolled it back. All three left their pre-run
-      snapshot (`labdog-397-…`, `labdog-406-…`, `labdog-411-…`) on the VM.
-      The other hosts' snapshots were removed. Each host run's output has
-      `[rollback] success=True` followed by `[cleanup] WARN: Task failed:
-      can't lock file '/var/lock/qemu-server/lock-208.conf' - got timeout`.
-
-      Root cause: `rollback_to_snapshot` (`workflows/steps/rollback.py:65-112`)
-      waits for the rollback task, the VM start and SSH. The rollback kills
-      the running QEMU process, though, and Proxmox's `qmeventd` then runs
-      its own cleanup for the VM: it takes the VM's config lock as soon as
-      `qmstart` releases it and holds it about 30 s, waiting for a QEMU
-      process that has already been started again ("aborting cleanup, VM
-      is still running after 30 seconds"). The `qmdelsnapshot` LabDog
-      sends about 20 s after the start waits only Proxmox's default 10 s
-      for that lock. In all three runs it failed one second before
-      `qmeventd` let go (pvebig journal, run 411: rollback 11:04:23, start
-      11:04:25-28, delete 11:04:47-57 lock timeout, qmeventd gives up
-      11:04:58). So after a rollback the delete fails every time, not
-      occasionally. The delete is tried once and the error only goes to
-      the host run's output and a worker log warning. The per-host path
-      has the same single try (`tasks/action_host.py:1130-1162`), and so
-      does `ai/remediation.py:1034`.
-
-      Fix direction: retry the delete on a lock timeout with backoff for a
-      minute or two. Proxmox exposes no qmeventd state to wait on.
-
-      Severity Medium: every failed host leaves a full VM snapshot behind,
-      silently, and nothing reaps it (BUG-169).
-
-- [ ] **BUG-169** `backend/app/workflows/snapshot_cleanup.py:207` — the
-      periodic snapshot reaper the comments promise does not exist
-
-      Symptom: the snapshots BUG-168 leaves behind stay on the VMs until
-      someone deletes them by hand. Runs 397 and 406 were found a day
-      later.
-
-      Root cause: `action_group.py:1336-1339` and `action_host.py:1145-1146`
-      say a failed host's snapshot stays "for the periodic cleanup task to
-      reap". `cleanup_orphaned_snapshots` is only called from the manual
-      endpoint `POST /api/proxmox-nodes/cleanup-snapshots`
-      (`api/proxmox_nodes.py:76-82`). No beat schedule runs it, so
-      `workflow.snapshot_max_age_hours` is only read when someone calls that
-      endpoint.
-
-      Fix direction: schedule it on beat, or drop the claim from the
-      comments and surface leftover snapshots on the run page instead.
-
-      Severity Medium: leftover snapshots pile up unbounded and hold
-      datastore space.
-
-### Correctness — Low
-
-- [ ] **BUG-170** `backend/app/tasks/ai_snapshots.py:123-136` — the AI
-      snapshot sweep retries a snapshot that is already gone forever
-
-      Symptom: AI session 42 (2026-11-07) took 7 snapshots on k8s-0/2/3/4.
-      They were deleted by hand on 2026-11-09, but every row in
-      `ai_tool_calls` still has `snapshot_pruned_at = NULL`. Once they pass
-      `ai.snapshot_retention_days` (about 2026-11-14), the daily sweep will
-      fail to delete them, leave them unmarked, and log a warning every
-      day indefinitely.
-
-      Root cause: the sweep treats every delete error as "retry next time",
-      including "snapshot does not exist", as the comment at `:125-129`
-      says on purpose.
-
-      Fix direction: mark the row pruned when Proxmox reports the snapshot
-      missing; keep retrying other errors.
-
-      Severity Low: log noise and a wasted API call per snapshot per day.
-
-- [ ] **BUG-171** `backend/app/ai/command_policy.yaml` — read-only
-      pipelines through `awk` or `paste` are classed as changes and get a
-      VM snapshot each
-
-      Symptom: AI session 42, told to investigate disk usage without making
-      changes, took snapshots before calls 304, 305 and 320
-      (`crictl images -v | … | paste …`, `du … | awk …`), which only read.
-      Calls 302 and 303 (`crictl images | wc`) took none.
-
-      Root cause (inferred): `awk` and `paste` are not in the read-only
-      policy, while `crictl images`, `du`, `sort` and `head` are, so the
-      whole pipeline is classed `mutating`. `ai/snapshots.py:127-199` then
-      snapshots before every mutating call, with no reuse within a session.
-
-      Fix direction: add `paste` and a safe `awk` form (no `system()`, no
-      output redirection) to the policy, and consider one snapshot per
-      host per session turn.
-
-      Severity Low: extra snapshots, removed after the retention period.
-
-## Open — 2026-11-08 load test (PR #270)
-
-Filed 2026-11-08 from the plan step 2 load test (300 fake Debian hosts,
-image `openlabdog/labdog:dev-5cb85d7`, results in
-`plans/scaling/results/02-baseline.md`). Each was reproduced in every
-scenario it could appear in.
-
-### Correctness — High
-
-- [ ] **BUG-128** `backend/app/user_mgmt/generator.py:84,96` — the image
-      ships without the `ansible.posix` collection, so every sync that
-      includes linux users fails
-
-      Symptom: any host sync whose plan includes the `users` module fails
-      at playbook parse with `couldn't resolve module/action
-      'ansible.posix.authorized_key'`. The generator emits that task for
-      every present user, with or without keys, so no users sync can
-      succeed. Seen on 1.1.0 (`dev-5cb85d7`); a 1.0.0 image has the same
-      gap.
-
-      Root cause: `backend/pyproject.toml` depends on `ansible-core`,
-      which carries only `ansible.builtin`; nothing installs
-      `ansible.posix` (no `requirements.yml`, no `ansible-galaxy` step in
-      the Dockerfile). Fix: install the collection in the image, or use
-      a builtin equivalent.
-
-      Severity High: user management cannot be applied at all. Masked by
-      BUG-129, so the UI shows the hosts as in sync.
-
-- [ ] **BUG-129** `backend/app/ansible_runtime/outcomes.py:79`,
-      `backend/app/tasks/host_sync_orchestrator.py:540-542` — a playbook
-      that fails to parse is reported as a successful sync
-
-      Symptom: with BUG-128's parse error, ansible-runner exits non-zero
-      before any task runs and emits no host events. Every module in the
-      plan is classed `no_tasks`, which collapses to `in_sync`; the job
-      ends `success` and the host is marked in sync although nothing was
-      applied.
-
-      Root cause: `no_tasks` ("zero events carry this module's tag")
-      cannot tell "desired state already matched" from "the play never
-      ran". The runner's return code and status are not consulted before
-      the outcomes are trusted. Fix: treat a failed runner status with
-      zero task events as `error` for every module in the plan.
-
-      Severity High: any playbook-level failure (missing collection, bad
-      template, syntax error) is silent and reported as success.
-
-### Correctness — Medium
-
-- [ ] **BUG-130** `backend/app/cron/collector.py:58` — cron drift is
-      always `out_of_sync` when the SSH user isn't root
-
-      Symptom: 300 of 300 cron drift checks were `out_of_sync` in every
-      scenario, on hosts the preceding sync had converged. On a fake
-      host, `crontab -l -u root` as root lists the `#Ansible:` entries;
-      as the `labdog` SSH user it fails with "must be privileged to use
-      -u"; with `sudo -n` it works.
-
-      Root cause: the collector runs `crontab -l -u {user}` without sudo
-      and with `check=False`, and reads the non-zero exit as an empty
-      crontab, so every managed entry looks missing. Fix: run it through
-      `sudo -n` as the firewall collector does with `sudo`, and treat a non-zero exit
-      other than "no crontab for user" as a collection error, not empty.
-
-      Severity Medium: cron drift is useless for non-root SSH users, and
-      the constant drift can trigger needless syncs and alerts.
-
-- [ ] **BUG-131** `backend/app/tasks/sync_sweeper.py:67`,
-      `backend/app/tasks/host_sync_orchestrator.py:362` — a sync job whose
-      task dies before it claims the host stays `pending` forever
-
-      Symptom: in the first raised-concurrency run, Postgres connection
-      errors killed tasks before they claimed their host. 82 of 300
-      initial sync jobs then sat `pending` for 2.5 h, with an empty queue
-      and idle workers, until the run was stopped. The UI showed them
-      waiting, and a later sync for those hosts could not start because
-      of `uq_sync_job_active`.
-
-      Root cause: `sync_sweeper` only recovers rows in `running`. The
-      next pending job for a host is dispatched only when an in-flight
-      job on that host finishes (`_dispatch_next_pending_for_host`), so
-      a pending row whose message was lost, with nothing running on its
-      host, is never picked up again. Fix: have the sweeper re-dispatch
-      (or fail) `pending` rows older than a threshold when no job is
-      running on the host.
-
-      Severity Medium: needs a task failure to trigger, but then blocks
-      the host's syncs until someone clears the row by hand.
-
-### Documentation — Low
-
-- [ ] **BUG-132** `docs/` (deployment) — the docs don't say how many
-      Postgres connections a given worker concurrency needs
-
-      Symptom: at 16 worker / 12 orchestrator slots on stock Postgres
-      (`max_connections` 100), LabDog logged 499
-      `TooManyConnectionsError` within 4 minutes (96 in
-      `run_host_sync`, the rest in beat tasks: sweepers, notifications,
-      alert handling), which also triggered BUG-131. Measured at 16/12:
-      ~90–130 connections idle, 183 at peak.
-
-      Fix: document the connections needed per slot (roughly 6) and that
-      raising concurrency needs a higher `max_connections` or a pooler.
-
-      Severity Low: a sizing gap, but the failure it causes is severe.

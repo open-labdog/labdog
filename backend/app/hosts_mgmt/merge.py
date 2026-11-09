@@ -1,3 +1,4 @@
+import logging
 import re
 
 from sqlalchemy import select
@@ -28,6 +29,12 @@ async def _build_host_ref_lookup(
 
 #: Anything that would end the /etc/hosts line a comment sits on.
 _SAFE_COMMENT = re.compile(r"[\r\n\x00]")
+
+#: Anything that would end an ``/etc/hosts`` field or line: whitespace
+#: (including line breaks), NUL, and ``#``, which starts a comment.
+_UNSAFE_FIELD = re.compile(r"[\s\x00#]")
+
+logger = logging.getLogger(__name__)
 
 
 def _resolve_entry(entry: HostsEntry, ref_lookup: dict[int, tuple[str, str]]) -> tuple[str, str]:
@@ -113,11 +120,13 @@ async def get_effective_hosts_entries(
 ) -> list[EffectiveHostsEntryResponse]:
     """Merge group-level hosts entries + host-level overrides.
 
-    Merge key: the resolved ``ip_address``. Host override replaces a group
-    entry entirely; among rows at the same level the highest priority
-    wins. The two system entries are seeded first and no group may
-    displace them; the host's own name is added on 127.0.1.1 unless an
-    entry already places it (see ``_own_name_entry``).
+    Merge key: the resolved ``(ip_address, hostname)`` line (BUG-118).
+    Host override replaces a group entry for the same line entirely; among
+    rows at the same level the highest priority wins. Entries for one
+    address with different names each keep their line. The two system
+    entries are seeded first and no group may displace them; the host's
+    own name is added on 127.0.1.1 unless an entry already places it (see
+    ``_own_name_entry``).
 
     Empty when no entry applies to the host. LabDog then does not manage
     the host's ``/etc/hosts`` at all: a sync leaves the file alone and
@@ -153,18 +162,26 @@ async def get_effective_hosts_entries(
     # the merge, and it raised here before the extraction too.
     resolved = {o.row.id: _resolve_entry(o.row, ref_lookup) for o in owned}
 
-    winners = first_wins(owned, key=lambda e: resolved[e.id][0])
+    # BUG-118: keyed on the line, (address, name), not on the address. An
+    # /etc/hosts file may hold any number of lines for one address, so two
+    # groups mapping loki and mimir to one IP both keep their line; keyed
+    # on the address only the higher-priority one survived, silently.
+    winners = first_wins(owned, key=lambda e: (resolved[e.id][0], resolved[e.id][1].lower()))
 
-    merged = dict(system)
+    merged: dict[tuple[str, str], EffectiveHostsEntryResponse] = {
+        (ip, entry.hostname.lower()): entry for ip, entry in system.items()
+    }
     for owner in winners:
         ip, hostname = resolved[owner.row.id]
         # A group may not displace a system entry, but a host override
         # may — that asymmetry is how it behaved before this extraction,
         # and someone pinning their own 127.0.0.1 line is doing it
         # deliberately at the level where deliberate is the only option.
-        if owner.source == "group" and ip in system:
-            continue
-        merged[ip] = EffectiveHostsEntryResponse(
+        if ip in system:
+            if owner.source == "group":
+                continue
+            merged.pop((ip, system[ip].hostname.lower()), None)
+        merged[(ip, hostname.lower())] = EffectiveHostsEntryResponse(
             ip_address=ip,
             hostname=hostname,
             aliases=owner.row.aliases or [],
@@ -181,14 +198,17 @@ async def get_effective_hosts_entries(
 
     own = _own_name_entry(await db.get(Host, host_id), list(merged.values()))
     if own is not None:
-        merged[own.ip_address] = own
+        merged[(own.ip_address, own.hostname.lower())] = own
 
     # System entries first, then highest priority first — `/etc/hosts` is
     # read top to bottom and the first match for a name wins, so this is
     # what settles two entries that share a hostname (BUG-57). The IP is
-    # the final tie-break, only so the file is stable when priorities are
-    # equal; it is a string compare, and never meant more than that.
-    return sorted(merged.values(), key=lambda e: (not e.is_system, -e.priority, e.ip_address))
+    # the final tie-break, then the name, only so the file is stable when
+    # priorities are equal; it is a string compare, and never meant more.
+    return sorted(
+        merged.values(),
+        key=lambda e: (not e.is_system, -e.priority, e.ip_address, e.hostname.lower()),
+    )
 
 
 def render_hosts_file(entries: list[EffectiveHostsEntryResponse]) -> str:
@@ -206,6 +226,18 @@ def render_hosts_file(entries: list[EffectiveHostsEntryResponse]) -> str:
         parts = [entry.ip_address, entry.hostname]
         if entry.aliases:
             parts.extend(entry.aliases)
+        # SEC-41: the address and every name must stay one field. A line
+        # break in any of them used to start a new /etc/hosts line (an alias
+        # ending in "\n" passed the `$`-anchored validator). The schemas now
+        # refuse such values, but GitOps imports and older rows reach here
+        # too, so drop the entry rather than write a line nobody configured.
+        if any(not part or _UNSAFE_FIELD.search(part) for part in parts):
+            logger.warning(
+                "hosts entry %r skipped: address or a name contains whitespace, "
+                "a line break or '#'",
+                entry.hostname,
+            )
+            continue
         line = " ".join(parts)
         if entry.comment:
             # Second line of defence. The schema rejects newlines in a

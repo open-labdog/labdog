@@ -65,6 +65,17 @@
 # like a command's, and an undeclared one makes the line a change: `sudo -p
 # cat rm x` runs rm, with "cat" as the password prompt.
 #
+# secrets and remote -- two gate kinds for SEC-47. `secrets: true` fires
+# on an argument naming a credential file; `remote: urls` on an operand
+# naming a host other than loopback, `remote: names` on one that is a
+# dotted DNS name. Together they keep a read-only session from reading a
+# secret in one call and carrying it out in a URL or query name in the
+# next. The trade-off: `curl https://example.com/`, `dig example.com` and
+# `ping nas.lan` now need approval (an IP address, or a single label like
+# `nas`, does not). It is a hardening, not a data-loss barrier: a
+# recursive grep with no path, or a secret under a name not listed, still
+# reads, and the bytes of an IP address can carry a little.
+#
 # environment -- the variables a command may be given (`LC_ALL=C sort`,
 # `env TZ=UTC date`). Any other assignment makes the command a change:
 # LD_PRELOAD, PATH, BASH_ENV, LESSOPEN and friends change what runs.
@@ -113,6 +124,13 @@ read_only:
   sort: any
   uniq: any
   tr: any
+  paste: any
+  # awk is a language, so it is read-only only for the programs the gates
+  # below let through: no system(), no getline, no pipes, no output
+  # redirection, no program read from a file (BUG-171).
+  awk: any
+  gawk: any
+  mawk: any
   column: any
   jq: any
   yq: any
@@ -937,6 +955,13 @@ options:
     flags: [-c, -d, -D, -i, -u, -z]
     values: [-f, -s, -w, --skip-fields, --skip-chars, --check-chars]
     optional: [--all-repeated, --group]
+  # Declared so the gates below read `-F:` and `-vfile=x` as a value,
+  # not as the letters of gated options.
+  awk: &awk_options
+    clusters: true
+    values: [-F, -v, --field-separator, --assign]
+  gawk: *awk_options
+  mawk: *awk_options
   tree:
     clusters: true
     values: [-L, -P, -I, -H, -T, --charset, --filelimit, --timefmt, --sort]
@@ -1097,6 +1122,55 @@ options:
 
 
 gates:
+  # --- credential files (SEC-47) -----------------------------------------
+  # Commands that print what they read need approval to read a password
+  # hash, a private key or a stored token. secrets: true matches by path and
+  # by name (shadow, id_rsa, *_key, *.key, a .pem outside the CA directories,
+  # anything in ~/.ssh but public keys and known_hosts), and tries a glob
+  # against examples, so `cat /etc/sha*` counts.
+  cat: &secret_read
+    - &secret_read_item
+      reason: this file holds a password hash, a private key or a token, so reading it needs approval
+      secrets: true
+  head: *secret_read
+  tail: *secret_read
+  less: *secret_read
+  more: *secret_read
+  diff: *secret_read
+  cmp: *secret_read
+  grep: *secret_read
+  egrep: *secret_read
+  fgrep: *secret_read
+  zgrep: *secret_read
+  cut: *secret_read
+  column: *secret_read
+  strings: *secret_read
+  od: *secret_read
+  hexdump: *secret_read
+  base64: *secret_read
+  getent:
+    - reason: this file holds a password hash, a private key or a token, so reading it needs approval
+      words: [shadow, gshadow]
+    - &remote_name
+      reason: looking up a name the model chose can carry data out in the name, so it needs approval
+      remote: names
+  ping: &ping
+    - reason: ping -p puts chosen bytes in every packet
+      short: p
+    - *remote_name
+  ping6: *ping
+  traceroute: &lookup
+    - *remote_name
+  tracepath: *lookup
+  mtr: *lookup
+  dig: *lookup
+  host: *lookup
+  nslookup: *lookup
+  kubectl get:
+    - reason: kubectl get prints the contents of a Secret, so reading one needs approval
+      pattern: '(?i)(?:^|[\s,/])secrets?(?:[\s,/]|$)'
+  openssl s_client: *lookup
+
   # --- files and text ----------------------------------------------------
   find:
     - reason: find can delete files, run commands, or write a file with these actions
@@ -1109,20 +1183,56 @@ gates:
     - reason: tree -o writes its output to a file, and -R writes one into every directory
       short: oR
   sort:
+    - *secret_read_item
     - reason: sort -o writes its output to a file, and --compress-program runs a program
       short: o
       long: [output, compress-program]
   uniq:
+    - *secret_read_item
     - reason: uniq writes to its second file argument
       operands: 1
   jq:
+    - *secret_read_item
     - reason: in-place editing rewrites the file
       short: i
       long: [in-place]
   yq:
+    - *secret_read_item
     - reason: yq -i rewrites the file in place, and -s writes a file per document
       short: is
       long: [inplace, in-place, split-exp]
+  paste: *secret_read
+  # The program is one argument, so the patterns read it as text. In awk
+  # (POSIX, gawk, mawk, busybox) a program reaches anything but stdout only
+  # through: system(); a pipe (`print | "cmd"`, `"cmd" | getline`, gawk's
+  # `|&` and its /inet special files); getline; `>` or `>>` after print or
+  # printf; gawk's @ forms (@load, @include, and @f() which calls any
+  # function by name, system included); a program read from a file; and
+  # assigning ARGV, which re-points the input past the secrets gate. Each
+  # pattern matches the bare word or character anywhere, so it fires on
+  # more than it must (`/a|b/`, `$3 > 1 {print}` after a print, a word in
+  # a string), never on less (BUG-171).
+  awk: &awk
+    - *secret_read_item
+    - reason: awk system() runs a command
+      pattern: '\bsystem\b'
+    - reason: an awk pipe runs a command, so any | in the program needs approval
+      pattern: '\|'
+    - reason: awk getline reads a file or a command's output the policy cannot see
+      pattern: '\bgetline\b'
+    - reason: awk print or printf followed by > writes to a file
+      pattern: '\bprintf?\b.*>'
+    - reason: a gawk @ form loads code or calls a function by name
+      pattern: '@'
+    - reason: setting ARGV or ARGC makes awk read files the command line does not name
+      pattern: '\bARG[VC]\b'
+    - reason: >-
+        these awk options run a program from a file, load an extension or write
+        a profile, dump or pretty-printed program to a file
+      short: fiElopdDW
+      long: [file, include, exec, load, pretty-print, profile, dump-variables, debug]
+  gawk: *awk
+  mawk: *awk
 
   # --- system state ------------------------------------------------------
   date:
@@ -1209,7 +1319,21 @@ gates:
       long: [variable, engine]
     - reason: gopher, dict and telnet URLs send raw bytes to the service, which can be commands
       pattern: '(?i)(?:^|[\s"''=])(?:gopher|dict|telnet)s?://'
+    - reason: curl to a host other than this one can carry data out in the request, so it needs approval
+      remote: urls
+    - reason: a proxy other than this host sees the request, so it needs approval
+      short: x
+      long: [proxy, preproxy, socks4, socks4a, socks5, socks5-hostname]
+      unless_value: '(?i)(?:[a-z0-9]+://)?(?:localhost|127(?:\.[0-9]+){3}|\[::1\])(?::[0-9]+)?/?'
+    - reason: --url to a host other than this one can carry data out in the request, so it needs approval
+      long: [url]
+      unless_value: '(?i)(?:[a-z]+://)?(?:localhost|127(?:\.[0-9]+){3}|\[::1\])(?:[:/?#]\S*)?'
+    - reason: these options send the request somewhere other than the URL's host
+      long: [resolve, connect-to, dns-servers, doh-url]
+    - reason: a file URL reads a local file
+      pattern: '(?i)(?:^|[\s"''=])file:'
   openssl:
+    - *secret_read_item
     - reason: this option writes a file or loads code into openssl
       words: [-out, -keyout, -writerand, -keylogfile, -sess_out, -reqout, -respout, -msgfile,
               -CAcreateserial, -CAserial, -engine, -provider, -provider-path]

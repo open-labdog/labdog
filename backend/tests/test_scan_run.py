@@ -515,3 +515,33 @@ class TestBlockedCIDRSkip:
         scan_mock.assert_called_once()
         called_cidr = scan_mock.call_args[0][0]
         assert called_cidr == "10.0.1.0/30"
+
+
+class TestOneRunPerConfig:
+    """BUG-136: the scheduler re-dispatched a long scan every minute, and each
+    extra run waited for the lock and then scanned again."""
+
+    async def test_a_scheduled_run_that_is_no_longer_due_is_skipped(self, db, ssh_key):
+        from datetime import UTC, datetime
+
+        config = await _create_scan_config(db, ssh_key_id=ssh_key.id)
+        # The run queued behind this one finished a moment ago.
+        config.last_run_at = datetime.now(UTC)
+        await db.flush()
+        scan = AsyncMock(return_value=[])
+        with patch("app.discovery.scanner.scan_network", new=scan):
+            result = await _run_task(config.id, db)
+        assert result.get("skipped") is True
+        scan.assert_not_called()
+
+    async def test_another_run_holding_the_config_is_skipped(self, db, ssh_key):
+        config = await _create_scan_config(db, ssh_key_id=ssh_key.id)
+        scan = AsyncMock(return_value=[])
+        # The per-config try-lock is the first scalar query the run makes.
+        with (
+            patch("app.discovery.scanner.scan_network", new=scan),
+            patch("sqlalchemy.ext.asyncio.AsyncSession.scalar", new=AsyncMock(return_value=False)),
+        ):
+            result = await _run_task(config.id, db)
+        assert result.get("skipped") is True
+        scan.assert_not_called()

@@ -78,6 +78,24 @@ def _check_rate_limit(cidrs: list[str], interval_minutes: int | None) -> None:
         )
 
 
+def _check_cidr_list(v: list) -> list[str]:
+    if not v:
+        raise ValueError("At least one CIDR is required")
+    return [_validate_cidr(str(cidr)) for cidr in v]
+
+
+def _check_interval(v: int | None) -> int | None:
+    if v is not None and not (1 <= v <= 10_080):
+        raise ValueError("interval_minutes must be between 1 and 10080 (1 min to 1 week)")
+    return v
+
+
+def _check_cron(v: str | None) -> str | None:
+    if v is not None and not croniter.is_valid(v):
+        raise ValueError(f"Invalid cron expression: {v!r}")
+    return v
+
+
 # ---------------------------------------------------------------------------
 # ScanConfig schemas
 # ---------------------------------------------------------------------------
@@ -94,26 +112,9 @@ class ScanConfigCreate(BaseModel):
     enabled: bool = True
     auto_add: bool = False
 
-    @field_validator("cidrs", mode="before")
-    @classmethod
-    def validate_cidrs(cls, v: list) -> list[str]:
-        if not v:
-            raise ValueError("At least one CIDR is required")
-        return [_validate_cidr(str(cidr)) for cidr in v]
-
-    @field_validator("interval_minutes")
-    @classmethod
-    def validate_interval(cls, v: int | None) -> int | None:
-        if v is not None and not (1 <= v <= 10_080):
-            raise ValueError("interval_minutes must be between 1 and 10080 (1 min to 1 week)")
-        return v
-
-    @field_validator("cron_expression")
-    @classmethod
-    def validate_cron(cls, v: str | None) -> str | None:
-        if v is not None and not croniter.is_valid(v):
-            raise ValueError(f"Invalid cron expression: {v!r}")
-        return v
+    validate_cidrs = field_validator("cidrs", mode="before")(_check_cidr_list)
+    validate_interval = field_validator("interval_minutes")(_check_interval)
+    validate_cron = field_validator("cron_expression")(_check_cron)
 
     @model_validator(mode="after")
     def check_schedule_exclusive(self) -> "ScanConfigCreate":
@@ -146,25 +147,14 @@ class ScanConfigUpdate(BaseModel):
     @field_validator("cidrs", mode="before")
     @classmethod
     def validate_cidrs(cls, v: list | None) -> list[str] | None:
+        # An update may leave the CIDRs out. A create may not: there a None
+        # reaches _check_cidr_list and is refused as an empty list.
         if v is None:
             return None
-        if not v:
-            raise ValueError("At least one CIDR is required")
-        return [_validate_cidr(str(cidr)) for cidr in v]
+        return _check_cidr_list(v)
 
-    @field_validator("interval_minutes")
-    @classmethod
-    def validate_interval(cls, v: int | None) -> int | None:
-        if v is not None and not (1 <= v <= 10_080):
-            raise ValueError("interval_minutes must be between 1 and 10080 (1 min to 1 week)")
-        return v
-
-    @field_validator("cron_expression")
-    @classmethod
-    def validate_cron(cls, v: str | None) -> str | None:
-        if v is not None and not croniter.is_valid(v):
-            raise ValueError(f"Invalid cron expression: {v!r}")
-        return v
+    validate_interval = field_validator("interval_minutes")(_check_interval)
+    validate_cron = field_validator("cron_expression")(_check_cron)
 
     @model_validator(mode="after")
     def check_schedule_and_rate_limit(self) -> "ScanConfigUpdate":

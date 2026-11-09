@@ -1,13 +1,14 @@
 """Action orchestrator Celery task.
 
 Resolves the target host(s) for an ActionRun, creates per-host
-ActionHostRun records, then dispatches action_host tasks in batches
-according to the run's parallelism setting.  Waits for each batch
-before moving to the next; individual host failures do not abort
-subsequent batches.
+ActionHostRun records, then dispatches action_host tasks so that no more
+than the run's ``parallelism`` are in flight at once: each time a host
+finishes, the next one is sent (BUG-155: it used to send them in batches
+and wait for a batch's slowest host before sending the next). Individual
+host failures do not stop the rest.
 
 The orchestrator works from the database, not from Celery results. It
-waits for a batch by re-reading the batch's rows, and every read also
+waits for its hosts by re-reading their rows, and every read also
 writes ``ActionRun.heartbeat_at``. That is what lets a run outlive its
 orchestrator: when the worker dies — LabDog upgrading its own Docker
 host restarts it, for one — the heartbeat goes stale, the action
@@ -25,6 +26,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from app.db import with_task_engine
 from app.tasks import celery_app
 from app.tasks.action_timeouts import ORCHESTRATOR_POLL_SECONDS
 
@@ -91,7 +93,7 @@ def run_action(self, action_run_id: int) -> dict:
     Returns:
         A dict summarising the outcome, e.g. ``{"action_run_id": 1}``.
     """
-    asyncio.run(_run_action_async(action_run_id, orchestrator_id=self.request.id))
+    asyncio.run(with_task_engine(_run_action_async(action_run_id, orchestrator_id=self.request.id)))
     return {"action_run_id": action_run_id}
 
 
@@ -117,7 +119,7 @@ def resume_run(self, action_run_id: int) -> dict:
     Returns:
         A dict summarising the outcome, e.g. ``{"action_run_id": 1}``.
     """
-    asyncio.run(_resume_run_async(action_run_id, self.request.id))
+    asyncio.run(with_task_engine(_resume_run_async(action_run_id, self.request.id)))
     return {"action_run_id": action_run_id}
 
 
@@ -134,8 +136,8 @@ async def finalise_run_if_complete(action_run_id: int, r=None) -> str | None:
     dispatch-next-pending re-fires it, and finalising then would report the
     run as complete on a host it never touched.
 
-    Callable from two places on purpose. The orchestrator calls it after its
-    last batch, which is the normal path. ``action_host`` calls it when a
+    Callable from two places on purpose. The orchestrator calls it once its
+    last host has finished, which is the normal path. ``action_host`` calls it when a
     late-dispatched child finishes, which is the only thing that can close a
     run whose last member was deferred — the orchestrator has long since
     returned by then, and the sweeper only looks at ``running`` per-host
@@ -225,29 +227,65 @@ async def _run_action_async(action_run_id: int, orchestrator_id: str | None = No
     ``orchestrator_id`` is the Celery task id, recorded on the run as its
     owner. Callers that are not a Celery task (tests) get a fresh one.
     """
-    from sqlalchemy import select
-
-    from app.actions.registry import ACTION_REGISTRY, ensure_registry_current
-    from app.db import task_session
-    from app.models.action_run import ActionHostRun, ActionRun
-    from app.models.host import Host, HostGroupMembership
-    from app.tasks.action_timeouts import (
-        HARD_LIMIT_MARGIN_SECONDS,
-        per_host_deadline_seconds,
-        run_deadline_seconds,
-    )
-
     orchestrator_id = orchestrator_id or uuid.uuid4().hex
 
     # ------------------------------------------------------------------ #
     # Phase 0: dispatch shape decision                                    #
     # ------------------------------------------------------------------ #
-    # Group target + action.supports_host=False ⇒ single-invocation
-    # group dispatch (one ansible-runner against a flat all-hosts
-    # inventory). The group-dispatch task owns its own ActionHostRun
-    # row creation and run-state transitions; we hand off and return.
-    # Done in a separate session so we don't take the per-host code
-    # path's "mark running" write before the group task even starts.
+    if await _settled_before_start(action_run_id):
+        return
+
+    # ------------------------------------------------------------------ #
+    # Phase 1: initialise run and create per-host records                 #
+    # ------------------------------------------------------------------ #
+    try:
+        started = await _start_run(action_run_id, orchestrator_id)
+    except Exception as exc:
+        logger.exception(
+            "action_orchestrator: initialisation failed for action_run %d",
+            action_run_id,
+        )
+        await _mark_run_failed(action_run_id, str(exc))
+        await _let_go(action_run_id, orchestrator_id)
+        return
+    if started is None:
+        return
+
+    # ------------------------------------------------------------------ #
+    # Phases 2 and 3: dispatch within the parallelism, then aggregate     #
+    # ------------------------------------------------------------------ #
+    await _drive(
+        _Driver(
+            action_run_id=action_run_id,
+            orchestrator_id=orchestrator_id,
+            per_host_task=started.per_host_task,
+            child_soft_limit=started.child_soft_limit,
+            r=_redis(),
+        ),
+        started.host_run_ids,
+        started.parallelism,
+    )
+
+
+async def _settled_before_start(action_run_id: int) -> bool:
+    """Phase 0. True when this orchestrator has nothing to start: the run is
+    missing, no longer ``queued``, or has been handed to the group task.
+
+    Group target + action.supports_host=False ⇒ single-invocation
+    group dispatch (one ansible-runner against a flat all-hosts
+    inventory). The group-dispatch task owns its own ActionHostRun
+    row creation and run-state transitions; we hand off and return.
+    Done in a separate session so we don't take the per-host code
+    path's "mark running" write before the group task even starts.
+
+    A failing probe answers False, so the per-host path runs.
+    """
+    from sqlalchemy import select
+
+    from app.actions.registry import ACTION_REGISTRY, ensure_registry_current
+    from app.db import task_session
+    from app.models.action_run import ActionRun
+
     try:
         async with task_session() as db:
             # The dispatch shape comes from the registry, so it has to be
@@ -259,7 +297,7 @@ async def _run_action_async(action_run_id: int, orchestrator_id: str | None = No
             run_peek: ActionRun | None = run_result.scalar_one_or_none()
             if run_peek is None:
                 logger.warning("action_orchestrator: action_run %d not found", action_run_id)
-                return
+                return True
             if run_peek.status != "queued":
                 # Cancelled while it waited for a slot, failed by the
                 # sweeper's never-picked-up rule, or a duplicate delivery
@@ -271,7 +309,7 @@ async def _run_action_async(action_run_id: int, orchestrator_id: str | None = No
                     action_run_id,
                     run_peek.status,
                 )
-                return
+                return True
             action_peek = ACTION_REGISTRY.get(run_peek.action_key)
             target_is_group = run_peek.group_id is not None and run_peek.host_id is None
             if target_is_group and action_peek is not None and not action_peek.supports_host:
@@ -281,31 +319,8 @@ async def _run_action_async(action_run_id: int, orchestrator_id: str | None = No
                     action_run_id,
                     run_peek.action_key,
                 )
-                # Size the group task's Celery limits from the run's
-                # deadline (member_count sequential envelopes + slack)
-                # instead of the global 1500/1800s — a hard-kill at the
-                # global limit skips the group task's DB finalisation
-                # and orphans the run in ``running``.
-                from sqlalchemy import func  # noqa: PLC0415
-
-                member_count = (
-                    await db.scalar(
-                        select(func.count())
-                        .select_from(HostGroupMembership)
-                        .where(HostGroupMembership.c.group_id == run_peek.group_id)
-                    )
-                    or 1
-                )
-                group_soft = run_deadline_seconds(run_peek.action_key, member_count, parallelism=1)
-                group_task = GROUP_TASK_FOR_BUILTIN.get(run_peek.action_key, _DEFAULT_GROUP_TASK)
-                celery_app.send_task(
-                    group_task,
-                    args=[action_run_id],
-                    queue=CHILD_QUEUE,
-                    soft_time_limit=group_soft,
-                    time_limit=group_soft + HARD_LIMIT_MARGIN_SECONDS,
-                )
-                return
+                await _send_group_task(db, run_peek)
+                return True
     except Exception:
         # Fall through to the per-host path on read errors — it has the
         # same defensive _mark_run_failed wrapper around its own work.
@@ -314,147 +329,210 @@ async def _run_action_async(action_run_id: int, orchestrator_id: str | None = No
             "falling back to per-host path",
             action_run_id,
         )
+    return False
 
-    # ------------------------------------------------------------------ #
-    # Phase 1: initialise run and create per-host records                 #
-    # ------------------------------------------------------------------ #
-    host_run_ids: list[int] = []
-    per_host_task_name = _DEFAULT_PER_HOST_TASK
-    # Per-child Celery limits, sized from the action's own deadline in
-    # Phase 1. Fallback matches the global config so a Phase-1 failure
-    # can't dispatch children with unbounded lifetimes.
-    child_soft_limit = 1500
 
-    try:
-        async with task_session() as db:
-            # Load ActionRun and mark as running. Locked, and only from
-            # ``queued``: the claim that makes this orchestrator the run's
-            # owner, so a second copy of the task finds it taken.
-            run_result = await db.execute(
-                select(ActionRun).where(ActionRun.id == action_run_id).with_for_update()
-            )
-            run: ActionRun | None = run_result.scalar_one_or_none()
-            if run is None or run.status != "queued":
-                logger.info(
-                    "action_orchestrator: action_run %d is %r, not queued — not starting it",
-                    action_run_id,
-                    run.status if run is not None else None,
-                )
-                return
-            run.status = "running"
-            run.started_at = datetime.now(UTC)
-            run.orchestrator_id = orchestrator_id
-            run.heartbeat_at = datetime.now(UTC)
-            await db.flush()
+async def _send_group_task(db, run) -> None:
+    """Hand a group run to its whole-group task.
 
-            # Validate action key — reload once on miss (worker may have
-            # been pre-forked before worker_ready fired).
-            action = ACTION_REGISTRY.get(run.action_key)
-            if action is None:
-                from app.actions.registry import reload_registry_async  # noqa: PLC0415
+    Size the group task's Celery limits from the run's
+    deadline (member_count sequential envelopes + slack)
+    instead of the global 1500/1800s — a hard-kill at the
+    global limit skips the group task's DB finalisation
+    and orphans the run in ``running``.
+    """
+    from sqlalchemy import func, select  # noqa: PLC0415
 
-                await reload_registry_async(db)
-                action = ACTION_REGISTRY.get(run.action_key)
-            if action is None:
-                run.status = "failed"
-                run.error_message = f"Unknown action key: {run.action_key}"
-                run.finished_at = datetime.now(UTC)
-                run.orchestrator_id = None
-                run.heartbeat_at = None
-                await db.commit()
-                return
+    from app.models.host import HostGroupMembership
+    from app.tasks.action_timeouts import HARD_LIMIT_MARGIN_SECONDS, run_deadline_seconds
 
-            # Pick the per-host task: built-ins each have their own
-            # wrapper in app.tasks.builtin_dispatchers; pack-supplied
-            # actions go through the default Ansible playbook runner.
-            per_host_task_name = PER_HOST_TASK_FOR_BUILTIN.get(
-                run.action_key, _DEFAULT_PER_HOST_TASK
-            )
-
-            # Per-child Celery limits: soft above the whole per-host
-            # envelope (ansible timeout + verify + grace) so the child's
-            # SoftTimeLimitExceeded handler and finally block get to
-            # finalise the DB rows; hard-kill only after a further margin.
-            # The global 1500/1800s config would SIGKILL a child at the
-            # same moment its ansible timeout fires, orphaning the
-            # ActionHostRun in ``running``.
-            child_soft_limit = per_host_deadline_seconds(run.action_key)
-
-            # Resolve target hosts. Fleet runs (both host_id and
-            # group_id NULL) are scheduled-only — the action_runs
-            # check constraint forbids ad-hoc fleet rows.
-            if run.host_id is not None:
-                host_ids: list[int] = [run.host_id]
-            elif run.group_id is not None:
-                hosts_result = await db.execute(
-                    select(Host)
-                    .join(HostGroupMembership, Host.id == HostGroupMembership.c.host_id)
-                    .where(HostGroupMembership.c.group_id == run.group_id)
-                )
-                host_ids = [h.id for h in hosts_result.scalars().all()]
-            else:
-                # fleet — every registered host
-                hosts_result = await db.execute(select(Host))
-                host_ids = [h.id for h in hosts_result.scalars().all()]
-
-            if not host_ids:
-                logger.warning(
-                    "action_orchestrator: no hosts resolved for action_run %d",
-                    action_run_id,
-                )
-                run.status = "succeeded"
-                run.finished_at = datetime.now(UTC)
-                run.orchestrator_id = None
-                run.heartbeat_at = None
-                await db.commit()
-                return
-
-            # Snapshot the names now: ``ActionHostRun.hostname`` is what
-            # the run detail page shows after a host is deleted, which is
-            # the only thing left to show at that point (BUG-77).
-            names = dict(
-                (
-                    await db.execute(select(Host.id, Host.hostname).where(Host.id.in_(host_ids)))
-                ).all()
-            )
-
-            # Create ActionHostRun records
-            for hid in host_ids:
-                host_run = ActionHostRun(
-                    action_run_id=action_run_id,
-                    host_id=hid,
-                    hostname=names.get(hid, f"host {hid}"),
-                    status="queued",
-                )
-                db.add(host_run)
-                await db.flush()
-                host_run_ids.append(host_run.id)
-
-            parallelism: int = run.parallelism
-            await db.commit()
-
-    except Exception as exc:
-        logger.exception(
-            "action_orchestrator: initialisation failed for action_run %d",
-            action_run_id,
+    member_count = (
+        await db.scalar(
+            select(func.count())
+            .select_from(HostGroupMembership)
+            .where(HostGroupMembership.c.group_id == run.group_id)
         )
-        await _mark_run_failed(action_run_id, str(exc))
-        await _let_go(action_run_id, orchestrator_id)
-        return
-
-    # ------------------------------------------------------------------ #
-    # Phases 2 and 3: dispatch in batches, then aggregate                 #
-    # ------------------------------------------------------------------ #
-    await _drive(
-        _Driver(
-            action_run_id=action_run_id,
-            orchestrator_id=orchestrator_id,
-            per_host_task=per_host_task_name,
-            child_soft_limit=child_soft_limit,
-            r=_redis(),
-        ),
-        _batches(host_run_ids, parallelism),
+        or 1
     )
+    group_soft = run_deadline_seconds(run.action_key, member_count, parallelism=1)
+    group_task = GROUP_TASK_FOR_BUILTIN.get(run.action_key, _DEFAULT_GROUP_TASK)
+    celery_app.send_task(
+        group_task,
+        args=[run.id],
+        queue=CHILD_QUEUE,
+        soft_time_limit=group_soft,
+        time_limit=group_soft + HARD_LIMIT_MARGIN_SECONDS,
+    )
+
+
+@dataclass
+class _StartedRun:
+    """What Phase 1 hands the dispatch loop."""
+
+    host_run_ids: list[int]
+    per_host_task: str
+    #: Per-child Celery limits, sized from the action's own deadline.
+    child_soft_limit: int
+    parallelism: int
+
+
+async def _start_run(action_run_id: int, orchestrator_id: str) -> _StartedRun | None:
+    """Phase 1: claim the run, resolve its hosts and create their rows.
+
+    Returns None when the run was not started (another orchestrator has
+    it), or was finished here (an unknown action key fails it, a target
+    with no hosts succeeds it). Raises on anything unexpected; the caller
+    fails the run.
+    """
+    from app.db import task_session
+    from app.tasks.action_timeouts import per_host_deadline_seconds
+
+    async with task_session() as db:
+        run = await _claim_queued_run(db, action_run_id, orchestrator_id)
+        if run is None:
+            return None
+
+        action = await _lookup_action(db, run.action_key)
+        if action is None:
+            run.status = "failed"
+            run.error_message = f"Unknown action key: {run.action_key}"
+            run.finished_at = datetime.now(UTC)
+            run.orchestrator_id = None
+            run.heartbeat_at = None
+            await db.commit()
+            return None
+
+        # Pick the per-host task: built-ins each have their own
+        # wrapper in app.tasks.builtin_dispatchers; pack-supplied
+        # actions go through the default Ansible playbook runner.
+        per_host_task_name = PER_HOST_TASK_FOR_BUILTIN.get(run.action_key, _DEFAULT_PER_HOST_TASK)
+
+        # Per-child Celery limits: soft above the whole per-host
+        # envelope (ansible timeout + verify + grace) so the child's
+        # SoftTimeLimitExceeded handler and finally block get to
+        # finalise the DB rows; hard-kill only after a further margin.
+        # The global 1500/1800s config would SIGKILL a child at the
+        # same moment its ansible timeout fires, orphaning the
+        # ActionHostRun in ``running``.
+        child_soft_limit = per_host_deadline_seconds(run.action_key)
+
+        host_ids = await _resolve_target_host_ids(db, run)
+        if not host_ids:
+            logger.warning(
+                "action_orchestrator: no hosts resolved for action_run %d",
+                action_run_id,
+            )
+            run.status = "succeeded"
+            run.finished_at = datetime.now(UTC)
+            run.orchestrator_id = None
+            run.heartbeat_at = None
+            await db.commit()
+            return None
+
+        host_run_ids = await _create_host_runs(db, action_run_id, host_ids)
+
+        parallelism: int = run.parallelism
+        await db.commit()
+
+    return _StartedRun(
+        host_run_ids=host_run_ids,
+        per_host_task=per_host_task_name,
+        child_soft_limit=child_soft_limit,
+        parallelism=parallelism,
+    )
+
+
+async def _claim_queued_run(db, action_run_id: int, orchestrator_id: str):
+    """Load ActionRun and mark as running. Locked, and only from
+    ``queued``: the claim that makes this orchestrator the run's
+    owner, so a second copy of the task finds it taken. None when it
+    was not ``queued``."""
+    from sqlalchemy import select
+
+    from app.models.action_run import ActionRun
+
+    run_result = await db.execute(
+        select(ActionRun).where(ActionRun.id == action_run_id).with_for_update()
+    )
+    run: ActionRun | None = run_result.scalar_one_or_none()
+    if run is None or run.status != "queued":
+        logger.info(
+            "action_orchestrator: action_run %d is %r, not queued — not starting it",
+            action_run_id,
+            run.status if run is not None else None,
+        )
+        return None
+    run.status = "running"
+    run.started_at = datetime.now(UTC)
+    run.orchestrator_id = orchestrator_id
+    run.heartbeat_at = datetime.now(UTC)
+    await db.flush()
+    return run
+
+
+async def _lookup_action(db, action_key: str):
+    """The registered action, reloading the registry once on a miss (the
+    worker may have been pre-forked before worker_ready fired). None when
+    it is still unknown."""
+    from app.actions.registry import ACTION_REGISTRY
+
+    action = ACTION_REGISTRY.get(action_key)
+    if action is None:
+        from app.actions.registry import reload_registry_async  # noqa: PLC0415
+
+        await reload_registry_async(db)
+        action = ACTION_REGISTRY.get(action_key)
+    return action
+
+
+async def _resolve_target_host_ids(db, run) -> list[int]:
+    """Resolve target hosts. Fleet runs (both host_id and
+    group_id NULL) are scheduled-only — the action_runs
+    check constraint forbids ad-hoc fleet rows."""
+    from sqlalchemy import select
+
+    from app.models.host import Host, HostGroupMembership
+
+    if run.host_id is not None:
+        return [run.host_id]
+    if run.group_id is not None:
+        hosts_result = await db.execute(
+            select(Host)
+            .join(HostGroupMembership, Host.id == HostGroupMembership.c.host_id)
+            .where(HostGroupMembership.c.group_id == run.group_id)
+        )
+        return [h.id for h in hosts_result.scalars().all()]
+    # fleet — every registered host
+    hosts_result = await db.execute(select(Host))
+    return [h.id for h in hosts_result.scalars().all()]
+
+
+async def _create_host_runs(db, action_run_id: int, host_ids: list[int]) -> list[int]:
+    """One ``queued`` ActionHostRun per host; returns their ids in order."""
+    from sqlalchemy import select
+
+    from app.models.action_run import ActionHostRun
+    from app.models.host import Host
+
+    # Snapshot the names now: ``ActionHostRun.hostname`` is what
+    # the run detail page shows after a host is deleted, which is
+    # the only thing left to show at that point (BUG-77).
+    names = dict(
+        (await db.execute(select(Host.id, Host.hostname).where(Host.id.in_(host_ids)))).all()
+    )
+
+    host_run_ids: list[int] = []
+    for hid in host_ids:
+        host_run = ActionHostRun(
+            action_run_id=action_run_id,
+            host_id=hid,
+            hostname=names.get(hid, f"host {hid}"),
+            status="queued",
+        )
+        db.add(host_run)
+        await db.flush()
+        host_run_ids.append(host_run.id)
+    return host_run_ids
 
 
 async def _resume_run_async(action_run_id: int, orchestrator_id: str) -> None:
@@ -463,15 +541,16 @@ async def _resume_run_async(action_run_id: int, orchestrator_id: str) -> None:
     Picks the run up from its rows. Hosts already finished, and hosts
     deferred behind other work (``pending``, which the host queue
     re-dispatches), are left alone. Hosts still ``running`` are waited for
-    as the batch in flight — if their worker died with the orchestrator,
-    the sweeper fails them at their per-host deadline. Hosts still
-    ``queued`` are dispatched in batches, as the dead orchestrator would
-    have. Some of those it may already have sent; whichever copy of such a
-    host's task runs second finds the row claimed and does nothing.
+    and count against the parallelism — if their worker died with the
+    orchestrator, the sweeper fails them at their per-host deadline. Hosts
+    still ``queued`` are dispatched as slots free up, as the dead
+    orchestrator would have. Some of those it may already have sent;
+    whichever copy of such a host's task runs second finds the row claimed
+    and does nothing.
     """
     from sqlalchemy import select
 
-    from app.actions.registry import ACTION_REGISTRY, ensure_registry_current
+    from app.actions.registry import ensure_registry_current
     from app.db import task_session
     from app.models.action_run import ActionHostRun, ActionRun
     from app.tasks.action_timeouts import per_host_deadline_seconds
@@ -493,12 +572,7 @@ async def _resume_run_async(action_run_id: int, orchestrator_id: str) -> None:
                 )
                 return
 
-            action = ACTION_REGISTRY.get(run.action_key)
-            if action is None:
-                from app.actions.registry import reload_registry_async  # noqa: PLC0415
-
-                await reload_registry_async(db)
-                action = ACTION_REGISTRY.get(run.action_key)
+            action = await _lookup_action(db, run.action_key)
             if action is None:
                 await db.rollback()
                 await _mark_run_failed(action_run_id, f"Unknown action key: {run.action_key}")
@@ -538,7 +612,7 @@ async def _resume_run_async(action_run_id: int, orchestrator_id: str) -> None:
         len(to_run),
         len(in_flight),
     )
-    await _drive(driver, _resume_batches(in_flight, to_run, parallelism), sent=set(in_flight))
+    await _drive(driver, in_flight + to_run, parallelism, sent=set(in_flight))
 
 
 # ---------------------------------------------------------------------------
@@ -569,32 +643,13 @@ def _redis():
     return redis_lib.from_url(settings.redis.url)
 
 
-def _batches(host_run_ids: list[int], parallelism: int) -> list[list[int]]:
-    """Split the hosts into batches: ``parallelism <= 0`` means all at once,
-    up to ``celery.all_at_once_cap`` (see ``action_timeouts.batch_size``)."""
-    from app.tasks.action_timeouts import batch_size  # noqa: PLC0415
-
-    size = batch_size(len(host_run_ids), parallelism)
-    return [host_run_ids[i : i + size] for i in range(0, len(host_run_ids), size)]
+def _window_size(host_count: int, parallelism: int) -> int:
+    """How many hosts may be in flight at once: ``parallelism <= 0`` means all."""
+    return max(1, host_count) if parallelism <= 0 else max(1, parallelism)
 
 
-def _resume_batches(in_flight: list[int], to_run: list[int], parallelism: int) -> list[list[int]]:
-    """The batches a resumed run still has to go through.
-
-    The hosts in flight count against the first batch, so a resume never
-    has more hosts running at once than ``parallelism`` allows; the first
-    batch fills its remaining room from the queued hosts.
-    """
-    from app.tasks.action_timeouts import batch_size  # noqa: PLC0415
-
-    size = batch_size(len(in_flight) + len(to_run), parallelism)
-    room = max(0, size - len(in_flight))
-    first = in_flight + to_run[:room]
-    return ([first] if first else []) + _batches(to_run[room:], size)
-
-
-def _batch_wait_seconds(child_soft_limit: int) -> int:
-    """How long to wait on one batch before moving on regardless.
+def _host_wait_seconds(child_soft_limit: int) -> int:
+    """How long one host may hold a slot before the run stops counting it.
 
     Past the children's own hard limit nothing is still working on them:
     a row still ``running`` then belongs to a killed worker, and the
@@ -618,10 +673,12 @@ _GO = "go"
 _UNKNOWN = "unknown"
 
 
-async def _check_in(d: _Driver, host_run_ids: list[int] | None = None) -> tuple[str, int | None]:
+async def _check_in(
+    d: _Driver, host_run_ids: list[int] | None = None
+) -> tuple[str, set[int] | None]:
     """Write the heartbeat, and learn whether to carry on.
 
-    Returns the state (see ``_GO``) and how many of ``host_run_ids`` are
+    Returns the state (see ``_GO``) and which of ``host_run_ids`` are
     still ``queued`` or ``running`` — ``None`` when that was not read.
 
     The heartbeat write is fenced on ``orchestrator_id``: once the sweeper
@@ -634,7 +691,7 @@ async def _check_in(d: _Driver, host_run_ids: list[int] | None = None) -> tuple[
     so.
     """
     from celery.exceptions import SoftTimeLimitExceeded  # noqa: PLC0415
-    from sqlalchemy import func, select, update  # noqa: PLC0415
+    from sqlalchemy import select, update  # noqa: PLC0415
 
     from app.db import task_session  # noqa: PLC0415
     from app.models.action_run import ActionHostRun, ActionRun  # noqa: PLC0415
@@ -654,13 +711,17 @@ async def _check_in(d: _Driver, host_run_ids: list[int] | None = None) -> tuple[
             ).scalar_one_or_none()
             in_flight = None
             if host_run_ids:
-                in_flight = await db.scalar(
-                    select(func.count())
-                    .select_from(ActionHostRun)
-                    .where(
-                        ActionHostRun.id.in_(host_run_ids),
-                        ActionHostRun.status.in_(("queued", "running")),
+                in_flight = set(
+                    (
+                        await db.execute(
+                            select(ActionHostRun.id).where(
+                                ActionHostRun.id.in_(host_run_ids),
+                                ActionHostRun.status.in_(("queued", "running")),
+                            )
+                        )
                     )
+                    .scalars()
+                    .all()
                 )
             await db.commit()
     except SoftTimeLimitExceeded:
@@ -709,25 +770,38 @@ async def _ready(d: _Driver) -> str:
         await _pause()
 
 
-async def _wait(d: _Driver, batch: list[int]) -> str:
-    """Wait until no host in ``batch`` is ``queued`` or ``running``.
+async def _wait(
+    d: _Driver, in_flight: dict[int, float], *, below: int
+) -> tuple[str, dict[int, float]]:
+    """Check in until fewer than ``below`` hosts are in flight.
 
-    A deferred host (``pending``) counts as done: the host queue
-    re-dispatches it, not this loop.
+    ``in_flight`` maps each host sent and not yet seen to finish to when it
+    was sent (``time.monotonic()``); what comes back is the same, minus the
+    hosts that have finished. A deferred host (``pending``) counts as
+    finished: the host queue re-dispatches it, not this loop. So does a
+    host that has held its slot past :func:`_host_wait_seconds`, which the
+    sweeper deals with.
     """
-    give_up_at = time.monotonic() + _batch_wait_seconds(d.child_soft_limit)
+    give_up_after = _host_wait_seconds(d.child_soft_limit)
     while True:
-        state, in_flight = await _check_in(d, batch)
-        if state not in (_GO, _UNKNOWN) or in_flight == 0:
-            return state
-        if time.monotonic() >= give_up_at:
+        state, still = await _check_in(d, list(in_flight))
+        if still is not None:
+            in_flight = {h: sent_at for h, sent_at in in_flight.items() if h in still}
+        now = time.monotonic()
+        overdue = [h for h, sent_at in in_flight.items() if now - sent_at >= give_up_after]
+        if overdue:
             logger.warning(
-                "action_orchestrator: action_run %d gave up waiting on a batch "
+                "action_orchestrator: action_run %d stopped waiting on host run(s) %s "
                 "after %ds; moving on",
                 d.action_run_id,
-                _batch_wait_seconds(d.child_soft_limit),
+                overdue,
+                give_up_after,
             )
-            return _GO
+            in_flight = {h: t for h, t in in_flight.items() if h not in overdue}
+        # An unknown state is never returned: the database could not be
+        # read, so check in again until it can.
+        if state != _UNKNOWN and (state != _GO or len(in_flight) < below):
+            return state, in_flight
         await _pause()
 
 
@@ -768,33 +842,56 @@ def send_host_task(action_key: str, action_run_id: int, host_run_id: int) -> Non
     )
 
 
-async def _drive(d: _Driver, batches: list[list[int]], *, sent: set[int] | None = None) -> None:
-    """Phases 2 and 3: run the batches, then aggregate.
+async def _drive(
+    d: _Driver,
+    host_run_ids: list[int],
+    parallelism: int,
+    *,
+    sent: set[int] | None = None,
+) -> None:
+    """Phases 2 and 3: run the hosts, then aggregate.
+
+    Keeps up to ``parallelism`` hosts in flight (``<= 0``: all of them),
+    sending the next one in ``host_run_ids`` order as each finishes, and
+    waits for the last ones before aggregating (BUG-155). A run used to
+    send a batch of ``parallelism`` hosts and wait for all of them, so one
+    slow host idled every other slot, and each batch joined the back of a
+    busy queue again. Each host still starts no later than it did then,
+    which keeps ``run_deadline_seconds`` an upper bound.
 
     ``sent`` names hosts whose tasks are already out — a resumed run's
-    hosts in flight — so they are waited for but not dispatched again.
+    hosts in flight — so they are waited for, and count against the
+    parallelism, but are not dispatched again.
     """
     from celery.exceptions import SoftTimeLimitExceeded  # noqa: PLC0415
 
     sent = sent or set()
+    window = _window_size(len(host_run_ids), parallelism)
+    started_at = time.monotonic()
+    in_flight = {h: started_at for h in host_run_ids if h in sent}
+    to_send = [h for h in host_run_ids if h not in sent]
     try:
-        state = _GO
-        for batch_index, batch in enumerate(batches):
-            state = await _ready(d)
-            if state != _GO:
+        state = await _ready(d)
+        while state == _GO:
+            room = window - len(in_flight)
+            if room > 0 and to_send:
+                batch, to_send = to_send[:room], to_send[room:]
+                logger.info(
+                    "action_orchestrator: action_run %d dispatching %d host(s), "
+                    "%d in flight, %d still to send",
+                    d.action_run_id,
+                    len(batch),
+                    len(in_flight),
+                    len(to_send),
+                )
+                _dispatch(d, batch)
+                sent_at = time.monotonic()
+                in_flight.update(dict.fromkeys(batch, sent_at))
+            if not in_flight:
                 break
-            to_send = [h for h in batch if h not in sent]
-            logger.info(
-                "action_orchestrator: action_run %d dispatching batch %d/%d (%d hosts)",
-                d.action_run_id,
-                batch_index + 1,
-                len(batches),
-                len(to_send),
-            )
-            _dispatch(d, to_send)
-            state = await _wait(d, batch)
-            if state != _GO:
-                break
+            # With hosts still to send, wait for a free slot; with none
+            # left, for every host in flight to finish.
+            state, in_flight = await _wait(d, in_flight, below=window if to_send else 1)
 
         if state == "cancelled":
             await _mark_run_cancelled(d.action_run_id)
@@ -836,7 +933,7 @@ async def _drive(d: _Driver, batches: list[list[int]], *, sent: set[int] | None 
     finally:
         # Whatever happened, this orchestrator is no longer driving the
         # run. A run left open here — hosts deferred, or still running past
-        # the batch wait — is closed by its last host's own task.
+        # the per-host wait — is closed by its last host's own task.
         await _let_go(d.action_run_id, d.orchestrator_id)
 
 
@@ -901,7 +998,7 @@ async def _mark_run_failed(action_run_id: int, error_message: str) -> None:
 
 async def _finalise_soft_limited(action_run_id: int) -> None:
     """Best-effort terminal aggregation after the orchestrator's own soft
-    time limit fired mid-batch.
+    time limit fired mid-run.
 
     Children with terminal statuses keep them; ``queued`` children were
     never dispatched and are cancelled; ``running``/``pending`` children
@@ -939,7 +1036,7 @@ async def _finalise_soft_limited(action_run_id: int) -> None:
                 run.status = final_status
                 run.error_message = (
                     "orchestrator exceeded its soft time limit while waiting on "
-                    "host batches; results aggregated partially"
+                    "its hosts; results aggregated partially"
                 )
                 run.finished_at = datetime.now(UTC)
             await db.commit()

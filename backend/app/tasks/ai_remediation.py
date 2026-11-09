@@ -22,6 +22,7 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
+from app.db import with_task_engine
 from app.tasks import celery_app
 
 logger = logging.getLogger(__name__)
@@ -94,7 +95,7 @@ async def _sweep() -> dict:
 @celery_app.task(name="app.tasks.ai_remediation.check_due_remediations", queue="default")
 def check_due_remediations() -> dict:
     """Dispatch every remediation check that has fallen due."""
-    return asyncio.run(_sweep())
+    return asyncio.run(with_task_engine(_sweep()))
 
 
 async def _check(alert_event_id: int) -> dict:
@@ -154,7 +155,7 @@ async def _check(alert_event_id: int) -> dict:
 )
 def check_remediation(alert_event_id: int) -> dict:
     """Judge one automatic fix, and roll back a host it made worse."""
-    return asyncio.run(_check(alert_event_id))
+    return asyncio.run(with_task_engine(_check(alert_event_id)))
 
 
 async def _run_rollback(rollback_id: int) -> dict:
@@ -204,7 +205,7 @@ async def _run_rollback(rollback_id: int) -> dict:
 )
 def run_rollback(rollback_id: int) -> dict:
     """Carry out a rollback someone asked for."""
-    return asyncio.run(_run_rollback(rollback_id))
+    return asyncio.run(with_task_engine(_run_rollback(rollback_id)))
 
 
 # ---------------------------------------------------------------------------

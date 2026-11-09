@@ -5,10 +5,10 @@ import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 from sqlalchemy import case, exists, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 
 from app.actions.registry import ACTION_REGISTRY, reload_registry_async
 from app.actions.run_target import describe_target
@@ -131,6 +131,21 @@ async def create_run(
     db: AsyncSession = Depends(get_db),
 ):
     """Create an action run and dispatch the Celery task."""
+    action = _runnable_action(body)
+    stored_parameters = await _stored_parameters(db, body, action)
+    await _require_target(db, body)
+    await _refuse_duplicate_run(db, body)
+    run_id = await _insert_run(db, body, action, stored_parameters, user)
+    _dispatch_run(run_id)
+
+    # Reload to return fresh state (host_runs will be empty at this point)
+    run = await db.get(ActionRun, run_id)
+    return ActionRunOut.model_validate(run)
+
+
+def _runnable_action(body: RunCreateBody):
+    """The registered action the request names, refused when it cannot run
+    against the request's target."""
     # Exactly one of host_id / group_id must be set
     if (body.host_id is None) == (body.group_id is None):
         raise HTTPException(
@@ -183,7 +198,12 @@ async def create_run(
             status_code=422,
             detail="This action does not support group-scoped runs.",
         )
+    return action
 
+
+async def _stored_parameters(db: AsyncSession, body: RunCreateBody, action) -> dict:
+    """The run's ``parameters``: the validated submission plus the
+    dry-run flag and metrics destinations, which travel with them."""
     # Validate parameters against the action's manifest schema. Catches
     # missing-required, type-mismatch, and unknown-key errors uniformly.
     #
@@ -221,8 +241,11 @@ async def create_run(
                     detail=f"No {kind} destination with id {instance_id}.",
                 )
         stored_parameters[METRICS_DESTINATIONS_PARAM] = dict(body.metrics_destinations)
+    return stored_parameters
 
-    # Validate that the target host/group actually exists
+
+async def _require_target(db: AsyncSession, body: RunCreateBody) -> None:
+    """404 unless the target host/group actually exists."""
     if body.host_id is not None:
         host_exists = await db.scalar(select(Host.id).where(Host.id == body.host_id))
         if host_exists is None:
@@ -232,33 +255,44 @@ async def create_run(
         if group_exists is None:
             raise HTTPException(status_code=404, detail="Group not found")
 
-    # Advisory lock — prevents duplicate concurrent runs for same action+scope
-    lock_key = f"actions.{body.action_key}.{body.host_id or body.group_id}"
-    lock_result = await db.execute(
-        text("SELECT pg_try_advisory_xact_lock(hashtext(:key))"),
-        {"key": lock_key},
-    )
-    got_lock = lock_result.scalar()
-    if not got_lock:
-        # Find the running/queued run
-        running = await db.scalar(
-            select(ActionRun).where(
-                ActionRun.action_key == body.action_key,
-                ActionRun.host_id == body.host_id
-                if body.host_id is not None
-                else ActionRun.group_id == body.group_id,
-                ActionRun.status.in_(["queued", "running"]),
-            )
+
+async def _refuse_duplicate_run(db: AsyncSession, body: RunCreateBody) -> None:
+    """BUG-139: one run of an action per target at a time. The advisory
+    lock only serialises requests (it is released at this request's
+    commit), so the check for a run already queued, pending or running
+    happens under it every time, not only when the lock is busy. The key
+    names the target kind, so host 5 and group 5 do not share it."""
+    if body.host_id is not None:
+        lock_key = f"actions.{body.action_key}.host.{body.host_id}"
+        same_target = ActionRun.host_id == body.host_id
+    else:
+        lock_key = f"actions.{body.action_key}.group.{body.group_id}"
+        same_target = ActionRun.group_id == body.group_id
+    await db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": lock_key})
+    running = await db.scalar(
+        select(ActionRun)
+        .where(
+            ActionRun.action_key == body.action_key,
+            same_target,
+            ActionRun.status.in_(["queued", "pending", "running"]),
         )
+        .order_by(ActionRun.id)
+        .limit(1)
+    )
+    if running is not None:
         raise HTTPException(
             status_code=409,
             detail={
                 "detail": "An identical action is already running",
-                "running_run_id": running.id if running else None,
+                "running_run_id": running.id,
             },
         )
 
-    # Create the ActionRun record
+
+async def _insert_run(
+    db: AsyncSession, body: RunCreateBody, action, stored_parameters: dict, user: User
+) -> int:
+    """Store the ``queued`` ActionRun and commit; returns its id."""
     target_kind, target_label = await describe_target(
         db, host_id=body.host_id, group_id=body.group_id
     )
@@ -280,18 +314,18 @@ async def create_run(
 
     run_id = run.id
     await db.commit()
+    return run_id
 
-    # Dispatch Celery task
+
+def _dispatch_run(run_id: int) -> None:
+    """Send the run to its orchestrator. A failure is logged, not raised:
+    the run is stored, and the sweeper fails one that is never picked up."""
     try:
         from app.tasks import celery_app
 
         celery_app.send_task("app.tasks.action_orchestrator.run_action", args=[run_id])
     except Exception as exc:
         logger.warning("Failed to dispatch actions.run task for run %d: %s", run_id, exc)
-
-    # Reload to return fresh state (host_runs will be empty at this point)
-    run = await db.get(ActionRun, run_id)
-    return ActionRunOut.model_validate(run)
 
 
 # ---------------------------------------------------------------------------
@@ -518,6 +552,11 @@ async def get_run(
         .outerjoin(Host, Host.id == ActionHostRun.host_id)
         .where(ActionHostRun.action_run_id == id)
         .order_by(ActionHostRun.id)
+        # BUG-161: ActionHostRunOut has no output, and each host's is up
+        # to 1 MiB (MAX_OUTPUT_BYTES). The run page polls this every few
+        # seconds while a run is open; it reads a host's output from
+        # /host-runs/{id}/output when it shows it.
+        .options(defer(ActionHostRun.output))
     )
     host_runs = host_runs_result.all()
 
@@ -807,53 +846,24 @@ async def stream_run_events(
     db: AsyncSession = Depends(get_db),
 ):
     """Server-Sent Events stream for a run. Subscribes to Redis pub/sub channel
-    'actions.run.{id}', relays events. Closes when run reaches terminal status."""
+    'actions.run.{id}', relays events. Closes when run reaches terminal status.
 
-    run = await db.get(ActionRun, id)
-    if run is None:
-        raise HTTPException(status_code=404, detail="Action run not found")
+    Holds no database connection while it streams (BUG-152); see
+    ``app.api._sse``.
+    """
+    from app.api._sse import relay_channel  # noqa: PLC0415
 
-    terminal_states = {"succeeded", "failed", "partial", "cancelled"}
-    run_status = run.status
+    async def _status() -> str | None:
+        run = await db.get(ActionRun, id)
+        return run.status if run is not None else None
 
-    async def event_generator():
-        import redis.asyncio as aioredis
-
-        from app.config import settings
-
-        client = aioredis.from_url(settings.redis.url)
-        pubsub = client.pubsub()
-        await pubsub.subscribe(f"actions.run.{id}")
-
-        try:
-            # If run is already terminal, send current status and close
-            if run_status in terminal_states:
-                yield f"event: status\ndata: {json.dumps({'status': run_status})}\n\n"
-                return
-
-            async for message in pubsub.listen():
-                if message["type"] != "message":
-                    continue
-
-                data = json.loads(message["data"])
-                event_type = data.get("event", "output")
-                payload = json.dumps(data)
-                yield f"event: {event_type}\ndata: {payload}\n\n"
-
-                # Close on terminal status
-                if data.get("event") == "status" and data.get("status") in terminal_states:
-                    return
-        finally:
-            await pubsub.unsubscribe(f"actions.run.{id}")
-            await client.aclose()
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        },
+    return await relay_channel(
+        db,
+        f"actions.run.{id}",
+        _status,
+        terminal_states={"succeeded", "failed", "partial", "cancelled"},
+        default_event="output",
+        not_found="Action run not found",
     )
 
 

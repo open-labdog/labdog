@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from app.db import with_task_engine
 from app.tasks import celery_app
 
 logger = logging.getLogger(__name__)
@@ -207,7 +208,7 @@ def investigate_alert(alert_event_id: int) -> dict:
     """
     from app.tasks.alert_handling import _handle
 
-    return asyncio.run(_handle(alert_event_id))
+    return asyncio.run(with_task_engine(_handle(alert_event_id)))
 
 
 async def _poll() -> dict:
@@ -277,7 +278,7 @@ async def _poll() -> dict:
 @celery_app.task(name="app.tasks.ai_alerts.poll_alertmanager")
 def poll_alertmanager() -> dict:
     """Fallback producer — see the module docstring."""
-    return asyncio.run(_poll())
+    return asyncio.run(with_task_engine(_poll()))
 
 
 def _register_beat_schedule() -> None:
@@ -300,7 +301,7 @@ def _register_beat_schedule() -> None:
         async with task_session() as db:
             return int(await get_setting_typed("alerts.poll_minutes", db))
 
-    minutes = _asyncio.run(_interval())
+    minutes = _asyncio.run(with_task_engine(_interval()))
     name = "poll-alertmanager"
     if minutes <= 0:
         try:

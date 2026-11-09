@@ -6,8 +6,8 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.cron.validators import validate_cron_expression
 
-_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
-_USER_RE = re.compile(r"^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$")
+_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*\Z")
+_USER_RE = re.compile(r"^[a-zA-Z0-9_][a-zA-Z0-9_.-]*\Z")
 
 
 class CronJobCreate(BaseModel):
@@ -45,8 +45,10 @@ class CronJobCreate(BaseModel):
     @field_validator("schedule")
     @classmethod
     def validate_schedule(cls, v: str) -> str:
-        validate_cron_expression(v)
-        return v
+        # Stored as the host prints it back: five fields, one space apart.
+        # "* * * * *\n" was stored raw and never compared equal to the
+        # collected line, so the job drifted for ever (BUG-174).
+        return " ".join(validate_cron_expression(v))
 
     @field_validator("command")
     @classmethod
@@ -96,7 +98,7 @@ class CronJobUpdate(BaseModel):
     @classmethod
     def validate_schedule(cls, v: str | None) -> str | None:
         if v is not None:
-            validate_cron_expression(v)
+            return " ".join(validate_cron_expression(v))  # BUG-174, as on create
         return v
 
     @field_validator("command")

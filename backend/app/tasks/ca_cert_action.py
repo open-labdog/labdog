@@ -20,6 +20,7 @@ import shutil
 import tempfile
 from datetime import UTC, datetime
 
+from app.db import with_task_engine
 from app.tasks import celery_app
 
 
@@ -72,14 +73,14 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
     claimed = False
 
     try:
-        claimed = asyncio.run(_claim_or_defer(job_id, host_id))
+        claimed = asyncio.run(with_task_engine(_claim_or_defer(job_id, host_id)))
         if not claimed:
             return {"job_id": job_id, "status": "deferred"}
 
-        import yaml
         from sqlalchemy import select
 
         from app.ansible_runtime.known_hosts import write_known_hosts
+        from app.ansible_runtime.playbook_yaml import dump_playbook
         from app.ca_certs.generator import generate_ca_cert_playbook
         from app.ca_certs.merge import get_effective_ca_certs
         from app.crypto import decrypt_ssh_key, get_master_key
@@ -125,21 +126,30 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
                 os.makedirs(f"{private_data_dir}/inventory", exist_ok=True)
 
                 with open(f"{private_data_dir}/project/playbook.yml", "w") as f:
-                    yaml.dump(result["playbook"], f, default_flow_style=False)
+                    f.write(dump_playbook(result["playbook"]))
 
                 with open(f"{private_data_dir}/inventory/hosts", "w") as f:
                     f.write(result["inventory"])
 
-        asyncio.run(_prepare())
+        asyncio.run(with_task_engine(_prepare()))
 
         from app.settings_service import get_setting_cached_typed
 
         playbook_timeout = int(get_setting_cached_typed("ansible.playbook_timeout"))
-        runner = ansible_runner.run(
+        from app.ansible_runtime.runner import BASE_ANSIBLE_ENV, scrub_child_env
+
+        runner = ansible_runner.interface.init_runner(
             private_data_dir=private_data_dir,
             playbook="playbook.yml",
             timeout=playbook_timeout,
+            # Pipelining and no colour codes, as every other run (BUG-154).
+            envvars=dict(BASE_ANSIBLE_ENV),
+            # No echo of the playbook into the worker log (BUG-176).
+            quiet=True,
         )
+        # SEC-46: no LabDog secrets in the ansible-playbook environment.
+        runner.config.env = scrub_child_env(runner.config.env)
+        runner.run()
 
         async def _record_result():
             async with task_session() as db:
@@ -155,7 +165,7 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
                     job.error_message = interpret_runner_failure(runner)
                 await db.commit()
 
-        asyncio.run(_record_result())
+        asyncio.run(with_task_engine(_record_result()))
 
         return {
             "job_id": job_id,
@@ -183,7 +193,7 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
                     await db.commit()
 
         try:
-            asyncio.run(_mark_failed())
+            asyncio.run(with_task_engine(_mark_failed()))
         except Exception:
             pass
 
@@ -204,7 +214,9 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
             from app.tasks.host_lock import release_host_queue
 
             asyncio.run(
-                release_host_queue(
-                    host_id, after=f"ca_cert job_id={job_id}", exclude_sync_job_id=job_id
+                with_task_engine(
+                    release_host_queue(
+                        host_id, after=f"ca_cert job_id={job_id}", exclude_sync_job_id=job_id
+                    )
                 )
             )

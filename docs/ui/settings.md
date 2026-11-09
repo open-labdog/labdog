@@ -70,6 +70,7 @@ Two of them cover what comes *in* to LabDog:
 | Connect Timeout | `ssh.connect_timeout` | `10` | 1 – 120 sec | How long to wait when opening an SSH connection to a host (used for sync, drift checks, and state collection). Increase if managed hosts are on high-latency links. |
 | Command Timeout | `ssh.command_timeout` | `60` | 5 – 900 sec | The longest a single remote command may take on an already-open session — state collectors and reachability probes, not Ansible playbooks, which have their own timeout. A host that accepts the connection but then hangs on one command fails after this long instead of blocking every host behind it. |
 | Idle Timeout | `ssh.idle_timeout_seconds` | `1800` | 60 – 86400 sec | How long a web terminal session can be idle before it is automatically disconnected. 1800 = 30 minutes. |
+| Session Time Limit | `ssh.max_session_seconds` | `43200` | 300 – 604800 sec | Longest a web terminal session may stay open, active or not. Typing resets the idle timer, so this is the upper bound. 43200 = 12 hours. |
 
 ### Ansible
 
@@ -93,7 +94,7 @@ Two of them cover what comes *in* to LabDog:
 
 | Setting | Key | Default | Range | Description |
 |---------|-----|---------|-------|-------------|
-| Snapshot Max Age | `workflow.snapshot_max_age_hours` | `24` | 1 – 168 hours | Proxmox VM snapshots taken before a destructive scheduled action are automatically cleaned up after this many hours when the action completes successfully. |
+| Snapshot Max Age | `workflow.snapshot_max_age_hours` | `24` | 1 – 168 hours | A pre-run snapshot that is still on its VM after its action run (a failed host whose snapshot was kept, or a delete that failed) is removed by the hourly cleanup once it is this many hours old. A successful run deletes its own snapshot straight away. |
 | Locked VM Wait | `workflow.snapshot_lock_wait_minutes` | `30` | 0 – 240 minutes | How long the pre-run snapshot of a destructive action keeps retrying (every 30 seconds) while Proxmox reports the VM as locked, usually by a running backup. Each wait is logged in the run output; if the lock is still held after this long, that host fails before anything runs on it. `0` fails on the first lock. The wait is added to the action's time budget. |
 
 ### Alert intake
@@ -287,6 +288,11 @@ Two actions sit in the head:
 - **Clean up orphaned snapshots** deletes LabDog's snapshots that are no
   longer needed: those tied to a finished action run, and those older than
   `workflow.snapshot_max_age_hours` whose run LabDog does not know.
+  LabDog also runs this every hour on its own, more cautiously: it removes
+  only snapshots older than `workflow.snapshot_max_age_hours`, so a
+  snapshot a failed run kept for you stays at least that long. AI
+  sessions' `labdog-ai-` snapshots are left to their own retention
+  setting by both.
 
 ### TLS verification
 

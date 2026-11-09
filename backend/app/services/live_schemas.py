@@ -30,7 +30,7 @@ class ServiceCommandRequest(BaseModel):
         if v.endswith(".service"):
             v = v[:-8]
         # Reject shell metacharacters
-        if not re.match(r"^[a-zA-Z0-9_@:.-]+$", v):
+        if not re.fullmatch(r"[a-zA-Z0-9_@:.-]+", v):
             raise ValueError(
                 f"Invalid service name '{v}': only alphanumeric,"
                 " underscore, @, colon, dot, and hyphen allowed"

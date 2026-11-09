@@ -500,7 +500,8 @@ def test_run_ansible_passes_check_to_ansible_runner(tmp_path):
     is the only thing that turns check mode on."""
     from app.ansible_runtime.runner import run_ansible
 
-    with patch("ansible_runner.run") as run:
+    with patch("ansible_runner.interface.init_runner") as run:
+        run.return_value.config.env = {}
         run_ansible(
             playbook_yaml="- hosts: all\n  tasks: []\n",
             inventory_json="{}",

@@ -47,6 +47,24 @@ def generate_multi_host_inventory(
     return json.dumps(inventory, indent=2)
 
 
+#: Environment for every ansible-playbook run LabDog starts.
+#:
+#: Ansible output is captured into the DB and rendered in HTML, not a
+#: terminal. ansible-runner attaches a pty by default, which makes Ansible
+# emit ANSI SGR escape codes that show up as literal garbage in the UI.
+# ANSIBLE_NOCOLOR=1 tells Ansible to skip colouring regardless of tty.
+#
+# ANSIBLE_PIPELINING (BUG-154): without it every task makes a remote
+# temp directory, copies the module over SFTP, marks it executable,
+# runs it and removes the directory: several extra SSH round trips per
+# task, about 80 ms each at zero network latency. Pipelining sends the
+# module down the open session instead. With ``become`` it needs sudo
+# without ``requiretty``, the default on every current Debian, Ubuntu
+# and RHEL-family release (see docs/ui/hosts.md). A caller's envvars
+# can still turn it off.
+BASE_ANSIBLE_ENV: dict[str, str] = {"ANSIBLE_NOCOLOR": "1", "ANSIBLE_PIPELINING": "True"}
+
+
 def run_ansible(
     *,
     playbook_yaml: str | None = None,
@@ -137,18 +155,13 @@ def run_ansible(
         seen.add(s)
         combined_roles.append(s)
 
-    # Ansible output is captured into the DB and rendered in HTML, not a
-    # terminal. ansible-runner attaches a pty by default, which makes Ansible
-    # emit ANSI SGR escape codes that show up as literal garbage in the UI.
-    # ANSIBLE_NOCOLOR=1 tells Ansible to skip colouring regardless of tty.
-    merged_env = {
-        "ANSIBLE_ROLES_PATH": ":".join(combined_roles),
-        "ANSIBLE_NOCOLOR": "1",
-    }
+    merged_env = {"ANSIBLE_ROLES_PATH": ":".join(combined_roles), **BASE_ANSIBLE_ENV}
     if envvars:
         merged_env.update(envvars)
 
-    runner = ansible_runner.run(
+    # ``ansible_runner.run()`` is ``init_runner()`` + ``.run()``; split so the
+    # environment can be scrubbed in between (SEC-46).
+    runner = ansible_runner.interface.init_runner(
         private_data_dir=private_data_dir,
         playbook="playbook.yml",
         extravars=extra_vars or {},
@@ -156,5 +169,67 @@ def run_ansible(
         envvars=merged_env,
         event_handler=event_handler,
         cmdline="--check" if check_mode else None,
+        # Without it ansible-runner echoes every line of the playbook's
+        # stdout, which Celery logs at WARNING: ~90 warning lines for one
+        # small run, burying LabDog's own. The output still reaches
+        # event_handler and the artifact's stdout file (BUG-176).
+        quiet=True,
     )
+    runner.config.env = scrub_child_env(runner.config.env)
+    runner.run()
     return runner
+
+
+#: Inherited variables an ansible-playbook process may see. Everything else
+#: from LabDog's own environment is dropped (SEC-46).
+_INHERITED_ENV_ALLOWLIST = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "TERM",
+        "TMPDIR",
+        "TZ",
+        "LANG",
+        "LANGUAGE",
+        "VIRTUAL_ENV",
+        "SSH_AUTH_SOCK",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "no_proxy",
+    }
+)
+_INHERITED_ENV_PREFIXES = ("ANSIBLE_", "LC_")
+
+
+def scrub_child_env(env: dict[str, str], inherited: dict[str, str] | None = None) -> dict[str, str]:
+    """The environment for an ansible-playbook child, minus LabDog's secrets.
+
+    SEC-46: ansible-runner seeds the child from ``os.environ.copy()``, so
+    every playbook process saw ``LABDOG_SECURITY__SECRET_KEY``,
+    ``LABDOG_SECURITY__ENCRYPTION_KEY`` and the database URL, and any
+    controller-side evaluation (SEC-39, SEC-40) could read them. The runner
+    also writes the environment into the run's ``artifacts/…/command`` file.
+
+    Kept: whatever ansible-runner or LabDog set for this run (a value that
+    differs from the inherited one), and inherited variables on an
+    allowlist. ``LABDOG_*`` is always dropped, even if set for the run.
+    """
+    inherited = os.environ if inherited is None else inherited
+    out: dict[str, str] = {}
+    for key, value in env.items():
+        if key.startswith("LABDOG_"):
+            continue
+        set_for_run = key not in inherited or inherited[key] != value
+        if (
+            set_for_run
+            or key in _INHERITED_ENV_ALLOWLIST
+            or key.startswith(_INHERITED_ENV_PREFIXES)
+        ):
+            out[key] = value
+    return out

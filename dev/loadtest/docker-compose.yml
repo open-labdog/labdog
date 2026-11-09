@@ -47,8 +47,8 @@ services:
       LABDOG_CELERY__ORCHESTRATOR_CONCURRENCY: ${ORCHESTRATOR_CONCURRENCY:-4}
     volumes:
       - ./pack:/srv/loadtest-pack:ro
-      # The image ships no ansible.posix, which linux-user sync needs (see
-      # README). prepare.sh fetches it; LabDog's own code stays untouched.
+      # Images before the BUG-128 fix need ansible.posix for linux-user
+      # sync (see README); prepare.sh fetches it.
       - ./.state/collections:/usr/share/ansible/collections:ro
     # Loopback only: the stack has throwaway credentials.
     ports:

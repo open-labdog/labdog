@@ -110,17 +110,23 @@ class TestHostOverridesAreSettledByPriority:
         from app.hosts_mgmt.models import HostsEntry
 
         host = await create_host(db, hostname=f"h-{uuid.uuid4().hex[:8]}")
-        for hostname, priority in (("loser", 1), ("winner", 9)):
+        # The clash is one line: an address and a name. Two names for one
+        # address are two lines and both stay (BUG-118).
+        for alias, priority in (("loser", 1), ("winner", 9)):
             db.add(
                 HostsEntry(
-                    host_id=host.id, ip_address="10.5.0.1", hostname=hostname, priority=priority
+                    host_id=host.id,
+                    ip_address="10.5.0.1",
+                    hostname="web",
+                    aliases=[alias],
+                    priority=priority,
                 )
             )
             await db.flush()
 
         entries = await get_effective_hosts_entries(host.id, db)
         match = [e for e in entries if e.ip_address == "10.5.0.1"]
-        assert [e.hostname for e in match] == ["winner"]
+        assert [e.aliases for e in match] == [["winner"]]
 
 
 class TestScopeStillBeatsPriority:

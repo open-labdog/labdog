@@ -160,7 +160,6 @@ def check_all_drift():
     per-module toggle: the firewall module predates ``HostModuleStatus``
     and still owns the host-level flag.
     """
-
     from app.tasks.drift_sweep import run_sweep
 
     # Fans out one check per host on the drift queue; see app.tasks.drift_sweep.

@@ -15,6 +15,7 @@ nothing upstream of it does.
 import logging
 from datetime import UTC
 
+from app.db import with_task_engine
 from app.tasks import celery_app
 
 logger = logging.getLogger(__name__)
@@ -122,23 +123,19 @@ async def _collect_and_diff(host, hms, db):
 
 async def check_resolver_drift_for_one_host(host, hms, db) -> bool:
     """`app.tasks.drift_sweep.CheckOne` adapter for the resolver module."""
-    from datetime import datetime
-
     import asyncssh
+
+    from app.tasks.drift_sweep import record_check_error, record_unreachable
 
     try:
         diff = await _collect_and_diff(host, hms, db)
         return diff is not None
     except (OSError, asyncssh.Error, TimeoutError) as e:
-        hms.sync_status = "unknown"
-        hms.last_drift_check_at = datetime.now(UTC)
-        hms.error_message = f"Host unreachable: {e or 'connection timed out'}"
+        record_unreachable(hms, e)
         return True
     except Exception as e:
         logger.exception("resolver drift check failed for host %s", host.id)
-        hms.sync_status = "error"
-        hms.last_drift_check_at = datetime.now(UTC)
-        hms.error_message = str(e)
+        record_check_error(hms, e)
         return True
 
 
@@ -173,7 +170,7 @@ def run_resolver_drift_check(self, host_id: int) -> dict:
                 "desired": diff.desired,
             }
 
-    return asyncio.run(_run())
+    return asyncio.run(with_task_engine(_run()))
 
 
 @celery_app.task(
@@ -182,7 +179,6 @@ def run_resolver_drift_check(self, host_id: int) -> dict:
 )
 def check_all_resolver_drift():
     """Periodic task: resolver drift for every host with resolver drift enabled."""
-
     from app.tasks.drift_sweep import run_sweep
 
     # Fans out one check per host on the drift queue; see app.tasks.drift_sweep.

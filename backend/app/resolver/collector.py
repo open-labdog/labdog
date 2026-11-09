@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import asyncssh
 
-from app.ssh_utils import ssh_connect_host
+from app.ssh_utils import host_connection
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,33 +26,36 @@ async def collect_resolver_state(
     db: "AsyncSession",
     private_key_pem: str,
     resolver_type: str,
+    conn=None,
 ) -> dict | None:
-    """Return {"nameservers", "search_domains", "options"} or None if unmanaged."""
-    private_key = asyncssh.import_private_key(private_key_pem)
+    """Return {"nameservers", "search_domains", "options"} or None if unmanaged.
+
+    ``conn``: an open connection to use (see ``app.ssh_utils.host_connection``).
+    """
 
     async def _run() -> dict | None:
-        async with ssh_connect_host(host, db, client_keys=[private_key]) as conn:
+        async with host_connection(host, db, private_key_pem, conn) as c:
             if resolver_type == "resolv_conf":
-                result = await conn.run("cat /etc/resolv.conf 2>/dev/null", check=False)
+                result = await c.run("cat /etc/resolv.conf 2>/dev/null", check=False)
                 output = _stdout(result)
                 if result.exit_status != 0 or not output.strip():
                     return None
                 return parse_resolv_conf(output)
 
             elif resolver_type == "systemd_resolved":
-                result = await conn.run("resolvectl status 2>/dev/null", check=False)
+                result = await c.run("resolvectl status 2>/dev/null", check=False)
                 output = _stdout(result)
                 if result.exit_status == 0 and output.strip():
                     return parse_resolvectl_output(output)
 
-                result = await conn.run("cat /etc/systemd/resolved.conf 2>/dev/null", check=False)
+                result = await c.run("cat /etc/systemd/resolved.conf 2>/dev/null", check=False)
                 output = _stdout(result)
                 if result.exit_status != 0 or not output.strip():
                     return None
                 return parse_resolved_conf(output)
 
             elif resolver_type == "networkmanager":
-                result = await conn.run(
+                result = await c.run(
                     "cat /etc/NetworkManager/conf.d/90-labdog-dns.conf 2>/dev/null",
                     check=False,
                 )

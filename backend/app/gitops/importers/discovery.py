@@ -29,7 +29,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
-from app.gitops.importers.firewall import ModuleImportResult
+from app.gitops.importers._common import ModuleImportResult
 from app.gitops.schema import DiscoveryYAML, LabDogGlobalYAML
 from app.models.host_group import HostGroup
 from app.models.scan_config import ScanConfig
