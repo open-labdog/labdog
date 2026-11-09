@@ -366,6 +366,7 @@ def run_sweep(module_type: str) -> dict[str, int]:
 
     return asyncio.run(with_task_engine(fan_out_module(module_type)))
 
+
 # ---------------------------------------------------------------------------
 # Steps the per-module check bodies share
 # ---------------------------------------------------------------------------
