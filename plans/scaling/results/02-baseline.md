@@ -1,6 +1,6 @@
 # 02 — Baseline on unchanged code
 
-Status: **complete** (2026-11-08). All 14 runs finished; raw data stays on
+Status: **complete** (2026-11-09). All 14 single-box runs and 5 two-host runs finished; raw data stays on
 the test box (`results/<SID>-n<N>-<cfg>/`).
 
 - Image `openlabdog/labdog:dev-5cb85d7` (PR base, v1.1.0), harness in
@@ -74,6 +74,65 @@ With load on, the 4 vCPUs are pinned at 100 % (LabDog and 300 fake hosts
 share them), so each sync takes 3.5× longer and 4× the slots buys only
 ~35 % more syncs. Read the raised numbers as "CPU-bound on this box",
 not as what 16 slots can do with spare cores.
+
+## Results, raised config on two hosts, N = 300
+
+Run 2026-11-08/09 to separate CPU contention from queueing. LabDog,
+Postgres and Redis stay on the 4 vCPU / 16 GB box; the 300 fake hosts
+move to a second VM (4 vCPU, ~6 GB), reached over a static route with
+the same 20 ms netem. Same image, scenarios and settings as the raised
+runs above (16 / 12, `max_connections` 400).
+
+| | S1 drift | S2 + bulk 15 min | S3 + actions | S4 + par-0 run | S5 + same-minute |
+|---|---|---|---|---|---|
+| Bulk syncs succeeded¹ | – | 936 (510) | 813 (432) | 625 (317) | 820 (471) |
+| Bulk run time avg | – | 55 s (91) | 59 s (97) | 59 s (93) | 56 s (93) |
+| Bulk wait p50 / p95 | – | 627 / 1015 s | 886 / 1301 s | 1064 / 2098 s | 849 / 1228 s |
+| Syncs pending after drain | 0 | 0 | 0 | 81 + 15 running | 0 |
+| Action host runs succeeded | – | – | 175 of 720 (71) | 464 of 1380 (370) | 241 of 720 (61) |
+| Action runs finished | – | – | 0 of 8 | 1 of 14 (par-0, 2199 s) | 0 of 8 |
+| Drift sweep interval⁵ | 30 min | 28–31 min | 30–36 min | ~51 min | 27–35 min |
+| Slowest sweep (package) | 407 s | 792 s | 798 s | 795 s | 754 s |
+| `long_running` queue max | 0 | 251 | 350 | 725 | 365 |
+| LabDog RSS max | 3.0 GiB | 4.3 GiB | 4.4 GiB | 4.5 GiB | 4.4 GiB |
+| Postgres RSS max | 463 MiB | 571 MiB | 552 MiB | 648 MiB | 564 MiB |
+| Postgres connections max | 119 | 133 | 136 | 213 | 151 |
+| LabDog box CPU avg / max | 5 / 16 % | 88 / 99 % | 86 / 99 % | 86 / 99 % | 85 / 99 % |
+| Fake-host box CPU avg / max | 6 / 33 % | 86 / 100 % | 76 / 100 % | 68 / 100 % | 75 / 100 % |
+| Min available memory (LabDog / fake hosts) | 11.4 / 3.9 GB | 10.1 / 2.8 GB | 10.0 / 2.8 GB | 9.9 / 2.8 GB | 10.0 / 2.8 GB |
+| Failures | 0 | 0 | 0 | 0 | 0 |
+
+Figures in brackets are the single-box raised runs.
+⁵ Start of one package sweep to the start of the next; configured
+30 min. The single-box raised runs were ~44 min in S2–S5.
+
+What changes with the second host:
+
+- **Sync throughput nearly doubles** (+73–97 %); each sync takes ~57 s
+  instead of ~93 s. The bulk backlog now drains within the run in S2, S3
+  and S5, but a full pass (300 × ~57 s / 16 ≈ 18 min) still exceeds the
+  15 min period: 46–130 hosts are skipped at each bulk request because
+  their previous sync is still pending.
+- **Both boxes are busy again.** The LabDog box averages ~86 % CPU
+  (ansible-runner forks are LabDog's), the fake-host box peaks at 100 %.
+  16 sync slots is about what 4 vCPU on the LabDog side can drive.
+- **Actions still starve behind syncs.** Host runs succeed 2.5–4× more
+  often, but no par-10 action run finishes in an hour in S3 or S5, and
+  hundreds of host runs are still queued at the end. S4's par-0 run
+  finishes in 37 min instead of 47.
+- **Drift is on time only while the queue is short.** Sweeps hold the
+  30 min interval in S2, slip to ~36 min in S3 and S5, and to ~51 min in
+  S4, where the `long_running` queue peaks at 725. Each sweep takes
+  ~13 min under load instead of ~7.
+- Memory is not the limit on either box; Postgres peaked at 213
+  connections in S4.
+
+So taking the CPU contention away buys throughput, not fairness: drift
+and action host runs still wait in the same FIFO queue as bulk syncs,
+and how late they are depends on how long that queue is. That is the
+part step 3 addresses. Step 3 will not raise total throughput: the
+LabDog box is already near its CPU limit, so dedicated drift and action
+slots come out of the sync budget.
 
 ## Drift sweeps vs host count (S1)
 
