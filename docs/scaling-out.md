@@ -70,7 +70,11 @@ front of Postgres once the total grows.
   process. Several API containers would need sticky sessions.
 * **One `beat`.** Two schedulers against one RedBeat keyspace would fire
   every periodic job twice.
-* **Pack checkouts** live on each container's own disk. Every worker
-  container, the orchestrator included when it runs alone, syncs its own
-  checkout at boot; the checkout lock is a Postgres advisory lock, so this
-  is safe, just serialised.
+* **One pack checkout, shared.** Mount the same volume at
+  `/var/lib/labdog/packs` (`ansible.packs_root_dir`) in every container,
+  as the example compose file does. A pack you add or sync in the UI is
+  synced by the `api` container alone, and workers reload the action
+  registry from what is on their disk. With a disk each, workers would
+  keep running the old playbook, or fail a new action as "not found in
+  registry", until they restarted. Concurrent syncs into the shared
+  volume are safe: the checkout lock is a Postgres advisory lock.

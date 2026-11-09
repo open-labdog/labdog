@@ -19,6 +19,12 @@ x-labdog: &labdog
     LABDOG_CELERY__CONCURRENCY: ${LABDOG_CELERY__CONCURRENCY:-4}
     LABDOG_CELERY__DRIFT_CONCURRENCY: ${LABDOG_CELERY__DRIFT_CONCURRENCY:-4}
     LABDOG_CELERY__ORCHESTRATOR_CONCURRENCY: ${LABDOG_CELERY__ORCHESTRATOR_CONCURRENCY:-4}
+  # One pack checkout for every container. A pack added or synced in the UI
+  # is synced by the api container only, and workers reload the action
+  # registry from this disk, so separate disks would leave workers on old
+  # playbooks (or "not found in registry") until they restarted.
+  volumes:
+    - packs:/var/lib/labdog/packs
   depends_on:
     postgres: { condition: service_healthy }
     redis: { condition: service_healthy }
@@ -75,3 +81,4 @@ services:
 
 volumes:
   postgres_data:
+  packs:

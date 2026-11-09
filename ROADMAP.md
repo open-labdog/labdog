@@ -166,8 +166,11 @@ so worker capacity grows with hardware. What it needs:
 
 - SSH reach from every worker box to the managed hosts, and network
   access to Postgres and Redis.
-- The same secrets and image version on every box; pack sync on each
-  worker at startup (already per worker).
+- The same secrets and image version on every box.
+- Pack checkouts that reach every box. In one compose project they share
+  a volume; across boxes that means a shared filesystem, or workers that
+  re-sync a pack when its commit in the database moves ahead of their
+  checkout.
 - A connection pooler (PgBouncer) once the total slot count grows, at
   ~6 Postgres connections per slot.
 - A functional check (a worker on a second box runs syncs and actions)
