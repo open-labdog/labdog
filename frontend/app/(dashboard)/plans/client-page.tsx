@@ -75,7 +75,7 @@ export default function PlanPage() {
 
   /* derived from the selection */
   const plan = breakdown(plans, sel)
-  const { changing, unchanged, skipped, errored, targets, excluded, selChanges } = plan
+  const { changing, unchanged, skipped, notPreviewed, targets, excluded, selChanges } = plan
   const selSsh = modules.includes("firewall") && selChanges.some((c) => SSH_RE.test(c.summary))
   const pveInScope = scopeHosts.filter((h) => (vmMappings ?? []).some((vm) => vm.host_id === h.id)).length
   const unknownBackend = modules.includes("firewall") ? scopeHosts.filter((h) => h.firewall_backend === "unknown") : []
@@ -221,7 +221,7 @@ export default function PlanPage() {
             {phase === "done" && (
               <ApplyResult
                 meta={`${modulesLabel} → ${scopeLabel}`}
-                counts={{ applied, failed, excluded, unchanged: unchanged.length, skipped: skipped.length + errored.length }}
+                counts={{ applied, failed, excluded, unchanged: unchanged.length, skipped: skipped.length + notPreviewed.length }}
                 targets={targets}
                 jobs={jobs}
                 jobStatus={jobStatus}

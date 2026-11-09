@@ -169,6 +169,11 @@ def run_ansible(
         envvars=merged_env,
         event_handler=event_handler,
         cmdline="--check" if check_mode else None,
+        # Without it ansible-runner echoes every line of the playbook's
+        # stdout, which Celery logs at WARNING: ~90 warning lines for one
+        # small run, burying LabDog's own. The output still reaches
+        # event_handler and the artifact's stdout file (BUG-176).
+        quiet=True,
     )
     runner.config.env = scrub_child_env(runner.config.env)
     runner.run()

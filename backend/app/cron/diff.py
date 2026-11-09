@@ -42,8 +42,20 @@ def _format_key(key: tuple[str, str]) -> str:
 
 
 def _needs_update(desired: dict, actual: dict) -> bool:
-    if desired.get("schedule") != actual.get("schedule"):
+    if _schedule(desired) != _schedule(actual):
         return True
     if desired.get("command") != actual.get("command"):
         return True
     return False
+
+
+def _schedule(entry: dict) -> str | None:
+    """The schedule with its fields one space apart.
+
+    The host's crontab line comes back that way, while a schedule stored
+    before the schemas normalised it, or imported byte-for-byte from GitOps
+    YAML, can carry a trailing newline or doubled spaces that cron itself
+    ignores. Comparing raw strings made such a job drift for ever (BUG-174).
+    """
+    schedule = entry.get("schedule")
+    return " ".join(schedule.split()) if isinstance(schedule, str) else schedule

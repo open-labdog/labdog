@@ -66,6 +66,20 @@ The format follows [Keep a Changelog]; LabDog follows
   `paste`, and `awk`, `gawk` and `mawk` programs without `system()`,
   pipes, `getline`, a redirection after `print`, gawk's `@` forms or
   `ARGV`, now count as reads (BUG-171).
+- **Users with keys or a sudo rule no longer drift for ever when LabDog
+  logs in as a non-root user.** The `authorized_keys` file and the
+  sudoers drop-in are read through `sudo -n`, and a file that exists but
+  cannot be read is reported as an error instead of an empty one
+  (BUG-172).
+- **`~/.ssh` and `authorized_keys` get the user's primary group**, not
+  `root` (BUG-173).
+- **A cron schedule with stray whitespace no longer drifts for ever.**
+  Schedules are stored five fields one space apart, and the drift check
+  ignores whitespace in ones stored before (BUG-174).
+- **The Plans page no longer shows a host whose module preview failed as
+  "no change".** It shows the module error, and the Reachability check
+  names the host (BUG-175).
+- **Playbook output no longer floods the worker log at WARNING** (BUG-176).
 
 ## [1.1.0] — 2026-11-06
 

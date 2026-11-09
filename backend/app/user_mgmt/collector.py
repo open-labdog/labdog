@@ -15,6 +15,15 @@ if TYPE_CHECKING:
     from app.models.host import Host
 
 
+#: Sections ``_read_user_files`` adds for a file it could not read.
+_FILE_NAMES = {"x-keys": "authorized_keys", "x-sudo": "sudoers drop-in"}
+
+
+class UserCollectionError(RuntimeError):
+    """A user's keys or sudoers drop-in could not be read, as opposed to
+    there being none (BUG-172)."""
+
+
 async def collect_user_states(
     host: "Host",
     db: "AsyncSession",
@@ -40,6 +49,10 @@ async def collect_user_states(
                 return await _user_states(c, usernames)
 
         return await asyncio.wait_for(_run(), timeout=30.0)
+    except UserCollectionError:
+        # BUG-172: an unreadable file is not an empty one. Reporting it as
+        # empty made every managed key and sudo rule look missing.
+        raise
     except Exception:
         return [_absent_user(u) for u in usernames]
 
@@ -56,6 +69,14 @@ async def _user_states(
     accounts = _parse_passwd(passwd.stdout or "")
     present = [u for u in dict.fromkeys(usernames) if u in accounts]
     sections = await _read_user_files(conn, present, accounts) if present else {}
+    unreadable = sorted(
+        f"{_FILE_NAMES[what]} of {user!r}" for what, user in sections if what in _FILE_NAMES
+    )
+    if unreadable:
+        raise UserCollectionError(
+            f"could not read the {', '.join(unreadable)}: LabDog's SSH user needs to be "
+            "root or have passwordless sudo"
+        )
 
     results = []
     for username in usernames:
@@ -111,22 +132,43 @@ async def _read_user_files(
     The output is split on a marker line carrying a random token, so
     nothing a file contains can pass for another section. Each marker
     starts with a newline, in case the file before it does not end in one.
-    A file that cannot be read gives an empty section, as a failed ``cat``
-    did before.
+
+    The key file is ``0600`` in a home that is often ``0700``, and sudoers
+    drop-ins are ``0440 root``, so a non-root SSH user cannot see them.
+    Each file is tested and read through ``sudo -n`` unless already root
+    (a root-only host may have no sudo at all), as the cron collector does
+    for ``crontab -l`` (BUG-130). A missing file is an empty section; one
+    that exists but cannot be read, or a test that cannot run because sudo
+    refuses, adds an ``x-keys`` / ``x-sudo`` section, which the caller
+    reports as an error (BUG-172).
     """
     marker = f"LABDOG-{secrets.token_hex(8)}"
-    steps = []
+    # `test -e` exits 1 for a missing file; sudo exits 1 too when it
+    # refuses, so the status alone cannot tell them apart. `sudo -n true`
+    # once up front decides whether sudo works at all.
+    steps = [
+        'if [ "$(id -u)" = 0 ]; then S=; '
+        "elif sudo -n true 2>/dev/null; then S='sudo -n'; else S=none; fi",
+    ]
+
+    def read(path: str, section: str, user: str) -> str:
+        return (
+            f"if [ \"$S\" = none ]; then printf '\\n%s x-{section} %s\\n' {marker} {user}; "
+            f"elif $S test -e {path}; then $S cat -- {path} 2>/dev/null "
+            f"|| printf '\\n%s x-{section} %s\\n' {marker} {user}; fi"
+        )
+
     for username in usernames:
         user = shlex.quote(username)
         # home_dir comes from the remote host's getent output — quote it so a
         # compromised host can't inject shell metacharacters via the home path.
-        home = shlex.quote(accounts[username][1])
+        home = shlex.quote(accounts[username][1].rstrip("/") + "/.ssh/authorized_keys")
         steps.extend(
             [
                 f"printf '\\n%s keys %s\\n' {marker} {user}",
-                f"cat {home}/.ssh/authorized_keys 2>/dev/null",
+                read(home, "keys", user),
                 f"printf '\\n%s sudo %s\\n' {marker} {user}",
-                f"cat /etc/sudoers.d/{user} 2>/dev/null",
+                read(shlex.quote(f"/etc/sudoers.d/{username}"), "sudo", user),
                 f"printf '\\n%s groups %s\\n' {marker} {user}",
                 f"groups {user} 2>/dev/null",
             ]
