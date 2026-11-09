@@ -1,6 +1,5 @@
-import yaml
-
 from app.ansible_runtime.inventory import generate_inventory
+from app.ansible_runtime.playbook_yaml import Template, dump_playbook
 from app.enum_utils import enum_str
 
 
@@ -50,19 +49,19 @@ def generate_cleanup_tasks(desired_services: list[dict]) -> tuple[list[dict], li
         {
             "name": "Remove orphaned LabDog overrides",
             "ansible.builtin.file": {
-                "path": "{{ item.path }}",
+                "path": Template("{{ item.path }}"),
                 "state": "absent",
             },
-            "loop": "{{ labdog_overrides.files }}",
+            "loop": Template("{{ labdog_overrides.files }}"),
             "when": "item.path not in allowed_override_paths",
         },
         {
             "name": "Remove empty override directories",
             "ansible.builtin.file": {
-                "path": "{{ item.path | dirname }}",
+                "path": Template("{{ item.path | dirname }}"),
                 "state": "absent",
             },
-            "loop": "{{ labdog_overrides.files }}",
+            "loop": Template("{{ labdog_overrides.files }}"),
             "when": "item.path not in allowed_override_paths",
         },
         # --- Full unit file cleanup ---
@@ -80,10 +79,10 @@ def generate_cleanup_tasks(desired_services: list[dict]) -> tuple[list[dict], li
         {
             "name": "Remove orphaned LabDog unit files",
             "ansible.builtin.file": {
-                "path": "{{ item }}",
+                "path": Template("{{ item }}"),
                 "state": "absent",
             },
-            "loop": "{{ labdog_units.stdout_lines }}",
+            "loop": Template("{{ labdog_units.stdout_lines }}"),
             "when": "item not in allowed_unit_paths",
         },
         # --- Daemon reload after cleanup ---
@@ -250,7 +249,7 @@ def generate_service_playbook(
         }
     ]
 
-    playbook_yaml = yaml.dump(playbook, default_flow_style=False, sort_keys=False)
+    playbook_yaml = dump_playbook(playbook)
     inventory_json = generate_inventory(host_ip, ssh_port, ssh_key_path, ssh_user)
 
     return playbook_yaml, inventory_json

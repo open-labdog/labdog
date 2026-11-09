@@ -6,8 +6,8 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.cron.validators import validate_cron_expression
 
-_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
-_USER_RE = re.compile(r"^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$")
+_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*\Z")
+_USER_RE = re.compile(r"^[a-zA-Z0-9_][a-zA-Z0-9_.-]*\Z")
 
 
 class CronJobCreate(BaseModel):

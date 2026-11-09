@@ -28,6 +28,11 @@ logger = logging.getLogger(__name__)
 _TASK_HASH = int(hashlib.sha256(b"scans.run_config").hexdigest(), 16) % (2**62)
 
 
+#: Namespace for the per-config "a run of this config is in progress" lock
+#: (two-int advisory lock form, so it cannot collide with the bucket keys).
+_RUN_LOCK_NAMESPACE = int(hashlib.sha256(b"scans.run_config.single").hexdigest(), 16) % (2**31)
+
+
 def _advisory_lock_key(config_id: int) -> int:
     """Return the pg_advisory_xact_lock key for *config_id*.
 
@@ -96,6 +101,7 @@ async def _async_run(config_id: int, is_manual: bool = False) -> dict:  # noqa: 
     import asyncssh
     from sqlalchemy import insert as sa_insert
     from sqlalchemy import select, text
+    from sqlalchemy import update as sa_update
 
     from app.audit.logger import log_action
     from app.crypto.encryption import decrypt_ssh_key
@@ -110,22 +116,53 @@ async def _async_run(config_id: int, is_manual: bool = False) -> dict:  # noqa: 
 
     try:
         async with task_session() as db:
-            # ---- a. Load config -----------------------------------------
+            skipped = {"hosts_added": 0, "hosts_pending": 0, "skipped": True}
+
+            # ---- a. One run per config (BUG-136) -------------------------
+            # The scheduler ticks every 60 s and saw the config as still
+            # due for as long as a scan ran, because the "running" mark was
+            # only flushed. Each extra dispatch blocked on the lock below,
+            # holding a worker slot and a connection, then scanned again.
+            # A try-lock per config turns those into an immediate skip.
+            got = await db.scalar(
+                text("SELECT pg_try_advisory_xact_lock(:ns, :id)").bindparams(
+                    ns=_RUN_LOCK_NAMESPACE, id=config_id
+                )
+            )
+            if not got:
+                logger.info("scan_run: config %d is already running; skipping", config_id)
+                return skipped
+
+            # ---- b. Concurrency cap (held for the entire scan) ----------
+            # SQLAlchemy autobegin started the transaction above, making
+            # pg_advisory_xact_lock valid here. Released at the final commit.
+            await db.execute(text("SELECT pg_advisory_xact_lock(:key)").bindparams(key=lock_key))
+
+            # ---- c. Load config, after the locks so it is current --------
             cfg_result = await db.execute(select(ScanConfig).where(ScanConfig.id == config_id))
             config = cfg_result.scalar_one_or_none()
             if config is None or not config.enabled:
-                return {"hosts_added": 0, "hosts_pending": 0, "skipped": True}
+                return skipped
+            if not is_manual:
+                from app.cron_walk import get_schedule_timezone
+                from app.tasks.scan_schedule import _is_due
 
-            # ---- b. Advisory lock (held for the entire scan) ------------
-            # SQLAlchemy autobegin starts a transaction on the first execute,
-            # making pg_advisory_xact_lock valid here.  The lock is released
-            # when the session's transaction commits at the end of the block.
-            await db.execute(text("SELECT pg_advisory_xact_lock(:key)").bindparams(key=lock_key))
+                # A run queued behind the previous one finds it already
+                # done: re-check rather than scan again straight away.
+                if not _is_due(config, datetime.now(UTC), await get_schedule_timezone(db)):
+                    return skipped
 
-            # ---- c. Mark running ----------------------------------------
+            # ---- d. Mark running, committed so other sessions see it -----
+            started_at = datetime.now(UTC)
+            async with task_session() as mark_db:
+                await mark_db.execute(
+                    sa_update(ScanConfig)
+                    .where(ScanConfig.id == config_id)
+                    .values(last_run_status="running", last_run_at=started_at)
+                )
+                await mark_db.commit()
             config.last_run_status = "running"
-            config.last_run_at = datetime.now(UTC)
-            await db.flush()  # visible to other readers; lock still held
+            config.last_run_at = started_at
 
             # ---- d. Load + decrypt SSH key ------------------------------
             key_row = (

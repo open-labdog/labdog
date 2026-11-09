@@ -1,5 +1,7 @@
 from typing import Any
 
+from app.ansible_runtime.playbook_yaml import Template
+
 
 def _get(obj: Any, key: str, default: Any = None) -> Any:
     if isinstance(obj, dict):
@@ -68,6 +70,20 @@ def _user_tasks(users: list) -> list[dict]:
 
 
 def _authorized_key_tasks(users: list) -> list[dict]:
+    """Write each present user's ``~/.ssh/authorized_keys`` (exclusive).
+
+    Uses ``ansible.builtin`` only (BUG-128): the image ships ansible-core,
+    which has no ``ansible.posix.authorized_key``, so emitting that module
+    made every users sync fail at parse time. The file is written whole,
+    which is what ``exclusive: true`` did. A user without keys is left
+    alone, as before (``authorized_key`` with an empty key and
+    ``state: absent`` removed nothing).
+
+    The home directory comes from ``getent`` on the target, the same source
+    the collector reads it from. In check mode a user created earlier in the
+    same play does not exist yet, so the lookup is allowed to miss and the
+    key tasks are skipped for that user.
+    """
     tasks = []
     for u in users:
         username = _get(u, "username")
@@ -75,32 +91,50 @@ def _authorized_key_tasks(users: list) -> list[dict]:
         if state != "present":
             continue
 
-        keys = _get(u, "authorized_keys", [])
+        keys = _get(u, "authorized_keys", []) or []
+        if not keys:
+            continue
 
-        if keys:
-            tasks.append(
+        # Operator data stays out of the Jinja expressions: the username
+        # reaches them only as a task variable.
+        task_vars = {"labdog_key_user": username}
+        passwd = "ansible_facts.getent_passwd[labdog_key_user]"  # nosec B105 - a fact path
+        home = Template("{{ " + passwd + "[4] }}")
+        exists = f"{passwd} is not none"
+        tasks.extend(
+            [
+                {
+                    "name": f"Look up home directory of {username}",
+                    "ansible.builtin.getent": {
+                        "database": "passwd",
+                        "key": username,
+                        "fail_key": False,
+                    },
+                },
+                {
+                    "name": f"SSH directory for {username}",
+                    "ansible.builtin.file": {
+                        "path": Template(home + "/.ssh"),
+                        "state": "directory",
+                        "owner": username,
+                        "mode": "0700",
+                    },
+                    "vars": task_vars,
+                    "when": exists,
+                },
                 {
                     "name": f"Authorized keys for {username}",
-                    "ansible.posix.authorized_key": {
-                        "user": username,
-                        "key": "\n".join(keys),
-                        "exclusive": True,
-                        "state": "present",
+                    "ansible.builtin.copy": {
+                        "content": "".join(f"{key}\n" for key in keys),
+                        "dest": Template(home + "/.ssh/authorized_keys"),
+                        "owner": username,
+                        "mode": "0600",
                     },
-                }
-            )
-        else:
-            tasks.append(
-                {
-                    "name": f"Authorized keys for {username}",
-                    "ansible.posix.authorized_key": {
-                        "user": username,
-                        "key": "",
-                        "exclusive": True,
-                        "state": "absent",
-                    },
-                }
-            )
+                    "vars": task_vars,
+                    "when": exists,
+                },
+            ]
+        )
     return tasks
 
 

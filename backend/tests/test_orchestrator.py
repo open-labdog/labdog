@@ -653,3 +653,33 @@ async def test_orchestrator_outcomes_real_event_fixture(db: AsyncSession, tmp_pa
     # Modules with no events → no_tasks.
     for module in ("resolver", "hosts-file", "cron", "linux-users"):
         assert outcomes[module] == "no_tasks", f"{module}: {outcomes[module]}"
+
+
+async def test_a_failed_run_with_no_events_is_an_error_not_in_sync(db: AsyncSession, tmp_path):
+    """BUG-129: a playbook that fails to parse emits no task events, and
+    every module used to come back ``no_tasks`` (shown as in sync). A host
+    that fails in one play never reaches the later ones either."""
+    from app.models.host import FirewallBackend
+
+    ssh_key = await create_ssh_key(db)
+    host = await create_host(db, ssh_key_id=ssh_key.id)
+    host.firewall_backend = FirewallBackend.nftables
+    await db.flush()
+    private_data_dir = str(tmp_path / "runner")
+    os.makedirs(private_data_dir, exist_ok=True)
+
+    fake_runner = _FakeRunner(events=[_make_event("runner_on_failed", ["firewall"])])
+    fake_runner.status = "failed"
+    fake_runner.rc = 2
+    outcomes, _playbook, _inventory = await orchestrate_host_sync(
+        host.id,
+        None,
+        db,
+        decrypt_key_fn=_make_decrypt_fn(b"FAKE PRIVATE KEY"),
+        run_ansible_fn=_make_run_ansible_fn(fake_runner),
+        ssh_key_path=str(tmp_path / "id_ed25519"),
+        private_data_dir=private_data_dir,
+    )
+
+    assert outcomes
+    assert set(outcomes.values()) == {"error"}, outcomes

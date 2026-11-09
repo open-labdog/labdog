@@ -1,5 +1,4 @@
-import yaml
-
+from app.ansible_runtime.playbook_yaml import Template, dump_playbook
 from app.rules.model import ChainPolicies, FirewallRuleSpec
 from app.rules.renderers.iptables import render_iptables_rules
 from app.rules.renderers.nftables import render_nftables_config
@@ -28,7 +27,7 @@ _WORKDIR_VAR = "labdog_fw_tmp"
 
 #: Jinja expression for that directory, as written into the shell
 #: fragments below. Kept short so the command strings stay readable.
-_TMP = "{{ " + _WORKDIR_VAR + ".path }}"
+_TMP = Template("{{ " + _WORKDIR_VAR + ".path }}")
 
 
 def _workdir_task() -> dict:
@@ -168,14 +167,14 @@ def generate_nftables_playbook(
         _workdir_task(),
         {
             "name": "Backup current nftables ruleset",
-            "ansible.builtin.shell": (
+            "ansible.builtin.shell": Template(
                 f"/usr/sbin/nft list table inet filter > {_TMP}/nftables-backup.conf"
                 f" 2>/dev/null || touch {_TMP}/nftables-backup.conf"
             ),
         },
         {
             "name": "Schedule automatic revert in 60 seconds (deadman switch)",
-            "ansible.builtin.shell": (
+            "ansible.builtin.shell": Template(
                 "nohup bash -c '"
                 "sleep 60 && "
                 "/usr/sbin/nft delete table inet filter 2>/dev/null; "
@@ -189,7 +188,7 @@ def generate_nftables_playbook(
             "name": "Backup original config file",
             "ansible.builtin.copy": {
                 "src": "/etc/nftables.conf",
-                "dest": f"{_TMP}/nftables-backup.conf.orig",
+                "dest": Template(f"{_TMP}/nftables-backup.conf.orig"),
                 "remote_src": True,
             },
             "ignore_errors": True,
@@ -211,7 +210,7 @@ def generate_nftables_playbook(
         },
         {
             "name": "Cancel automatic revert (SSH still works)",
-            "ansible.builtin.shell": (
+            "ansible.builtin.shell": Template(
                 f"if [ -f {_TMP}/nftables-revert.pid ]; then "
                 f"kill $(cat {_TMP}/nftables-revert.pid) 2>/dev/null; "
                 f"rm -f {_TMP}/nftables-revert.pid; "
@@ -239,7 +238,7 @@ def generate_nftables_playbook(
             "tasks": tasks,
         }
     ]
-    return yaml.dump(playbook, default_flow_style=False, sort_keys=False)
+    return dump_playbook(playbook)
 
 
 def generate_iptables_playbook(
@@ -268,21 +267,21 @@ def generate_iptables_playbook(
         _workdir_task(),
         {
             "name": "Backup current iptables ruleset",
-            "ansible.builtin.shell": (
+            "ansible.builtin.shell": Template(
                 f"iptables-save > {_TMP}/iptables-backup.rules"
                 f" 2>/dev/null || touch {_TMP}/iptables-backup.rules"
             ),
         },
         {
             "name": "Backup current ip6tables ruleset",
-            "ansible.builtin.shell": (
+            "ansible.builtin.shell": Template(
                 f"ip6tables-save > {_TMP}/ip6tables-backup.rules"
                 f" 2>/dev/null || touch {_TMP}/ip6tables-backup.rules"
             ),
         },
         {
             "name": "Schedule automatic revert in 60 seconds (deadman switch)",
-            "ansible.builtin.shell": (
+            "ansible.builtin.shell": Template(
                 "nohup bash -c '"
                 "sleep 60 && "
                 f"iptables-restore < {_TMP}/iptables-backup.rules && "
@@ -349,7 +348,7 @@ def generate_iptables_playbook(
         },
         {
             "name": "Cancel automatic revert (SSH still works)",
-            "ansible.builtin.shell": (
+            "ansible.builtin.shell": Template(
                 f"if [ -f {_TMP}/iptables-revert.pid ]; then "
                 f"kill $(cat {_TMP}/iptables-revert.pid) 2>/dev/null; "
                 f"rm -f {_TMP}/iptables-revert.pid; "
@@ -398,7 +397,7 @@ def generate_iptables_playbook(
             "tasks": tasks,
         }
     ]
-    return yaml.dump(playbook, default_flow_style=False, sort_keys=False)
+    return dump_playbook(playbook)
 
 
 def generate_playbook(

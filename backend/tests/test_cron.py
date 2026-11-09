@@ -332,3 +332,42 @@ class TestCronAPI:
         assert deploy[0]["source"] == "host"
         assert deploy[0]["command"] == "/bin/deploy-host"
         assert deploy[0]["schedule"] == "0 4 * * *"
+
+
+class TestUserCrontabCollection:
+    """BUG-130: ``crontab -l -u`` as a non-root SSH user fails with "must be
+    privileged", and that failure read as an empty crontab."""
+
+    class _Conn:
+        def __init__(self, exit_status: int, stdout: str = "", stderr: str = ""):
+            self.result = type(
+                "R", (), {"exit_status": exit_status, "stdout": stdout, "stderr": stderr}
+            )()
+            self.commands: list[str] = []
+
+        async def run(self, command: str, check: bool = False):
+            self.commands.append(command)
+            return self.result
+
+    async def test_it_goes_through_sudo_unless_root(self):
+        from app.cron.collector import _collect_user_crontab
+
+        conn = self._Conn(0, "#Ansible: j\n* * * * * true\n")
+        entries = await _collect_user_crontab(conn, "root")
+        assert entries and entries[0]["name"] == "j"
+        assert "sudo -n crontab -l -u root" in conn.commands[0]
+
+    async def test_no_crontab_is_empty(self):
+        from app.cron.collector import _collect_user_crontab
+
+        conn = self._Conn(1, stderr="no crontab for root\n")
+        assert await _collect_user_crontab(conn, "root") == []
+
+    async def test_a_failure_is_an_error_not_an_empty_crontab(self):
+        import pytest
+
+        from app.cron.collector import CronCollectionError, _collect_user_crontab
+
+        conn = self._Conn(1, stderr="sudo: a password is required\n")
+        with pytest.raises(CronCollectionError, match="password is required"):
+            await _collect_user_crontab(conn, "root")

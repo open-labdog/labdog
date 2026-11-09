@@ -4,7 +4,7 @@ import re
 
 # POSIX-portable username pattern matching useradd's default policy.
 # Mirrors the regex already used in user_mgmt/schemas.py (BUG-49).
-LINUX_USERNAME_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
+LINUX_USERNAME_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}\Z")
 
 
 def validate_linux_username(v: str) -> str:

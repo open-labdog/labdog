@@ -74,3 +74,7 @@ async def task_session():
             yield session
         finally:
             await task_engine.dispose()
+
+
+# Registers the after-commit session hooks wherever a session is made.
+import app.db_after_commit  # noqa: E402, F401

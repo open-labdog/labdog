@@ -2,6 +2,7 @@
 
 import logging
 
+from pydantic import ValidationError
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +12,7 @@ from app.gitops.schema import LabDogGroupYAML, ServiceYAML
 from app.models.host_group import HostGroup
 from app.services.constants import PROTECTED_SERVICES
 from app.services.models import DeployMode, ServiceRule, ServiceState
+from app.services.schemas import ServiceRuleCreate
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +122,15 @@ async def import_services(
                 entry.service_name,
             )
             continue
+        # SEC-43: one rule per field. Round-trip through the API's create
+        # schema, so a value the API refuses cannot arrive through Git instead.
+        try:
+            ServiceRuleCreate.model_validate(entry.model_dump())
+        except ValidationError as exc:
+            return ModuleImportResult(
+                module="services",
+                error_message=f"Invalid service '{entry.service_name}': {exc}",
+            )
 
         if entry.deploy_mode == "full" and entry.unit_content is None:
             return ModuleImportResult(

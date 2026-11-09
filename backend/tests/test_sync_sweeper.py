@@ -309,3 +309,54 @@ async def test_sweeper_idempotent_on_second_run(db: AsyncSession, mock_run_host_
         .all()
     )
     assert len(audits) == 1
+
+
+async def test_an_orphaned_pending_job_on_an_idle_host_is_dispatched(
+    db: AsyncSession, mock_run_host_sync_delay
+):
+    """BUG-131: a pending job whose task died before claiming the host was
+    only ever dispatched by another op on that host finishing."""
+    from app.tasks.sync_sweeper import PENDING_STALE_MINUTES
+
+    ssh_key = await create_ssh_key(db)
+    host = await create_host(db, ssh_key_id=ssh_key.id)
+    orphan = SyncJob(
+        host_id=host.id,
+        status=JobStatus.pending,
+        module_type="firewall",
+        created_at=_utc_minutes_ago(PENDING_STALE_MINUTES + 1),
+    )
+    fresh_host = await create_host(db, ssh_key_id=ssh_key.id)
+    fresh = SyncJob(host_id=fresh_host.id, status=JobStatus.pending, module_type="firewall")
+    db.add_all([orphan, fresh])
+    await db.commit()
+
+    result = await _sweep_stale_syncs_async()
+
+    assert result["revived"] == [host.id]
+    assert mock_run_host_sync_delay.call_count == 1
+    assert mock_run_host_sync_delay.call_args.kwargs["job_id"] == orphan.id
+
+
+async def test_an_old_pending_job_behind_a_running_one_is_left_queued(
+    db: AsyncSession, mock_run_host_sync_delay
+):
+    from app.tasks.sync_sweeper import PENDING_STALE_MINUTES
+
+    ssh_key = await create_ssh_key(db)
+    host = await create_host(db, ssh_key_id=ssh_key.id)
+    await _create_running_syncjob(db, host_id=host.id, started_minutes_ago=1)
+    db.add(
+        SyncJob(
+            host_id=host.id,
+            status=JobStatus.pending,
+            module_type="firewall",
+            created_at=_utc_minutes_ago(PENDING_STALE_MINUTES + 1),
+        )
+    )
+    await db.commit()
+
+    result = await _sweep_stale_syncs_async()
+
+    assert result["revived"] == []
+    mock_run_host_sync_delay.assert_not_called()

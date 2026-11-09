@@ -148,7 +148,9 @@ def run_ansible(
     if envvars:
         merged_env.update(envvars)
 
-    runner = ansible_runner.run(
+    # ``ansible_runner.run()`` is ``init_runner()`` + ``.run()``; split so the
+    # environment can be scrubbed in between (SEC-46).
+    runner = ansible_runner.interface.init_runner(
         private_data_dir=private_data_dir,
         playbook="playbook.yml",
         extravars=extra_vars or {},
@@ -157,4 +159,61 @@ def run_ansible(
         event_handler=event_handler,
         cmdline="--check" if check_mode else None,
     )
+    runner.config.env = scrub_child_env(runner.config.env)
+    runner.run()
     return runner
+
+
+#: Inherited variables an ansible-playbook process may see. Everything else
+#: from LabDog's own environment is dropped (SEC-46).
+_INHERITED_ENV_ALLOWLIST = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "TERM",
+        "TMPDIR",
+        "TZ",
+        "LANG",
+        "LANGUAGE",
+        "VIRTUAL_ENV",
+        "SSH_AUTH_SOCK",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "no_proxy",
+    }
+)
+_INHERITED_ENV_PREFIXES = ("ANSIBLE_", "LC_")
+
+
+def scrub_child_env(env: dict[str, str], inherited: dict[str, str] | None = None) -> dict[str, str]:
+    """The environment for an ansible-playbook child, minus LabDog's secrets.
+
+    SEC-46: ansible-runner seeds the child from ``os.environ.copy()``, so
+    every playbook process saw ``LABDOG_SECURITY__SECRET_KEY``,
+    ``LABDOG_SECURITY__ENCRYPTION_KEY`` and the database URL, and any
+    controller-side evaluation (SEC-39, SEC-40) could read them. The runner
+    also writes the environment into the run's ``artifacts/…/command`` file.
+
+    Kept: whatever ansible-runner or LabDog set for this run (a value that
+    differs from the inherited one), and inherited variables on an
+    allowlist. ``LABDOG_*`` is always dropped, even if set for the run.
+    """
+    inherited = os.environ if inherited is None else inherited
+    out: dict[str, str] = {}
+    for key, value in env.items():
+        if key.startswith("LABDOG_"):
+            continue
+        set_for_run = key not in inherited or inherited[key] != value
+        if (
+            set_for_run
+            or key in _INHERITED_ENV_ALLOWLIST
+            or key.startswith(_INHERITED_ENV_PREFIXES)
+        ):
+            out[key] = value
+    return out

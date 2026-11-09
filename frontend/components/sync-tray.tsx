@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useQuery } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
@@ -133,11 +133,20 @@ function RunHosts({ run }: { run: ActionRun }) {
   // The list endpoint leaves host_runs empty; read them only while the
   // row is open, and keep reading while the run is still going.
   const active = runActive(run)
-  const { data } = useQuery<ActionRun>({
+  const { data, refetch } = useQuery<ActionRun>({
     queryKey: ["action-run", run.id, "tray"],
     queryFn: () => apiFetch<ActionRun>(`/api/actions/runs/${run.id}`),
     refetchInterval: active ? 4000 : false,
   })
+  // BUG-133: polling stops the moment the list query sees the run finish,
+  // which leaves the rows at whatever the last poll saw. A group-dispatch
+  // run finishes all its hosts within the same instant, so that poll had
+  // them all still running. Fetch once more when the run goes inactive.
+  const wasActive = useRef(active)
+  useEffect(() => {
+    if (wasActive.current && !active) void refetch()
+    wasActive.current = active
+  }, [active, refetch])
   const hostRuns = data?.host_runs ?? []
   return (
     <div className="scroll mt-1 flex max-h-56 flex-col gap-0.5">

@@ -320,7 +320,10 @@ and `less` need it — so leave a maximized terminal with **⤡**.
 ### Notes
 
 - Sessions close after the idle timeout (`ssh.idle_timeout_seconds` in
-  [Settings](settings.md), default 30 minutes).
+  [Settings](settings.md), default 30 minutes), and in any case after the
+  session time limit (`ssh.max_session_seconds`, default 12 hours).
+- An open session closes within a minute when its user is deactivated,
+  changes their password, or logs out everywhere.
 - All terminal sessions are recorded in the [Audit Log](operations.md#audit)
   (session open/close events).
 - The SSH user and key are the same ones configured on the host.

@@ -9,6 +9,7 @@ is preserved in the database for display consistency.
 
 import logging
 
+from pydantic import ValidationError
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +17,7 @@ from app.audit.logger import log_action
 from app.gitops.importers.firewall import ModuleImportResult
 from app.gitops.schema import HostsEntryYAML, LabDogGroupYAML
 from app.hosts_mgmt.models import HostsEntry
+from app.hosts_mgmt.schemas import HostsEntryCreate
 from app.models.host import Host
 from app.models.host_group import HostGroup
 
@@ -118,6 +120,15 @@ async def import_hosts_entries(
         )
 
     for entry in raw_entries:
+        # SEC-43: one rule per field. Round-trip through the API's create
+        # schema, so a value the API refuses cannot arrive through Git instead.
+        try:
+            HostsEntryCreate.model_validate(entry.model_dump())
+        except ValidationError as exc:
+            return ModuleImportResult(
+                module="hosts_entries",
+                error_message=f"Invalid hosts entry '{entry.hostname or entry.host_ref_id}': {exc}",
+            )
         if entry.host_ref_id is not None:
             # Verify the referenced host exists before touching the DB.
             row = await db.execute(select(Host.id).where(Host.id == entry.host_ref_id))

@@ -34,7 +34,9 @@ be exhaustive would be a check nobody could reason about.
 
 from __future__ import annotations
 
+import ipaddress
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -61,8 +63,53 @@ CONTROLLER_CODE_DIRS: frozenset[str] = frozenset(
     }
 )
 
-#: Play/task keys whose value means "run this on the controller".
-_LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+#: Host names that always mean the controller. Literal loopback addresses
+#: (``127.0.0.0/8``, ``::1`` in any spelling) are caught by ``ipaddress``.
+_LOCAL_HOSTS = frozenset(
+    {
+        "localhost",
+        "localhost.localdomain",
+        "localhost4",
+        "localhost6",
+        "ip6-localhost",
+        "ip6-loopback",
+    }
+)
+
+#: Lookup plugins that only reshape data already in the play. Every other
+#: lookup runs on the controller and can read its files (``file``,
+#: ``fileglob``, ``template``, ``first_found``, ``ini``, ``csvfile``),
+#: its environment (``env``), run commands there (``pipe``, ``lines``) or
+#: write to it (``password``). SEC-40.
+_SAFE_LOOKUPS = frozenset(
+    {
+        "items",
+        "list",
+        "dict",
+        "indexed_items",
+        "together",
+        "nested",
+        "cartesian",
+        "sequence",
+        "subelements",
+        "flattened",
+        "random_choice",
+        "vars",
+        "varnames",
+    }
+)
+
+#: ``lookup('x', …)``, ``query("x", …)``, ``q('x', …)`` inside a template.
+_LOOKUP_CALL = re.compile(r"\b(?:lookup|query|q)\s*\(\s*(?P<arg>[^,)]*)")
+
+#: Modules whose ``src`` is read on the controller, so an absolute or
+#: parent-relative ``src`` copies a LabDog file to the target.
+_CONTROLLER_SRC_MODULES = frozenset(
+    {"copy", "template", "unarchive", "script", "assemble", "include_vars", "patch"}
+)
+
+#: Modules that write to the controller.
+_CONTROLLER_WRITE_MODULES = frozenset({"fetch"})
 
 
 @dataclass(frozen=True)
@@ -104,37 +151,118 @@ def _scan_controller_code_dirs(pack_root: Path) -> list[PolicyFinding]:
     return findings
 
 
-def _iter_plays(doc) -> list[dict]:
-    """Every play in a parsed playbook document, tolerating odd shapes."""
-    if not isinstance(doc, list):
-        return []
-    return [play for play in doc if isinstance(play, dict)]
+def _short_module(key: str) -> str:
+    """``ansible.builtin.copy`` → ``copy``; ``ansible.legacy.fetch`` → ``fetch``."""
+    return key.rsplit(".", 1)[-1]
 
 
-def _iter_tasks(play: dict):
-    """Tasks in every block a play can carry, including nested blocks."""
-    for key in ("tasks", "pre_tasks", "post_tasks", "handlers", "block", "rescue", "always"):
-        entries = play.get(key)
-        if not isinstance(entries, list):
-            continue
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            yield entry
-            yield from _iter_tasks(entry)
-
-
-def _hosts_is_local(value) -> bool:
-    if isinstance(value, str):
-        return value.strip().lower() in _LOCAL_HOSTS
+def _is_local_name(value) -> bool:
+    """True when *value* names the controller: localhost or any loopback."""
     if isinstance(value, list):
-        return any(_hosts_is_local(v) for v in value)
-    return False
+        return any(_is_local_name(v) for v in value)
+    if not isinstance(value, str):
+        return False
+    name = value.strip().lower().strip("[]")
+    if name in _LOCAL_HOSTS:
+        return True
+    try:
+        return ipaddress.ip_address(name).is_loopback
+    except ValueError:
+        return False
+
+
+def _is_local_connection(value) -> bool:
+    return isinstance(value, str) and value.strip().lower() in {"local", "ansible.builtin.local"}
+
+
+def _unsafe_lookup_names(text: str) -> list[str]:
+    """Lookup plugins a template string calls that are not data-only."""
+    found = []
+    for match in _LOOKUP_CALL.finditer(text):
+        arg = match.group("arg").strip()
+        name = arg.strip("'\"").rsplit(".", 1)[-1]
+        quoted = len(arg) >= 2 and arg[0] == arg[-1] and arg[0] in "'\""
+        # A name computed at run time cannot be checked, so it counts.
+        if not quoted or name not in _SAFE_LOOKUPS:
+            found.append(arg or "?")
+    return found
+
+
+def _controller_path(value) -> bool:
+    """An absolute or ``..``-escaping path, read relative to the controller."""
+    if not isinstance(value, str):
+        return False
+    path = value.strip()
+    return path.startswith(("/", "~")) or ".." in Path(path).parts
+
+
+def _scan_mapping(node: dict, rel: Path) -> list[PolicyFinding]:
+    """Findings for one mapping, whatever it is (play, task, block, vars)."""
+    out: list[PolicyFinding] = []
+
+    def found(detail: str) -> None:
+        out.append(PolicyFinding("runs on the controller", f"{rel}: {detail}"))
+
+    if "hosts" in node and _is_local_name(node.get("hosts")):
+        found(f"a play targets {node['hosts']!r}")
+    if _is_local_name(node.get("delegate_to")):
+        found(f"a task delegates to {node['delegate_to']!r}")
+    if "local_action" in node:
+        found("a task uses local_action")
+    for key in ("connection", "ansible_connection"):
+        if _is_local_connection(node.get(key)):
+            found(f"{key}: local is set")
+    for key in ("ansible_host", "ansible_ssh_host"):
+        if _is_local_name(node.get(key)):
+            found(f"{key} points at {node[key]!r}")
+    for key in node:
+        if not isinstance(key, str):
+            continue
+        if key.startswith("with_") and key[5:] not in _SAFE_LOOKUPS:
+            found(f"a task loops with {key} (a controller-side lookup)")
+        module = _short_module(key)
+        args = node.get(key)
+        if module in _CONTROLLER_WRITE_MODULES:
+            found(f"a task uses {key}, which writes to the LabDog host")
+        if module in _CONTROLLER_SRC_MODULES:
+            src = args.get("src") or args.get("file") if isinstance(args, dict) else args
+            remote = isinstance(args, dict) and args.get("remote_src") in (True, "yes", "true")
+            if not remote and _controller_path(src):
+                found(f"{key} reads {src!r} from the LabDog host")
+        if module == "add_host" and isinstance(args, dict):
+            out.extend(_scan_mapping(args, rel))
+    return out
+
+
+def _scan_node(node, rel: Path) -> list[PolicyFinding]:
+    """Walk every mapping, list and string in a YAML document.
+
+    Recursing into everything (rather than following play → tasks → block)
+    covers role task files, whose top level is a task list, handlers, vars
+    files, ``add_host`` arguments and ``set_fact`` alike (SEC-40).
+    """
+    findings: list[PolicyFinding] = []
+    if isinstance(node, dict):
+        findings.extend(_scan_mapping(node, rel))
+        for value in node.values():
+            findings.extend(_scan_node(value, rel))
+    elif isinstance(node, list):
+        for item in node:
+            findings.extend(_scan_node(item, rel))
+    elif isinstance(node, str):
+        for name in _unsafe_lookup_names(node):
+            findings.append(
+                PolicyFinding(
+                    "runs on the controller",
+                    f"{rel}: a template calls lookup {name} on the LabDog host",
+                )
+            )
+    return findings
 
 
 def _scan_playbook(path: Path, pack_root: Path) -> list[PolicyFinding]:
     try:
-        doc = yaml.safe_load(path.read_text())
+        docs = list(yaml.safe_load_all(path.read_text()))
     except (OSError, yaml.YAMLError) as exc:
         # Unreadable is not the same as hostile. The loader reports a broken
         # playbook on its own; this check declines to guess.
@@ -143,28 +271,10 @@ def _scan_playbook(path: Path, pack_root: Path) -> list[PolicyFinding]:
 
     rel = path.relative_to(pack_root)
     findings: list[PolicyFinding] = []
-    for play in _iter_plays(doc):
-        if _hosts_is_local(play.get("hosts")):
-            findings.append(
-                PolicyFinding("runs on the controller", f"{rel}: a play targets {play['hosts']!r}")
-            )
-        if str(play.get("connection", "")).strip().lower() == "local":
-            findings.append(
-                PolicyFinding("runs on the controller", f"{rel}: a play sets connection: local")
-            )
-        for task in _iter_tasks(play):
-            if _hosts_is_local(task.get("delegate_to")):
-                findings.append(
-                    PolicyFinding(
-                        "runs on the controller",
-                        f"{rel}: a task delegates to {task['delegate_to']!r}",
-                    )
-                )
-            if str(task.get("connection", "")).strip().lower() == "local":
-                findings.append(
-                    PolicyFinding("runs on the controller", f"{rel}: a task sets connection: local")
-                )
-    return findings
+    for doc in docs:
+        findings.extend(_scan_node(doc, rel))
+    # One finding per distinct reason per file keeps the refusal readable.
+    return list(dict.fromkeys(findings))
 
 
 def inspect_pack(pack_root: Path) -> list[PolicyFinding]:

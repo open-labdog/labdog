@@ -25,6 +25,8 @@ import asyncio
 import logging
 from datetime import UTC, datetime
 
+from sqlalchemy import update
+
 from app.ai.loop import AgentLoop, LoopCaps, redis_publisher
 from app.ai.models import AIProvider, AISession
 from app.ai.providers.factory import runs_on_agent_sdk
@@ -261,6 +263,21 @@ async def _resume_session_async(session_id: int) -> dict:
         if approval is None or approval.status == "pending":
             logger.warning("ai_task: session %s has no decided approval to resume", session_id)
             return {"session_id": session_id, "status": "waiting_approval"}
+
+        # BUG-138: claim the session before running anything. Two resume
+        # tasks for one decision both passed the status check above, and
+        # both ran the approved command. Only the one whose conditional
+        # update lands goes on.
+        claimed = await db.execute(
+            update(AISession)
+            .where(AISession.id == session_id, AISession.status == "waiting_approval")
+            .values(status="running")
+            .returning(AISession.id)
+        )
+        if claimed.scalar_one_or_none() is None:
+            await db.rollback()
+            return {"session_id": session_id, "status": "already_resumed"}
+        await db.commit()
 
         redis_client = _redis_client()
         publish = redis_publisher(redis_client, SESSION_CHANNEL.format(id=session_id))

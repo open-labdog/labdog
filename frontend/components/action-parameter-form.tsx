@@ -40,7 +40,12 @@ export function ActionParameterForm({
   if (action.parameters.length === 0) return null
 
   function set(key: string, val: unknown) {
-    onChange({ ...values, [key]: val })
+    // `undefined` removes the key, so the run falls back to the manifest
+    // default exactly as for a field nobody touched (BUG-125).
+    const next = { ...values }
+    if (val === undefined) delete next[key]
+    else next[key] = val
+    onChange(next)
   }
 
   return (
@@ -103,7 +108,12 @@ export function ActionParameterForm({
                 type={p.type === "int" ? "number" : "text"}
                 placeholder={placeholder ?? String(p.default ?? "")}
                 value={values[p.key] !== undefined ? String(values[p.key]) : (placeholder ?? "")}
-                onChange={(e) => set(p.key, p.type === "int" ? Number(e.target.value) : e.target.value)}
+                onChange={(e) => {
+                  // An emptied field is unset, not "" (or 0 for an int,
+                  // which Number("") is): the default it showed is what runs.
+                  const raw = e.target.value
+                  set(p.key, raw === "" ? undefined : p.type === "int" ? Number(raw) : raw)
+                }}
               />
             )}
           </Field>

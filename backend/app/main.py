@@ -170,7 +170,11 @@ def _get_client_ip(request: Request) -> str:
     trusted = settings.server.trusted_proxies
     forwarded = request.headers.get("x-forwarded-for", "")
     if trusted and request.client:
-        if forwarded:
+        # SEC-49: the header is only as trustworthy as the peer that sent
+        # it. A client reaching LabDog around the proxy could otherwise
+        # name any address it liked, defeating the login limiter's IP key
+        # and falsifying audit IPs.
+        if forwarded and _is_trusted_proxy(request.client.host, trusted):
             # Walk the chain from right to left, skipping trusted proxies
             chain = [ip.strip() for ip in forwarded.split(",")]
             for ip in reversed(chain):
@@ -304,8 +308,8 @@ async def _buffered_receive(receive):
     must reach the app rather than being swallowed here.
 
     Stops at :data:`_MAX_LOGIN_BODY`; anything beyond that is left in the
-    stream for the route to read, and the identity simply comes out as
-    ``None``.
+    stream, and the body comes back as ``None`` so the caller can refuse
+    the request rather than let it through unthrottled (SEC-42).
     """
     messages: list[dict] = []
     total = 0
@@ -324,7 +328,7 @@ async def _buffered_receive(receive):
             return messages.pop(0)
         return await receive()
 
-    return (b"" if total > _MAX_LOGIN_BODY else body), replay
+    return (None if total > _MAX_LOGIN_BODY else body), replay
 
 
 # ---------------------------------------------------------------------------
@@ -661,6 +665,19 @@ def create_app() -> FastAPI:
                 # address, so the body has to be read here — and then
                 # handed back intact, because ASGI bodies are read once.
                 body, receive = await _buffered_receive(receive)
+                if body is None:
+                    # SEC-42: an oversized body used to come back empty,
+                    # which reads as "no account named" and consumed no
+                    # bucket, while the full body still reached the login
+                    # handler. Padding the form removed the throttle. A
+                    # real login is a few hundred bytes, so refuse it.
+                    response = Response(
+                        content='{"detail":"Request body too large."}',
+                        status_code=413,
+                        media_type="application/json",
+                    )
+                    await response(scope, receive, send)
+                    return
                 identity = login_identity(request.headers.get("content-type", ""), body)
                 client_ip = _get_client_ip(request)
                 for key in login_rate_limit_keys(client_ip, identity):
@@ -700,11 +717,15 @@ def create_app() -> FastAPI:
 
     app.include_router(auth_setup_router)
 
-    app.include_router(
-        fastapi_users.get_users_router(UserRead, UserUpdate),
-        prefix="/api/users",
-        tags=["users"],
-    )
+    # BUG-140: only the /me routes. The router's GET/PATCH/DELETE /{id}
+    # let a superuser deactivate or delete the last superuser, or delete
+    # themselves, past the guards in app/api/admin_users.py, which is the
+    # one path for administering other users.
+    users_router = fastapi_users.get_users_router(UserRead, UserUpdate)
+    users_router.routes = [
+        route for route in users_router.routes if getattr(route, "path", "").startswith("/me")
+    ]
+    app.include_router(users_router, prefix="/api/users", tags=["users"])
 
     app.include_router(actions_router, prefix="/api")
     app.include_router(action_packs_router, prefix="/api")
@@ -1102,9 +1123,59 @@ def _rewrite_placeholder(
     if not all(_SAFE_DYNAMIC_SEGMENT.fullmatch(v) for v in dynamic_values):
         return None
     content = Path(file_path).read_text(encoding="utf-8")
+    names = _route_param_names(Path(file_path).parent)
+    if len(names) == len(dynamic_values):
+        by_name = dict(zip(names, dynamic_values, strict=True))
+        content = _substitute_named_segments(content, by_name, '\\"')
+        content = _substitute_named_segments(content, by_name, '"')
     content = _substitute_placeholders(content, dynamic_values, '\\"')
     content = _substitute_placeholders(content, dynamic_values, '"')
     return content
+
+
+#: The segment-data file Next writes next to each exported page, named after
+#: the route with each dynamic segment as ``$d$<param name>``, e.g.
+#: ``__next.!KGRhc2hib2FyZCk.hosts.$d$id.actions.runs.$d$runId.__PAGE__.txt``.
+_PAGE_SEGMENT_FILE = "__next.*.__PAGE__.txt"
+_PARAM_IN_FILENAME = re.compile(r"\$d\$(\w+)")
+
+
+@lru_cache(maxsize=256)
+def _route_param_names(page_dir: Path) -> tuple[str, ...]:
+    """The route's dynamic parameter names, in path order (BUG-126).
+
+    Read from the segment-data file name the export writes next to the page.
+    Empty when there is no such file (an older export), in which case only
+    the positional shapes are rewritten.
+    """
+    for candidate in sorted(page_dir.glob(_PAGE_SEGMENT_FILE)):
+        names = tuple(_PARAM_IN_FILENAME.findall(candidate.name))
+        if names:
+            return names
+    return ()
+
+
+def _substitute_named_segments(content: str, by_name: dict[str, str], quote: str) -> str:
+    """Replace each ``{"n":"<name>","t":"d","k":"placeholder"`` by name.
+
+    BUG-126. Current Next exports describe each dynamic segment as an
+    object carrying its parameter name. Those objects appear innermost
+    first (``runId`` before ``id``), so the positional pass below handed
+    them out in the wrong order: ``/hosts/7/actions/runs/377/`` asked the
+    API for run 7. Keyed by name, the order no longer matters. Runs before
+    :func:`_substitute_placeholders`, whose path-element pattern would
+    otherwise consume these occurrences too.
+    """
+    q = re.escape(quote)
+    pattern = re.compile(rf"({q}n{q}:{q}(\w+){q},{q}t{q}:{q}d{q},{q}k{q}:{q})placeholder({q})")
+
+    def repl(match: re.Match[str]) -> str:
+        value = by_name.get(match.group(2))
+        if value is None:
+            return match.group(0)
+        return f"{match.group(1)}{value}{match.group(3)}"
+
+    return pattern.sub(repl, content)
 
 
 def _resolve_dynamic_route(static_dir: Path, full_path: str) -> tuple[Path, tuple[str, ...]] | None:

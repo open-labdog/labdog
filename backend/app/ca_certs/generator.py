@@ -17,6 +17,7 @@ LabDog needing to remember what was previously deployed.
 """
 
 from app.ansible_runtime.inventory import generate_inventory
+from app.ansible_runtime.playbook_yaml import Template
 
 # Per-OS-family configuration: drop-in directory + update command.
 _OS_CONFIG: list[tuple[str, str, str, str]] = [
@@ -139,10 +140,10 @@ def generate_ca_cert_playbook(
             {
                 "name": f"[{label}] Remove orphaned LabDog-managed certs",
                 "ansible.builtin.file": {
-                    "path": "{{ item.path }}",
+                    "path": Template("{{ item.path }}"),
                     "state": "absent",
                 },
-                "loop": (
+                "loop": Template(
                     "{{ "
                     f"labdog_existing_{label.lower()}.files | default([]) "
                     f"| rejectattr('path', 'in', {keep_paths_jinja}) "

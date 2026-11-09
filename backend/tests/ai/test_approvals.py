@@ -642,3 +642,71 @@ class TestParkedSessionsAreNotDeletable:
         resp = await superuser_client.delete(f"/api/ai/sessions/{session.id}")
         assert resp.status_code == 409
         assert (await db.get(AISession, session.id)) is not None
+
+
+class TestResumingRunsTheCommandOnce:
+    """BUG-138: two resumes of one decision ran the approved command twice."""
+
+    async def test_a_resume_that_loses_the_claim_runs_nothing(self, db, make_session) -> None:
+        from contextlib import asynccontextmanager
+
+        from sqlalchemy import update
+
+        from app.tasks import ai_task
+
+        host = await _host(db)
+        session, approval = await _parked_session(db, make_session, host)
+        approval.status = "approved"
+        await db.commit()
+
+        @asynccontextmanager
+        async def same_session():
+            yield db
+
+        real_latest = approvals.latest_for_session
+
+        async def latest_then_other_task_claims(db_, session_id):
+            # The other resume task passes the same check and claims the
+            # session first, between this task's check and its claim.
+            found = await real_latest(db_, session_id)
+            await db_.execute(
+                update(AISession).where(AISession.id == session_id).values(status="running")
+            )
+            return found
+
+        with (
+            patch.object(ai_task, "task_session", same_session),
+            patch.object(approvals, "latest_for_session", latest_then_other_task_claims),
+            patch.object(approvals, "execute_approved") as execute,
+        ):
+            result = await ai_task._resume_session_async(session.id)
+
+        assert result["status"] == "already_resumed"
+        execute.assert_not_called()
+
+
+async def test_deciding_locks_the_request_row(superuser_client, db, make_session) -> None:
+    """BUG-138: the decision reads the request FOR UPDATE, so a concurrent
+    second decision waits and then sees it decided."""
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    host = await _host(db)
+    _, approval = await _parked_session(db, make_session, host)
+    real_get = AsyncSession.get
+    seen: dict = {}
+
+    async def spy(self, entity, ident, **kwargs):
+        if entity is AIApprovalRequest:
+            seen.update(kwargs)
+        return await real_get(self, entity, ident, **kwargs)
+
+    with (
+        patch.object(AsyncSession, "get", spy),
+        patch("app.tasks.celery_app.send_task"),
+    ):
+        resp = await superuser_client.post(
+            f"/api/ai/approvals/{approval.id}", json={"approve": True}
+        )
+
+    assert resp.status_code == 200
+    assert seen.get("with_for_update") is True

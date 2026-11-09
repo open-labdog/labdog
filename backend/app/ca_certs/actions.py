@@ -49,7 +49,7 @@ async def enqueue_ca_cert_action_for_host(
     triggered_by_user_id: int | None = None,
     group_id: int | None = None,
 ) -> SyncJob | None:
-    """Create a SyncJob row for a CA cert deploy and dispatch the Celery task.
+    """Create a SyncJob row for a CA cert deploy and dispatch it on commit.
 
     Returns the created SyncJob, or ``None`` if the action could not be
     enqueued (host missing SSH key, or another action already running).
@@ -72,10 +72,14 @@ async def enqueue_ca_cert_action_for_host(
     db.add(job)
     await db.flush()
 
-    # Dispatch after flush so the task sees a valid job_id.
+    # BUG-121: dispatch once the caller commits, so the worker can see the
+    # row. Five callers own the commit; registering the dispatch here
+    # means none of them can get the order wrong.
+    from app.db_after_commit import run_after_commit
     from app.tasks.ca_cert_action import run_ca_cert_action
 
-    run_ca_cert_action.delay(job_id=job.id, host_id=host_id)
+    job_id = job.id
+    run_after_commit(db, lambda: run_ca_cert_action.delay(job_id=job_id, host_id=host_id))
 
     return job
 
