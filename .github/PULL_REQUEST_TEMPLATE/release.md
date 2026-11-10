@@ -17,7 +17,7 @@ the items below are the human-owned ones CI cannot verify.
 - [ ] **`VERSION` bumped** — one line, no `v` prefix, valid semver
 - [ ] **`CHANGELOG.md`** — `[Unreleased]` renamed to `[X.Y.Z] — YYYY-MM-DD`, a fresh empty `[Unreleased]` added above it, and the comparison-link refs at the bottom updated (`vPREV...vX.Y.Z` and `vX.Y.Z...HEAD`)
 - [ ] **`docs/` updated for every user-visible feature in this release** — new modules, API surface, UI flows, settings. (This should already be true per-feature PR; this box is the backstop.)
-- [ ] **`TODO.md`** — items completed this cycle removed
+- [ ] **Roadmap board** — items shipped this cycle set to Done, with the PR linked
 - [ ] **`BUGS.md`** — bugs fixed this cycle deleted (the fixing commit references the bug ID)
 - [ ] **`plans/` is absent** — it must never ship on `dev` or `main`
 - [ ] **CI is green on this PR** — `version-check` (required), `packaging-smoke`, lint, `backend-test`, `frontend-build-check`, `docs-build-check`, `build-test-image`, trivy
