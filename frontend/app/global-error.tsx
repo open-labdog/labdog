@@ -59,9 +59,9 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
               type="button"
               onClick={reset}
               style={{
-                background: "oklch(0.52 0.11 240)",
+                background: "oklch(0.47 0.085 247)",
                 color: "#fff",
-                border: "1px solid oklch(0.52 0.11 240)",
+                border: "1px solid oklch(0.47 0.085 247)",
                 padding: "5px 10px",
                 borderRadius: 5,
                 cursor: "pointer",

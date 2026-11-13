@@ -54,7 +54,7 @@ The format follows [Keep a Changelog]; LabDog follows
   turns back to it. It is in the rail, on the sign-in page and in the
   browser tab. Both themes are rebuilt from the mark's colours: dark
   surfaces are navy with cream text, light surfaces are cream with navy
-  text, and the accent is a steel blue. The mark's amber is not used in
+  text, and the accent is a lighter shade of the same navy. The mark's amber is not used in
   the interface, because amber already means "drifted" or "warning". The
   name beside the mark changes with it: the sign-in and setup pages, the
   rail and the browser tab say unbork. Everything else, in the interface
