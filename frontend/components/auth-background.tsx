@@ -35,13 +35,13 @@ export function AuthCard({ children }: { children: ReactNode }) {
 }
 
 /** The mark and heading over each auth form. */
-export function AuthHeading({ title, sub }: { title: string; sub: ReactNode }) {
+export function AuthHeading({ title, sub }: { title: ReactNode; sub: ReactNode }) {
   return (
     <div className="flex flex-col items-center gap-3 text-center">
       {/* eslint-disable-next-line @next/next/no-img-element -- static svg, no optimisation needed */}
       <img src="/logo.svg" alt="" width={40} height={40} className="block" />
       <div className="flex flex-col gap-1">
-        <h1 className="m-0 text-[19px] font-semibold tracking-[-0.015em] text-text">{title}</h1>
+        <h1 className="m-0 flex justify-center text-[19px] font-semibold tracking-[-0.015em] text-text">{title}</h1>
         <p className="m-0 text-[12.5px] text-text-2">{sub}</p>
       </div>
     </div>

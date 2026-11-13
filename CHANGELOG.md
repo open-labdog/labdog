@@ -57,7 +57,8 @@ The format follows [Keep a Changelog]; LabDog follows
   text, and the accent is a lighter shade of the same navy. The mark's
   amber is kept out of the interface, because amber already means
   "drifted" or "warning"; its one other use is a faint glow on the
-  sign-in page. The
+  sign-in page. Beside the mark, the name is drawn in the logo's own
+  lettering (Familjen Grotesk Bold). The
   name beside the mark changes with it: the sign-in and setup pages, the
   rail and the browser tab say unbork. Everything else, in the interface
   text, the docs and the configuration, still says LabDog.
