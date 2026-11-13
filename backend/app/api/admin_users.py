@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.logger import log_action
 from app.auth.password_policy import PasswordPolicyError, check_password
 from app.auth.token_version import bump_token_version
 from app.auth.users import current_superuser
@@ -58,6 +59,11 @@ def _enforce_policy(password: str, email: str | None) -> None:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+def _audit_snapshot(user: User) -> dict:
+    """What an audit row records about an account. Never a password hash."""
+    return {"email": user.email, "is_active": user.is_active, "is_superuser": user.is_superuser}
+
+
 # ── Router ───────────────────────────────────────────────────────────────────
 
 router = APIRouter(prefix="/admin/users", tags=["admin"])
@@ -75,7 +81,7 @@ async def list_users(
 @router.post("", response_model=AdminUserResponse, status_code=201)
 async def create_user(
     body: AdminUserCreate,
-    _: User = Depends(current_superuser),
+    actor: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     existing = await db.execute(select(User).where(User.email == body.email))
@@ -95,6 +101,15 @@ async def create_user(
         is_verified=True,
     )
     db.add(user)
+    await db.flush()
+    await log_action(
+        db=db,
+        action="create",
+        entity_type="user",
+        entity_id=user.id,
+        user_id=actor.id,
+        after_state=_audit_snapshot(user),
+    )
     await db.commit()
     await db.refresh(user)
     return user
@@ -104,7 +119,7 @@ async def create_user(
 async def update_user(
     user_id: int,
     body: AdminUserUpdate,
-    _: User = Depends(current_superuser),
+    actor: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(User).where(User.id == user_id))
@@ -130,10 +145,20 @@ async def update_user(
             what = "demote" if body.is_superuser is False else "deactivate"
             raise HTTPException(status_code=400, detail=f"Cannot {what} the last superuser")
 
+    before = _audit_snapshot(user)
     update_data = body.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(user, field, value)
 
+    await log_action(
+        db=db,
+        action="update",
+        entity_type="user",
+        entity_id=user.id,
+        user_id=actor.id,
+        before_state=before,
+        after_state=_audit_snapshot(user),
+    )
     await db.commit()
     await db.refresh(user)
     return user
@@ -162,6 +187,14 @@ async def delete_user(
         if not others.first():
             raise HTTPException(status_code=400, detail="Cannot delete the last superuser")
 
+    await log_action(
+        db=db,
+        action="delete",
+        entity_type="user",
+        entity_id=user.id,
+        user_id=current_user.id,
+        before_state=_audit_snapshot(user),
+    )
     await db.delete(user)
     await db.commit()
 
@@ -170,7 +203,7 @@ async def delete_user(
 async def reset_password(
     user_id: int,
     body: PasswordReset,
-    _: User = Depends(current_superuser),
+    actor: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(User).where(User.id == user_id))
@@ -182,6 +215,13 @@ async def reset_password(
 
     ph = PasswordHelper()
     user.hashed_password = ph.hash(body.password)
+    await log_action(
+        db=db,
+        action="reset_password",
+        entity_type="user",
+        entity_id=user.id,
+        user_id=actor.id,
+    )
     await db.commit()
     # SEC-30: an administrator resetting a password is responding to a
     # suspected compromise more often than not. Leaving the old sessions

@@ -78,7 +78,9 @@ class TestAPasswordChangeRevokes:
         self, regular_user_client
     ):
         stolen = _auth_cookie(regular_user_client)
-        resp = await regular_user_client.patch("/api/users/me", json={"password": GOOD})
+        resp = await regular_user_client.patch(
+            "/api/users/me", json={"current_password": "TestPass1!", "password": GOOD}
+        )
         assert resp.status_code == 200, resp.text
         assert (await _replay(regular_user_client, stolen)).status_code == 401
 
@@ -270,7 +272,7 @@ class TestLoggingBackInWorks:
             follow_redirects=True,
         ) as c:
             await c.post("/api/auth/jwt/login", data={"username": email, "password": GOOD})
-            await c.patch("/api/users/me", json={"password": ANOTHER})
+            await c.patch("/api/users/me", json={"current_password": GOOD, "password": ANOTHER})
             again = await c.post(
                 "/api/auth/jwt/login", data={"username": email, "password": ANOTHER}
             )

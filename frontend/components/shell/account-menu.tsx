@@ -32,7 +32,7 @@ export function AccountMenu({ compact }: { compact?: boolean }) {
 
   const form = useForm<PasswordChangeInput>({
     resolver: zodResolver(passwordChangeSchema),
-    defaultValues: { new_password: "", confirm_password: "" },
+    defaultValues: { current_password: "", new_password: "", confirm_password: "" },
     mode: "onSubmit",
   })
 
@@ -40,7 +40,7 @@ export function AccountMenu({ compact }: { compact?: boolean }) {
     try {
       // Through apiFetch so the X-CSRF-Token header rides along —
       // /api/users/me is not in the CSRF middleware's exempt list.
-      await apiFetch("/api/users/me", { method: "PATCH", json: { password: data.new_password } })
+      await apiFetch("/api/users/me", { method: "PATCH", json: { current_password: data.current_password, password: data.new_password } })
       form.reset()
       setPasswordDialogOpen(false)
       showSuccess("Password updated successfully")
@@ -131,7 +131,7 @@ export function AccountMenu({ compact }: { compact?: boolean }) {
         w={420}
         footer={
           <>
-            <span className="tt mr-auto">you stay signed in</span>
+            <span className="tt mr-auto">signs you out everywhere</span>
             <button type="button" className="btn" onClick={() => setPasswordDialogOpen(false)}>
               Cancel
             </button>
@@ -141,6 +141,9 @@ export function AccountMenu({ compact }: { compact?: boolean }) {
           </>
         }
       >
+        <Field label="current password" htmlFor="current-password" error={form.formState.errors.current_password?.message}>
+          <input id="current-password" type="password" className="inp mono" autoComplete="current-password" {...form.register("current_password")} />
+        </Field>
         <Field label="new password" htmlFor="new-password" error={form.formState.errors.new_password?.message}>
           <input id="new-password" type="password" className="inp mono" autoComplete="new-password" {...form.register("new_password")} />
         </Field>

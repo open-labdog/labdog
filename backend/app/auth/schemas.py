@@ -32,4 +32,13 @@ class UserUpdate(schemas.BaseUserUpdate):
     ``UserManager.validate_password``. Duplicating the rule here would
     mean two places to keep in step, and the manager is the one that
     cannot be bypassed.
+
+    ``current_password`` is required when a user changes their own
+    password through ``PATCH /api/users/me``; ``UserManager.update``
+    checks it and strips it before anything is written. Without it a
+    session somebody copied could set a new password and lock the owner
+    out, which is the one outcome revoking sessions on a password change
+    exists to prevent.
     """
+
+    current_password: str | None = None

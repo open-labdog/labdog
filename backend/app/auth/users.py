@@ -129,6 +129,38 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):  # type: ignore[t
             logger.info("First registration detected — will promote to superuser.")
         return await super().create(user_create, safe=safe, request=request)
 
+    async def update(
+        self,
+        user_update: fu_schemas.UU,
+        user: User,
+        safe: bool = False,
+        request: Request | None = None,
+    ) -> User:
+        """Require the current password when a user changes their own.
+
+        fastapi-users calls this with ``safe=True`` from ``PATCH
+        /api/users/me`` and with ``safe=False`` from the superuser-only
+        ``PATCH /api/users/{id}``. Only the self-service path asks for
+        the old password: an administrator resetting somebody else's
+        password cannot know it, and is already gated on their own role.
+
+        ``current_password`` is never stored. It is dropped from the
+        update before fastapi-users turns the body into column writes.
+        """
+        fields = user_update.model_dump(exclude_unset=True)
+        current = fields.pop("current_password", None)
+        if safe and fields.get("password"):
+            # Policy first, so a too-short password is reported as that
+            # rather than hidden behind a wrong current password.
+            await self.validate_password(fields["password"], user)
+            verified = False
+            if current and user.hashed_password:
+                verified, _ = self.password_helper.verify_and_update(current, user.hashed_password)
+            if not verified:
+                raise InvalidPasswordException(reason="Current password is incorrect")
+        user_update = type(user_update).model_validate(fields)
+        return await super().update(user_update, user, safe=safe, request=request)
+
     async def on_after_login(
         self,
         user: User,
