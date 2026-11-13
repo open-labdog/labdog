@@ -153,7 +153,7 @@ second theme, not an inversion). `next-themes` writes both `class` and
 | `--rail` | `bg-rail` | the rail |
 | `--border`, `--border-strong`, `--border-faint` | `border-line`, `border-line-strong`, `border-line-faint` | dividers |
 | `--text`, `--text-2`, `--text-3`, `--text-faint` | `text-text`, `text-text-2`, `text-text-3`, `text-text-faint` | four grades of ink |
-| `--accent`, `--accent-soft`, `--accent-line`, `--accent-fill`, `--accent-ink` | `ld-accent*` | the one blue: active states, primary buttons, host overrides |
+| `--accent`, `--accent-soft`, `--accent-line`, `--accent-fill`, `--accent-ink` | `ld-accent*` | the one blue (the mark's navy hue, lighter): active states, primary buttons, host overrides. The mark's amber is not a UI colour — it would read as `warn` |
 | `--ok` `--warn` `--danger` `--sync` `--idle` `--hold` `--add` `--del` | `bg-ok` … | status tones, all at one chroma so nothing shouts louder than its severity |
 | `--<tone>-soft` / `--<tone>-ink` | `bg-ok-soft text-ok-ink` | a tint and the ink solved against it (≥5:1). **Never paint a raw tone on its own tint.** |
 

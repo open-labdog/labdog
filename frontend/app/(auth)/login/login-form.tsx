@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { AuthCard, AuthChecking, AuthHeading } from "@/components/auth-background"
+import { BrandWordmark } from "@/components/brand-wordmark"
 import { AuthError } from "@/components/auth-error"
 import { Field } from "@/components/ld"
 import { classifyAuthError, type AuthErrorInfo } from "@/lib/auth-errors"
@@ -88,7 +89,7 @@ export function LoginForm() {
   return (
     <AuthCard>
       <div className="flex flex-col gap-5 p-7">
-        <AuthHeading title="LabDog" sub="Sign in to your account" />
+        <AuthHeading title={<BrandWordmark size={24} />} sub="Sign in to your account" />
 
         <form onSubmit={handleSubmit} action="" method="post" className="flex flex-col gap-3" aria-busy={loading} noValidate>
           <AuthError ref={errorRef} error={authError} id="login-error" />

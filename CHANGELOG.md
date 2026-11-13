@@ -49,6 +49,20 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Changed
 
+- **New logo and colours.** The dog is replaced by the mark for the
+  coming name, unbork: a timeline with a restore point, and a U that
+  turns back to it. It is in the rail, on the sign-in page and in the
+  browser tab. Both themes are rebuilt from the mark's colours: dark
+  surfaces are navy with cream text, light surfaces are cream with navy
+  text, and the accent is a lighter shade of the same navy. The mark's
+  amber is kept out of the interface, because amber already means
+  "drifted" or "warning"; its one other use is a faint glow on the
+  sign-in page. Beside the mark, the name is drawn in the logo's own
+  lettering (Familjen Grotesk Bold). The
+  name beside the mark changes with it: the sign-in and setup pages, the
+  rail and the browser tab say unbork. Everything else, in the interface
+  text, the docs and the configuration, still says LabDog.
+
 - **The project moved to `open-unbork` on GitHub and `unbork` on Docker
   Hub.** The repositories are now
   [`open-unbork/unbork`](https://github.com/open-unbork/unbork) and
