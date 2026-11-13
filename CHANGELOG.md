@@ -62,9 +62,22 @@ The format follows [Keep a Changelog]; LabDog follows
   name beside the mark changes with it: the sign-in and setup pages, the
   rail and the browser tab say unbork. Everything else, in the interface
   text, the docs and the configuration, still says LabDog.
+
+- **The project moved to `open-unbork` on GitHub and `unbork` on Docker
+  Hub.** The repositories are now
+  [`open-unbork/unbork`](https://github.com/open-unbork/unbork) and
+  [`open-unbork/unbork-playbooks`](https://github.com/open-unbork/unbork-playbooks),
+  the docs are at <https://open-unbork.github.io/unbork/>, and images are
+  published as `unbork/unbork`. Old GitHub links redirect. Releases are
+  also copied to `openlabdog/labdog` for now, so existing installs keep
+  updating. A migration points the seeded playbooks pack at the new URL
+  when it still holds the old default; a pack the operator pointed
+  elsewhere is left alone. Release artifacts from before the move verify
+  with `gh attestation verify <file> --repo open-labdog/labdog`.
+
 - **The roadmap moved to a GitHub project.** `ROADMAP.md` and `TODO.md`
   are gone; planned work, open tasks and their design notes now live on the
-  [roadmap board](https://github.com/orgs/open-labdog/projects/1).
+  [roadmap board](https://github.com/orgs/open-unbork/projects/1).
   `CONTRIBUTING.md`, `CLAUDE.md` and the release checklist point there, and
   the "out of scope" list moved to `CONTRIBUTING.md`.
 

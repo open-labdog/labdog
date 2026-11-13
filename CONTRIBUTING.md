@@ -12,7 +12,7 @@ land under the same license (inbound = outbound).
   share the exact SQL state + API response, even better.
 - **Feature ideas** — open an issue first so we can discuss scope
   before you invest significant time. See the
-  [roadmap board](https://github.com/orgs/open-labdog/projects/1) for what's already planned and
+  [roadmap board](https://github.com/orgs/open-unbork/projects/1) for what's already planned and
   [`BUGS.md`](BUGS.md) for the open bug registry.
 
 LabDog deliberately does not aim to replace Puppet, Chef or Salt, do
@@ -99,7 +99,7 @@ the decision points and what was considered and rejected.
   without tests won't merge.
 - Update `docs/` when you change user-visible behaviour. A comment
   on the PR is not a substitute for updating the user guide.
-- If the change delivers an item on the [roadmap board](https://github.com/orgs/open-labdog/projects/1),
+- If the change delivers an item on the [roadmap board](https://github.com/orgs/open-unbork/projects/1),
   link the PR on that item. If it fixes a bug listed in
   [`BUGS.md`](BUGS.md), delete the entry and reference the bug ID in
   the commit.
@@ -126,7 +126,7 @@ Where work is tracked:
 
 | File | Purpose |
 |---|---|
-| [Roadmap board](https://github.com/orgs/open-labdog/projects/1) | Direction and open tasks, with priority and status. Research and design notes go in each item. |
+| [Roadmap board](https://github.com/orgs/open-unbork/projects/1) | Direction and open tasks, with priority and status. Research and design notes go in each item. |
 | [`BUGS.md`](BUGS.md) | Open bug registry. Open-only — fixed bugs are deleted, with a commit referencing the bug ID. |
 | `plans/` (work branches) | Private scratchpad for one piece of in-flight work. Created and deleted within a single branch's lifetime. |
 
@@ -237,6 +237,6 @@ required, so confirm those are green yourself before merging. To
 require more contexts, add them to the `main` branch protection:
 
 ```bash
-gh api repos/open-labdog/labdog/branches/main/protection/required_status_checks \
+gh api repos/open-unbork/unbork/branches/main/protection/required_status_checks \
   --jq '.strict, .contexts'   # inspect current required checks
 ```

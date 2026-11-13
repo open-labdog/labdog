@@ -143,7 +143,7 @@ local-filesystem. Until a pack has synced, the registry holds only the
 built-in pseudo-actions (`_builtin.*`, `app/actions/builtins.py`).
 
 A fresh install seeds one pack, `labdog-playbooks`, pointing at
-[`open-labdog/labdog-playbooks`](https://github.com/open-labdog/labdog-playbooks)
+[`open-unbork/unbork-playbooks`](https://github.com/open-unbork/unbork-playbooks)
 `main` (git repo + pack rows in `alembic 0001`). It is an ordinary pack:
 operators edit, disable or delete it like any other, and re-add it by
 hand. A site without GitHub access points that repository at an internal
@@ -330,7 +330,7 @@ scratchpad:
 4. **Delete `plans/` before opening the PR.** `dev` and `main` must
    never carry it.
 
-Where work is tracked: the [roadmap board](https://github.com/orgs/open-labdog/projects/1)
+Where work is tracked: the [roadmap board](https://github.com/orgs/open-unbork/projects/1)
 (direction and open tasks; research and design notes go in each item),
 [`BUGS.md`](BUGS.md) (open bug registry, open-only), `plans/` (private
 in-flight scratchpad on work branches). See

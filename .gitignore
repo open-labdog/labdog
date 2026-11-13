@@ -73,7 +73,7 @@ backend/app/ansible/
 
 # Maintainer's local working notes — design drafts, exploratory
 # scaffolding, multi-agent plan docs. The public roadmap is the GitHub
-# project board (https://github.com/orgs/open-labdog/projects/1) and the bug
+# project board (https://github.com/orgs/open-unbork/projects/1) and the bug
 # registry is BUGS.md at the repo root. See
 # CONTRIBUTING.md (`plans/` is local-only) for the policy.
 #/plans/
