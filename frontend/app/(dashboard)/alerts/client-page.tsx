@@ -134,7 +134,7 @@ export default function AlertsPage() {
       <PageHead
         crumbs={[{ label: "operations" }]}
         title="Alerts"
-        sub={<>Received from Grafana and Alertmanager. The alert rule&apos;s labels say what each one sets off — an action, the AI, or nothing; see <a className="underline hover:text-text-2" href="https://open-labdog.github.io/labdog/ui/alerts/">the guide</a>.</>}
+        sub={<>Received from Grafana and Alertmanager. The alert rule&apos;s labels say what each one sets off — an action, the AI, or nothing; see <a className="underline hover:text-text-2" href="https://open-unbork.github.io/unbork/ui/alerts/">the guide</a>.</>}
       >
         <Tabs
           tabs={[

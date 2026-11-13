@@ -33,7 +33,7 @@ class TestVersionEndpoint:
         assert data["build_date"] == date
         assert data["version"]  # non-empty string
         assert data["license"] == "AGPL-3.0-or-later"
-        assert data["repo_url"] == "https://github.com/open-labdog/labdog"
+        assert data["repo_url"] == "https://github.com/open-unbork/unbork"
 
     # ------------------------------------------------------------------
     # Dev environment: no env vars, no _build_info.py
@@ -56,7 +56,7 @@ class TestVersionEndpoint:
         # Static fields are always present
         assert data["version"]
         assert data["license"] == "AGPL-3.0-or-later"
-        assert data["repo_url"] == "https://github.com/open-labdog/labdog"
+        assert data["repo_url"] == "https://github.com/open-unbork/unbork"
 
     # ------------------------------------------------------------------
     # _build_info.py present, no env vars → values come from the file

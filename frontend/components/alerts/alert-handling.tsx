@@ -137,7 +137,7 @@ function LabelsPanel() {
         <CodeBlock title="Grafana alert rule labels" actions={<Copy text={SNIPPET} />} maxH={120}>
           {SNIPPET}
         </CodeBlock>
-        <a className="underline hover:text-text-2" href="https://open-labdog.github.io/labdog/ui/alerts/#labels">How the labels combine</a>
+        <a className="underline hover:text-text-2" href="https://open-unbork.github.io/unbork/ui/alerts/#labels">How the labels combine</a>
       </div>
     </Panel>
   )

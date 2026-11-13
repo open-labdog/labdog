@@ -4,7 +4,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 
 // Repo refs — change REPO_URL / EDIT_BRANCH if the repo moves or
 // renames its default branch.
-const REPO_URL = 'https://github.com/open-labdog/labdog';
+const REPO_URL = 'https://github.com/open-unbork/unbork';
 const EDIT_BRANCH = 'main';
 
 const config: Config = {
@@ -19,11 +19,11 @@ const config: Config = {
   // GitHub Pages URL. If you add a custom domain (CNAME), update this
   // to the canonical URL and keep baseUrl at '/'. For project pages on
   // the default github.io domain the path is '/<projectName>/'.
-  url: 'https://open-labdog.github.io',
-  baseUrl: '/labdog/',
+  url: 'https://open-unbork.github.io',
+  baseUrl: '/unbork/',
 
-  organizationName: 'open-labdog',
-  projectName: 'labdog',
+  organizationName: 'open-unbork',
+  projectName: 'unbork',
 
   // Fail the build on broken links — the existing content has been
   // audited and verified to resolve against the wrapped docs tree.
