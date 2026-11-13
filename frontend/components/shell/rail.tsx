@@ -100,12 +100,12 @@ export function Rail({
     >
       <Link
         href="/overview"
-        title="LabDog"
+        title="unbork"
         className={`mb-[9px] flex items-center gap-2 hover:no-underline ${expanded ? "pl-[6px]" : ""}`}
       >
         {/* eslint-disable-next-line @next/next/no-img-element -- static svg, no optimisation needed */}
-        <img src="/logo.svg" alt="LabDog" width={26} height={26} className="block" />
-        {expanded && <span className="text-[13px] font-semibold text-text">LabDog</span>}
+        <img src="/logo.svg" alt="unbork" width={26} height={26} className="block" />
+        {expanded && <span className="text-[13px] font-semibold text-text">unbork</span>}
       </Link>
       {ZONE_DEFS.map((z) => {
         const on = z.k === zone

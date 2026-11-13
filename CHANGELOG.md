@@ -56,7 +56,9 @@ The format follows [Keep a Changelog]; LabDog follows
   surfaces are navy with cream text, light surfaces are cream with navy
   text, and the accent is a steel blue. The mark's amber is not used in
   the interface, because amber already means "drifted" or "warning". The
-  product is still named LabDog everywhere in the text.
+  name beside the mark changes with it: the sign-in and setup pages, the
+  rail and the browser tab say unbork. Everything else, in the interface
+  text, the docs and the configuration, still says LabDog.
 - **The roadmap moved to a GitHub project.** `ROADMAP.md` and `TODO.md`
   are gone; planned work, open tasks and their design notes now live on the
   [roadmap board](https://github.com/orgs/open-labdog/projects/1).

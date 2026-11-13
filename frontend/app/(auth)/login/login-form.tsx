@@ -88,7 +88,7 @@ export function LoginForm() {
   return (
     <AuthCard>
       <div className="flex flex-col gap-5 p-7">
-        <AuthHeading title="LabDog" sub="Sign in to your account" />
+        <AuthHeading title="unbork" sub="Sign in to your account" />
 
         <form onSubmit={handleSubmit} action="" method="post" className="flex flex-col gap-3" aria-busy={loading} noValidate>
           <AuthError ref={errorRef} error={authError} id="login-error" />

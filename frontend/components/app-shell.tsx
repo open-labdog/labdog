@@ -125,7 +125,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {mobile && (
           <header className="flex shrink-0 items-center gap-[9px] border-b border-line bg-surface px-3 py-[9px]">
             {/* eslint-disable-next-line @next/next/no-img-element -- static svg, no optimisation needed */}
-            <img src="/logo.svg" alt="LabDog" width={22} height={22} className="block" />
+            <img src="/logo.svg" alt="unbork" width={22} height={22} className="block" />
             <span className="text-[12.5px] font-semibold">{zoneDef(zone).label}</span>
             <button type="button" className="btn btn-sm btn-ghost ml-auto" onClick={() => setPalette(true)} aria-label="Search">
               search
