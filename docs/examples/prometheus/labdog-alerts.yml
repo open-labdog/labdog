@@ -25,7 +25,7 @@ groups:
             Prometheus has failed to scrape {{ $labels.instance }} for 5
             minutes. Either LabDog is down, or [metrics] enabled was turned
             off (the endpoint returns 404 when disabled).
-          runbook_url: "https://github.com/open-labdog/labdog/blob/main/docs/metrics-export.md#troubleshooting"
+          runbook_url: "https://github.com/open-unbork/unbork/blob/main/docs/metrics-export.md#troubleshooting"
 
       # --- Fleet state -------------------------------------------------------
       - alert: LabDogHostsInError
@@ -38,7 +38,7 @@ groups:
           description: >-
             LabDog cannot reach or manage {{ $value }} host(s). Check the
             Fleet Overview triage table for the affected hosts.
-          runbook_url: "https://github.com/open-labdog/labdog/blob/main/docs/metrics-export.md#fleet-state"
+          runbook_url: "https://github.com/open-unbork/unbork/blob/main/docs/metrics-export.md#fleet-state"
 
       - alert: LabDogHostsOutOfSync
         expr: labdog_hosts{sync_status="out_of_sync"} > 0

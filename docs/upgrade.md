@@ -31,7 +31,7 @@ and how to back out cleanly when something goes wrong.
 The alembic migration chain is forward-only and covers every schema
 change since v0.1.0, so upgrading from any earlier release to the
 latest follows the single procedure below. The current released line
-is whatever the [latest GitHub Release](https://github.com/open-labdog/labdog/releases/latest)
+is whatever the [latest GitHub Release](https://github.com/open-unbork/unbork/releases/latest)
 says — this page deliberately does not name a version, because a
 hardcoded one goes stale the moment it ships.
 
@@ -97,7 +97,7 @@ come only from the packs under **Operations → Actions → Packs**, so:
   needs a winner again and its actions can't run until you pick one.
 - If you deleted `labdog-playbooks`, or LabDog cannot reach GitHub, its
   actions disappear until a pack provides them. Re-add it (repository
-  `https://github.com/open-labdog/labdog-playbooks`, branch `main`, then a
+  `https://github.com/open-unbork/unbork-playbooks`, branch `main`, then a
   pack on that repository), point the repository at a mirror, or add a
   local-directory pack.
 
@@ -310,7 +310,7 @@ host was quiet, so nothing breaks silently — but you lose a signal.
 
 **Releases are cut from `main`.** Merging a release PR (`dev` →
 `main`) triggers `release-artifacts`, which auto-tags `vX.Y.Z` from
-the repo-root [`VERSION`](https://github.com/open-labdog/labdog/blob/main/VERSION) file and publishes the
+the repo-root [`VERSION`](https://github.com/open-unbork/unbork/blob/main/VERSION) file and publishes the
 `.tar.gz` / `.deb` / `.rpm` / `SHA256SUMS` set as a GitHub Release.
 There is no separate `git tag` step — the release artifacts on the
 GitHub Releases page are what you install from. See
@@ -419,7 +419,7 @@ run `alembic upgrade head` manually for a normal release upgrade.
 
 Pin the tag to a specific version — never run `:latest` in
 production. Each release is tagged on Docker Hub as `X.Y.Z`, `X.Y` and
-`X`: `openlabdog/labdog:1.0.0` never changes, while `1.0` follows the
+`X`: `unbork/unbork:1.0.0` never changes, while `1.0` follows the
 patch releases of 1.0 and `1` every 1.x release. `latest` follows every
 release, and the `dev-*` and `test-*` tags are unreleased builds.
 
@@ -449,14 +449,14 @@ points at:
 ```yaml
 services:
   labdog:
-    image: openlabdog/labdog:1.0.0
+    image: unbork/unbork:1.0.0
 ```
 
 ### Debian / Ubuntu (.deb)
 
 ```bash
 VERSION=1.0.0
-curl -LO https://github.com/open-labdog/labdog/releases/download/v${VERSION}/labdog_${VERSION}-1_amd64.deb
+curl -LO https://github.com/open-unbork/unbork/releases/download/v${VERSION}/labdog_${VERSION}-1_amd64.deb
 sudo apt install ./labdog_${VERSION}-1_amd64.deb
 
 # systemd will restart labdog.service automatically; alembic runs
@@ -468,7 +468,7 @@ sudo journalctl -u labdog -f
 
 ```bash
 VERSION=1.0.0
-curl -LO https://github.com/open-labdog/labdog/releases/download/v${VERSION}/labdog-${VERSION}-1.x86_64.rpm
+curl -LO https://github.com/open-unbork/unbork/releases/download/v${VERSION}/labdog-${VERSION}-1.x86_64.rpm
 sudo dnf install ./labdog-${VERSION}-1.x86_64.rpm
 
 sudo systemctl restart labdog.service
@@ -487,7 +487,7 @@ curl -fsS http://127.0.0.1:8000/api/version
 # → {"version":"0.3.0","commit_sha":"…","commit_sha_short":"…",
 #    "build_date":"2026-05-12T09:14:37Z",
 #    "license":"AGPL-3.0-or-later",
-#    "repo_url":"https://github.com/open-labdog/labdog"}
+#    "repo_url":"https://github.com/open-unbork/unbork"}
 # (Also visible in the UI at Settings › System, in the About panel.)
 
 # 2. Health endpoint returns 200.

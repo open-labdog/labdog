@@ -6,9 +6,9 @@ import { Banner, CodeBlock, Copy, Dot, Facts } from "@/components/ld"
 import type { MetricsStatus } from "@/lib/types"
 
 const SECURITY_HARDENING_URL =
-  "https://open-labdog.github.io/labdog/security-hardening#exposing-metrics"
+  "https://open-unbork.github.io/unbork/security-hardening#exposing-metrics"
 const PROMETHEUS_EXAMPLES_URL =
-  "https://github.com/open-labdog/labdog/tree/main/docs/examples/prometheus"
+  "https://github.com/open-unbork/unbork/tree/main/docs/examples/prometheus"
 
 /** Builds a copy-paste Grafana Alloy `prometheus.scrape` block from the
  *  resolved scrape URL. Alloy is LabDog's house agent — the bundled

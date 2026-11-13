@@ -93,7 +93,7 @@ def test_validate_url_rejects_blocked_hosts(url, match):
 async def test_create_public_https_repo_persists_as_none(superuser_client):
     body = {
         "name": "public-pack",
-        "url": "https://github.com/open-labdog/labdog-playbooks",
+        "url": "https://github.com/open-unbork/unbork-playbooks",
         "branch": "main",
     }
     resp = await superuser_client.post("/api/git-repos", json=body)
@@ -210,7 +210,7 @@ async def test_create_git_repo_emits_audit_row(superuser_client, db):
         "/api/git-repos",
         json={
             "name": "audit-create-repo",
-            "url": "https://github.com/open-labdog/labdog-playbooks",
+            "url": "https://github.com/open-unbork/unbork-playbooks",
             "branch": "main",
         },
     )
@@ -229,7 +229,7 @@ async def test_create_git_repo_emits_audit_row(superuser_client, db):
 
     assert row is not None
     assert row.after_state["name"] == "audit-create-repo"
-    assert row.after_state["url"] == "https://github.com/open-labdog/labdog-playbooks"
+    assert row.after_state["url"] == "https://github.com/open-unbork/unbork-playbooks"
     assert row.after_state["branch"] == "main"
     assert row.after_state["auth_type"] == "none"
     # Secret material must never appear in the audit payload.
@@ -248,7 +248,7 @@ async def test_update_git_repo_emits_audit_row(superuser_client, db):
         "/api/git-repos",
         json={
             "name": "audit-update-repo",
-            "url": "https://github.com/open-labdog/labdog-playbooks",
+            "url": "https://github.com/open-unbork/unbork-playbooks",
             "branch": "main",
         },
     )
@@ -287,7 +287,7 @@ async def test_delete_git_repo_emits_audit_row(superuser_client, db):
         "/api/git-repos",
         json={
             "name": "audit-delete-repo",
-            "url": "https://github.com/open-labdog/labdog-playbooks",
+            "url": "https://github.com/open-unbork/unbork-playbooks",
             "branch": "main",
         },
     )
@@ -308,7 +308,7 @@ async def test_delete_git_repo_emits_audit_row(superuser_client, db):
 
     assert row is not None
     assert row.before_state["name"] == "audit-delete-repo"
-    assert row.before_state["url"] == "https://github.com/open-labdog/labdog-playbooks"
+    assert row.before_state["url"] == "https://github.com/open-unbork/unbork-playbooks"
     assert row.after_state is None
     assert "https_token" not in row.before_state
     assert "encrypted_https_token" not in row.before_state
