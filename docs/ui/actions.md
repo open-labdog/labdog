@@ -169,8 +169,9 @@ verify and grace), since there is no telling how far it got; its log
 stops where the restart cut it off. The hosts the run had not reached
 then run as usual, at the run's parallelism.
 
-**Who can run actions:** any logged-in user. **Who can configure packs
-or schedules:** superusers only.
+**Who can run actions:** operators and admins. **Who can manage
+schedules:** operators and admins. **Who can configure packs and pick
+winners:** admins only. See [roles](admin.md#users).
 
 ### Group-dispatch actions
 

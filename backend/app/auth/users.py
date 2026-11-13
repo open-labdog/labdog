@@ -1,8 +1,9 @@
 import logging
 import secrets
+from datetime import UTC, datetime
 
 from fastapi import Depends, Request, Response
-from fastapi_users import BaseUserManager, FastAPIUsers, IntegerIDMixin
+from fastapi_users import BaseUserManager, FastAPIUsers, IntegerIDMixin, exceptions
 from fastapi_users import schemas as fu_schemas
 from fastapi_users.authentication import (
     AuthenticationBackend,
@@ -129,6 +130,23 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):  # type: ignore[t
             logger.info("First registration detected — will promote to superuser.")
         return await super().create(user_create, safe=safe, request=request)
 
+    async def authenticate(self, credentials):
+        """Password login, refusing accounts that have no password.
+
+        Today every account has one. An extension that signs users in
+        through a directory (SSO) can make ``hashed_password`` NULL, and
+        the hasher would raise on that instead of answering "no". The
+        hasher still runs, so the answer takes as long as a wrong password.
+        """
+        try:
+            user = await self.get_by_email(credentials.username)
+        except exceptions.UserNotExists:
+            user = None
+        if user is not None and not user.hashed_password:
+            self.password_helper.hash(credentials.password)
+            return None
+        return await super().authenticate(credentials)
+
     async def update(
         self,
         user_update: fu_schemas.UU,
@@ -149,6 +167,9 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):  # type: ignore[t
         """
         fields = user_update.model_dump(exclude_unset=True)
         current = fields.pop("current_password", None)
+        # Privilege is never self-service: a role comes from an admin, and
+        # is_superuser only mirrors it.
+        fields.pop("is_superuser", None)
         if safe and fields.get("password"):
             # Policy first, so a too-short password is reported as that
             # rather than hidden behind a wrong current password.
@@ -168,6 +189,7 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):  # type: ignore[t
         response: Response | None = None,
     ) -> None:
         """Set the double-submit CSRF cookie alongside the auth cookie."""
+        await self.user_db.update(user, {"last_login_at": datetime.now(UTC)})
         if response is None:
             return
         token = secrets.token_urlsafe(settings.security.csrf_token_bytes)
@@ -203,6 +225,9 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):  # type: ignore[t
         "real" one.
         """
         if "password" in update_dict and update_dict["password"]:
+            # The user chose this one, so an administrator-set password
+            # no longer needs replacing. Committed by the bump below.
+            user.must_change_password = False
             await bump_token_version(user)
             logger.info("User %d changed password — existing sessions revoked.", user.id)
 

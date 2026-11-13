@@ -256,6 +256,7 @@ async def regular_user_client(app, db):
         hashed_password=ph.hash(password),
         is_active=True,
         is_superuser=False,
+        role="operator",
         is_verified=True,
     )
     db.add(user)

@@ -1534,6 +1534,7 @@ async def subscribed(db):
         hashed_password="x",
         is_active=True,
         is_superuser=False,
+        role="operator",
         is_verified=True,
     )
     db.add(user)

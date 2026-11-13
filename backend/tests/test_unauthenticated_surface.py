@@ -39,6 +39,7 @@ async def _user(db, *, active: bool = True, generation: int = 0):
         hashed_password=PasswordHelper().hash("CorrectHorseBattery1!"),
         is_active=active,
         is_superuser=False,
+        role="operator",
         is_verified=True,
         token_version=generation,
     )

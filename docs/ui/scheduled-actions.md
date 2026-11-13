@@ -203,7 +203,7 @@ for a fully-commented example.
 
 ## Permissions
 
-All `/api/scheduled-actions/*` endpoints require **superuser**.
-Scheduling work that affects shared infrastructure is privileged.
-Ad-hoc runs (`POST /api/actions/runs`) are still open to any
-authenticated user.
+Reading schedules and their run history needs any role. Creating,
+editing and deleting a schedule needs `schedules.manage`, and **Run now**
+needs `actions.run`: both are operator and admin rights. See
+[roles](admin.md#users).

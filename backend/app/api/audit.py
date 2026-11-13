@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.users import current_active_user
+from app.auth.permissions import require
 from app.db import get_db
 from app.models.audit_log import AuditLog
 from app.models.ssh_session_transcript import SSHSessionTranscript
@@ -47,7 +47,7 @@ async def list_audit_logs(
     user_id: int | None = None,
     limit: int = Query(default=50, le=200),
     cursor: int | None = None,  # cursor-based: pass last seen id
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("audit.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """List audit log entries. Cursor-based pagination (pass id of last seen entry).
@@ -102,7 +102,7 @@ async def list_audit_logs(
 )
 async def get_ssh_session_transcript(
     session_id: str,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("terminal.open")),
     db: AsyncSession = Depends(get_db),
 ) -> list[TranscriptRowResponse]:
     """Return the ordered transcript rows for a single SSH session.
@@ -112,9 +112,9 @@ async def get_ssh_session_transcript(
     ``session_id`` (the session never had keystrokes, or the session ID is
     unknown).
 
-    Accessible to any authenticated user (audit-log posture: readable by
-    ``current_active_user``).  Superuser-only restriction can be added later
-    if access-control requirements tighten.
+    Needs ``terminal.open`` rather than ``audit.view``: a transcript is
+    everything typed and printed in a root shell, so it is readable by the
+    roles that could have opened that shell, not by every viewer.
     """
     q = (
         select(SSHSessionTranscript)

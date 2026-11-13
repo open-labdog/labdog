@@ -7,7 +7,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
-from app.auth.users import current_active_user
+from app.auth.permissions import require
 from app.db import get_db
 from app.discovery.verify import placeholder_hostname
 from app.models.host import Host, HostGroupMembership
@@ -54,7 +54,7 @@ async def _get_config_or_404(config_id: int, db: AsyncSession) -> ScanConfig:
 
 @router.get("/pending-summary", response_model=PendingSummaryResponse)
 async def pending_summary(
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """Return the total count of all pending hosts across all scan configs."""
@@ -65,7 +65,7 @@ async def pending_summary(
 
 @router.get("/pending", response_model=list[PendingHostFleetResponse])
 async def list_all_pending_hosts(
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """Return all pending hosts across every scan config, with the config name joined in.
@@ -98,7 +98,7 @@ async def list_all_pending_hosts(
 
 @router.get("", response_model=list[ScanConfigResponse])
 async def list_scan_configs(
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """List all scan configs ordered by creation date descending."""
@@ -109,7 +109,7 @@ async def list_scan_configs(
 @router.post("", response_model=ScanConfigResponse, status_code=201)
 async def create_scan_config(
     body: ScanConfigCreate,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("discovery.run")),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new scan config."""
@@ -137,7 +137,7 @@ async def create_scan_config(
 @router.get("/{config_id}", response_model=ScanConfigResponse)
 async def get_scan_config(
     config_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """Return a single scan config with its current pending host count."""
@@ -157,7 +157,7 @@ async def get_scan_config(
 async def update_scan_config(
     config_id: int,
     body: ScanConfigUpdate,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("discovery.run")),
     db: AsyncSession = Depends(get_db),
 ):
     """Update an existing scan config."""
@@ -185,7 +185,7 @@ async def update_scan_config(
 @router.delete("/{config_id}", status_code=204)
 async def delete_scan_config(
     config_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("discovery.run")),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a scan config. Pending hosts are removed via CASCADE."""
@@ -202,7 +202,7 @@ async def delete_scan_config(
 @router.get("/{config_id}/pending", response_model=list[PendingHostResponse])
 async def list_pending_hosts(
     config_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """List all pending hosts for a given scan config."""
@@ -219,7 +219,7 @@ async def list_pending_hosts(
 async def approve_pending_hosts(
     config_id: int,
     body: ApproveBody,
-    current_user: User = Depends(current_active_user),
+    current_user: User = Depends(require("discovery.run")),
     db: AsyncSession = Depends(get_db),
 ):
     """Promote pending hosts into the host inventory under the scan config's default groups.
@@ -330,7 +330,7 @@ async def approve_pending_hosts(
 async def dismiss_pending_hosts(
     config_id: int,
     body: DismissBody,
-    current_user: User = Depends(current_active_user),
+    current_user: User = Depends(require("discovery.run")),
     db: AsyncSession = Depends(get_db),
 ):
     """Remove pending hosts from the review queue and remember them so scheduled
@@ -393,7 +393,7 @@ async def dismiss_pending_hosts(
 @router.post("/{config_id}/run", status_code=202, response_model=ScanRunQueued)
 async def run_scan_now(
     config_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("discovery.run")),
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger an immediate manual scan for the given config.
@@ -420,7 +420,7 @@ async def run_scan_now(
 async def get_scan_run_status(
     config_id: int,
     task_id: str,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """Report the outcome of a run queued by ``POST /{config_id}/run``.

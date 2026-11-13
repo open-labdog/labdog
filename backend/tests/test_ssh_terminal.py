@@ -144,6 +144,7 @@ class TestWSAuth:
             hashed_password=ph.hash("TestPass1!"),
             is_active=True,
             is_superuser=False,
+            role="operator",
             is_verified=True,
         )
         db.add(user)
@@ -192,6 +193,7 @@ class TestWSAuth:
             hashed_password=ph.hash("TestPass1!"),
             is_active=False,
             is_superuser=False,
+            role="operator",
             is_verified=True,
         )
         db.add(user)

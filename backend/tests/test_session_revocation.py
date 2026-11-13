@@ -111,6 +111,7 @@ class TestAPasswordChangeRevokes:
             hashed_password=ph.hash(GOOD),
             is_active=True,
             is_superuser=False,
+            role="operator",
             is_verified=True,
         )
         db.add(victim)
@@ -233,6 +234,7 @@ class TestLoggingBackInWorks:
                 hashed_password=ph.hash(GOOD),
                 is_active=True,
                 is_superuser=False,
+                role="operator",
                 is_verified=True,
             )
         )
@@ -261,6 +263,7 @@ class TestLoggingBackInWorks:
                 hashed_password=ph.hash(GOOD),
                 is_active=True,
                 is_superuser=False,
+                role="operator",
                 is_verified=True,
             )
         )

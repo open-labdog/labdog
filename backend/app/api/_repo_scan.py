@@ -25,7 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.actions.git_sync import GitSyncError
-from app.auth.users import current_active_user
+from app.auth.permissions import require
 from app.db import get_db
 from app.models.git_repository import GitRepository
 from app.models.user import User
@@ -50,7 +50,7 @@ router = APIRouter(prefix="/git-repos", tags=["git-repos"])
 @router.post("/{repo_id}/scan", response_model=RepoScanResponse)
 async def scan_repo(
     repo_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("integrations.manage")),
     db: AsyncSession = Depends(get_db),
 ) -> RepoScanResponse:
     """Clone the repo into a tmpdir, walk it for action packs and
@@ -239,7 +239,7 @@ def _conflict_out(conflict):
 async def activate_repo(
     repo_id: int,
     body: RepoActivateRequest,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("integrations.manage")),
     db: AsyncSession = Depends(get_db),
 ) -> RepoActivateResponse:
     """Materialise operator-selected scan findings into ActionPack rows

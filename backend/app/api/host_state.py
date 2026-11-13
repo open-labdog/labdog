@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.users import current_active_user
+from app.auth.permissions import require
 from app.crypto.encryption import decrypt_ssh_key
 from app.crypto.key_management import get_master_key
 from app.db import get_db
@@ -101,7 +101,7 @@ def _module_drift_enabled(hms: HostModuleStatus, host_drift_enabled: bool) -> bo
 @router.get("/{host_id}/current-state", response_model=list[ModuleState])
 async def get_current_state(
     host_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """Return all cached collected states for a host."""
@@ -140,7 +140,7 @@ class CollectStateAccepted(BaseModel):
 async def collect_state(
     host_id: int,
     module: str | None = None,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("sync.run")),
     db: AsyncSession = Depends(get_db),
 ):
     """Queue a state collection for this host and return immediately.

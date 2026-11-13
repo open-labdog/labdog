@@ -73,7 +73,7 @@ export function AccountMenu({ compact }: { compact?: boolean }) {
           <div className="px-2.5 pb-2 pt-1.5">
             <div className="tt">signed in as</div>
             <div className="mono trunc text-xs text-text">{user?.email}</div>
-            {user?.is_superuser && <div className="tt mt-0.5 text-hold">superuser</div>}
+            {user?.role && <div className="tt mt-0.5 text-hold">{user.role}</div>}
           </div>
           <div className="mx-1 border-t border-line-faint" />
           <button

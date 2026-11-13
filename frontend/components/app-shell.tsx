@@ -10,6 +10,7 @@ import { useLocalPref } from "@/lib/local-pref"
 import { Pane } from "@/components/shell/pane"
 import { Palette } from "@/components/shell/palette"
 import { AccountMenu } from "@/components/shell/account-menu"
+import { ForcedPasswordChange } from "@/components/shell/forced-password-change"
 import { useShellCounts } from "@/components/shell/use-shell-counts"
 import { zoneDef, zoneForPath } from "@/components/shell/zones"
 
@@ -137,6 +138,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {/* Every screen owns its header and scroll region (PageHead + a
             `.scroll` body), so the shell hands over the whole column. */}
         <main className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</main>
+        <ForcedPasswordChange />
       </div>
 
       {mobile && <MobileRail zone={zone} counts={counts} />}

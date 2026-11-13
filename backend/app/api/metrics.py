@@ -5,7 +5,7 @@ they're registered:
 
 * ``router`` — prefix-less, owns the literal root path ``/metrics``
   (mirrors ``app.api.version``'s public-endpoint pattern: no
-  ``Depends(current_active_user)`` at all). Registered *unconditionally*;
+  permission dependency at all). Registered *unconditionally*;
   it 404s internally when disabled rather than being conditionally
   registered, because conditional registration would let ``/metrics``
   fall through to the SPA catch-all in ``app.main`` and answer with
@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.users import current_active_user
+from app.auth.permissions import require
 from app.config import settings
 from app.db import get_db
 from app.metrics.collector import get_snapshot, with_meta
@@ -70,7 +70,7 @@ class MetricsStatus(BaseModel):
 @status_router.get("/status", response_model=MetricsStatus, summary="Exporter configuration")
 async def get_metrics_status(
     request: Request,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
 ) -> MetricsStatus:
     """Describe the exporter's current configuration for the Grafana page's
     outbound-scrape card. Deliberately does not touch the database."""

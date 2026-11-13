@@ -1,11 +1,27 @@
+from datetime import datetime
+
 from fastapi_users import schemas
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 from app.auth.password_policy import check_password
 
 
 class UserRead(schemas.BaseUser[int]):
-    pass
+    role: str | None = None
+    display_name: str | None = None
+    last_login_at: datetime | None = None
+    must_change_password: bool = False
+
+
+class MeRead(UserRead):
+    """``GET /api/users/me``: the account plus what it may do.
+
+    ``permissions`` is the global set from ``app.auth.permissions``; the
+    frontend hides controls from it. An extension that scopes permissions
+    to hosts and groups adds its own field beside it.
+    """
+
+    permissions: list[str] = []
 
 
 class UserCreate(schemas.BaseUserCreate):
@@ -42,3 +58,4 @@ class UserUpdate(schemas.BaseUserUpdate):
     """
 
     current_password: str | None = None
+    display_name: str | None = Field(default=None, max_length=255)

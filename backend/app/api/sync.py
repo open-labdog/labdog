@@ -13,7 +13,7 @@ from app.api._group_sync import (
     has_sync_in_flight,
 )
 from app.audit.logger import log_action
-from app.auth.users import current_active_user
+from app.auth.permissions import require, row_scope
 from app.db import get_db, release_connection
 from app.enum_utils import enum_str
 from app.models.host import Host, HostGroupMembership
@@ -84,7 +84,7 @@ async def _get_desired_state(
 @router.post("/hosts/{host_id}/plan", response_model=HostDiff)
 async def plan_host(
     host_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("sync.run")),
     db: AsyncSession = Depends(get_db),
 ):
     """Preview changes for a single host (does NOT apply)."""
@@ -125,7 +125,7 @@ PLAN_GROUP_CONCURRENCY = 8
 @router.post("/groups/{group_id}/plan", response_model=list[HostDiff])
 async def plan_group(
     group_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("sync.run")),
     db: AsyncSession = Depends(get_db),
 ):
     """Preview changes for all hosts in a group (does NOT apply).
@@ -202,7 +202,7 @@ class PreviewRequest(BaseModel):
 async def preview_host(
     host_id: int,
     body: PreviewRequest,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("sync.run")),
     db: AsyncSession = Depends(get_db),
 ):
     """Preview pending changes for a host across one or more modules.
@@ -307,7 +307,7 @@ async def _modules_by_host(
 @router.post("/hosts/{host_id}/sync", response_model=SyncJobResponse, status_code=201)
 async def trigger_host_sync(
     host_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("sync.run")),
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger sync for a single host."""
@@ -392,7 +392,7 @@ async def trigger_host_sync(
 @router.post("/groups/{group_id}/sync", status_code=201)
 async def trigger_group_sync(
     group_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("sync.run")),
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger sync for all hosts in a group."""
@@ -477,7 +477,7 @@ async def trigger_bulk_sync(
     host_id: int,
     body: BulkSyncRequest,
     response: Response,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("sync.run")),
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger a coalesced multi-module sync for one host.
@@ -622,7 +622,7 @@ class GroupBulkSyncResponse(BaseModel):
 async def trigger_group_bulk_sync(
     group_id: int,
     body: BulkSyncRequest,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("sync.run")),
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger a coalesced multi-module sync for every host in a group.
@@ -721,7 +721,7 @@ async def trigger_group_bulk_sync(
 @router.get("/jobs/{job_id}", response_model=SyncJobResponse)
 async def get_job(
     job_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view", scope=row_scope(SyncJob, "job_id"))),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(SyncJob).where(SyncJob.id == job_id))
@@ -742,7 +742,7 @@ async def list_jobs(
     # Capped like list_runs' (BUG-162): a bare int let ?limit=1000000 load
     # the whole table.
     limit: int = Query(20, ge=1, le=500),
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """List sync jobs. ``ids`` is a comma-separated set of job ids — used by
