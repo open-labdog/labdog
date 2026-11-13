@@ -49,6 +49,14 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Changed
 
+- **New logo and colours.** The dog is replaced by the mark for the
+  coming name, unbork: a timeline with a restore point, and a U that
+  turns back to it. It is in the rail, on the sign-in page and in the
+  browser tab. Both themes are rebuilt from the mark's colours: dark
+  surfaces are navy with cream text, light surfaces are cream with navy
+  text, and the accent is a steel blue. The mark's amber is not used in
+  the interface, because amber already means "drifted" or "warning". The
+  product is still named LabDog everywhere in the text.
 - **The roadmap moved to a GitHub project.** `ROADMAP.md` and `TODO.md`
   are gone; planned work, open tasks and their design notes now live on the
   [roadmap board](https://github.com/orgs/open-labdog/projects/1).

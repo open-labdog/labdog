@@ -66,8 +66,14 @@
 
 /* ---------------------------------------------------------------------------
    LabDog theme tokens. Dark is primary; light is a real second theme, not
-   an inversion. Both are neutral-cool with one blue accent; status hues
-   share chroma so nothing shouts louder than its severity.
+   an inversion. Both are built from the brand's three colours: the navy
+   of the mark's tile (hue 247) tints every dark surface and is the ink in
+   light; its cream (hue 82) is the ink in dark and tints every light
+   surface. The one accent is a steel blue on the navy's side of the
+   wheel. The mark's amber is deliberately *not* a UI colour: it sits
+   next to `warn`, and an amber button beside an amber "drifted" dot
+   would make every action look like an alert. Status hues share chroma
+   so nothing shouts louder than its severity.
 
    The -soft tints are backgrounds. Text painted on them needs its own
    grade — the tone itself is tuned for the page surface, not for its own
@@ -84,12 +90,12 @@
 
 :root,
 html[data-theme="dark"] {
-  --bg: #0b0d10; --bg-grad: #0d1014;
-  --surface: #12151a; --surface-2: #171b21; --surface-3: #1d222a;
-  --rail: #0e1115;
-  --border: #232931; --border-strong: #323a45; --border-faint: #1a1f26;
-  --text: #e9edf1; --text-2: #a6afba; --text-3: #8b95a1; --text-faint: #7d8794;
-  --accent: oklch(0.64 0.13 250); --accent-fg: #fff; --accent-soft: oklch(0.30 0.06 250); --accent-line: oklch(0.45 0.10 250);
+  --bg: oklch(0.175 0.022 247); --bg-grad: oklch(0.19 0.024 247);
+  --surface: oklch(0.215 0.028 247); --surface-2: oklch(0.245 0.031 247); --surface-3: oklch(0.275 0.034 247);
+  --rail: oklch(0.19 0.026 247);
+  --border: oklch(0.31 0.034 247); --border-strong: oklch(0.385 0.038 247); --border-faint: oklch(0.255 0.03 247);
+  --text: oklch(0.94 0.025 82); --text-2: oklch(0.78 0.02 82); --text-3: oklch(0.69 0.018 82); --text-faint: oklch(0.645 0.016 82);
+  --accent: oklch(0.68 0.10 240); --accent-fg: #fff; --accent-soft: oklch(0.33 0.05 240); --accent-line: oklch(0.48 0.08 240);
   --ok: oklch(0.72 0.14 152); --ok-soft: oklch(0.28 0.06 152);
   --warn: oklch(0.78 0.13 78); --warn-soft: oklch(0.30 0.06 78);
   --danger: oklch(0.66 0.17 25); --danger-soft: oklch(0.30 0.08 25);
@@ -98,23 +104,23 @@ html[data-theme="dark"] {
   --hold: oklch(0.68 0.12 305); --hold-soft: oklch(0.29 0.06 305);
   --add: oklch(0.78 0.15 152); --add-bg: oklch(0.26 0.05 152); --add-soft: oklch(0.26 0.05 152);
   --del: oklch(0.72 0.17 25); --del-bg: oklch(0.26 0.06 25); --del-soft: oklch(0.26 0.06 25);
-  --accent-fill: oklch(0.52 0.15 250);
+  --accent-fill: oklch(0.52 0.11 240);
   --ok-ink: oklch(0.67 0.14 152); --warn-ink: oklch(0.70 0.13 78); --danger-ink: oklch(0.71 0.17 25);
   --sync-ink: oklch(0.69 0.13 230); --idle-ink: oklch(0.66 0.02 255); --hold-ink: oklch(0.70 0.14 305);
-  --accent-ink: oklch(0.70 0.14 250); --add-ink: oklch(0.65 0.14 152); --del-ink: oklch(0.68 0.17 25);
+  --accent-ink: oklch(0.74 0.10 240); --add-ink: oklch(0.65 0.14 152); --del-ink: oklch(0.68 0.17 25);
   --on-tint-2: oklch(0.70 0.02 250);
   --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 30px rgba(0, 0, 0, .35);
-  --scrim: rgba(4, 6, 8, .62);
+  --scrim: rgba(5, 10, 16, .62);
   color-scheme: dark;
 }
 
 html[data-theme="light"] {
-  --bg: #f4f6f8; --bg-grad: #eef1f4;
-  --surface: #ffffff; --surface-2: #f7f9fa; --surface-3: #eef1f4;
-  --rail: #ffffff;
-  --border: #dde2e8; --border-strong: #c3ccd6; --border-faint: #e9edf1;
-  --text: #101418; --text-2: #485261; --text-3: #616b78; --text-faint: #5a6370;
-  --accent: oklch(0.52 0.14 250); --accent-fg: #fff; --accent-soft: oklch(0.95 0.02 250); --accent-line: oklch(0.80 0.06 250);
+  --bg: oklch(0.965 0.012 82); --bg-grad: oklch(0.95 0.014 82);
+  --surface: oklch(0.992 0.005 82); --surface-2: oklch(0.975 0.01 82); --surface-3: oklch(0.95 0.014 82);
+  --rail: oklch(0.992 0.005 82);
+  --border: oklch(0.89 0.016 82); --border-strong: oklch(0.81 0.02 82); --border-faint: oklch(0.93 0.013 82);
+  --text: oklch(0.24 0.035 247); --text-2: oklch(0.41 0.03 247); --text-3: oklch(0.50 0.025 247); --text-faint: oklch(0.47 0.022 247);
+  --accent: oklch(0.48 0.10 240); --accent-fg: #fff; --accent-soft: oklch(0.935 0.022 240); --accent-line: oklch(0.80 0.05 240);
   --ok: oklch(0.52 0.14 152); --ok-soft: oklch(0.95 0.03 152);
   --warn: oklch(0.52 0.13 70); --warn-soft: oklch(0.95 0.04 78);
   --danger: oklch(0.52 0.18 25); --danger-soft: oklch(0.95 0.03 25);
@@ -123,13 +129,13 @@ html[data-theme="light"] {
   --hold: oklch(0.52 0.14 305); --hold-soft: oklch(0.95 0.03 305);
   --add: oklch(0.46 0.13 152); --add-bg: oklch(0.95 0.04 152); --add-soft: oklch(0.95 0.04 152);
   --del: oklch(0.48 0.17 25); --del-bg: oklch(0.96 0.03 25); --del-soft: oklch(0.96 0.03 25);
-  --accent-fill: oklch(0.50 0.15 250);
+  --accent-fill: oklch(0.46 0.11 240);
   --ok-ink: oklch(0.49 0.14 152); --warn-ink: oklch(0.51 0.13 78); --danger-ink: oklch(0.52 0.17 25);
   --sync-ink: oklch(0.49 0.13 230); --idle-ink: oklch(0.50 0.02 255); --hold-ink: oklch(0.52 0.14 305);
-  --accent-ink: oklch(0.51 0.14 250); --add-ink: oklch(0.49 0.14 152); --del-ink: oklch(0.52 0.17 25);
+  --accent-ink: oklch(0.46 0.10 240); --add-ink: oklch(0.49 0.14 152); --del-ink: oklch(0.52 0.17 25);
   --on-tint-2: oklch(0.50 0.02 250);
-  --shadow: 0 1px 2px rgba(16, 20, 24, .06), 0 10px 28px rgba(16, 20, 24, .08);
-  --scrim: rgba(16, 20, 24, .32);
+  --shadow: 0 1px 2px rgba(31, 47, 62, .06), 0 10px 28px rgba(31, 47, 62, .08);
+  --scrim: rgba(31, 47, 62, .32);
   color-scheme: light;
 }
 
