@@ -8,6 +8,7 @@ import { can, ROLE_INFO, useAuth, type User } from "@/lib/auth"
 import { shortAgo } from "@/lib/fleet"
 import type { AIProvider, AIUsageSummary, AlertIntakeStatus, EmailSettings, GitRepository, GrafanaInstance, MetricsStatus, ProxmoxNode, SSHKey } from "@/lib/types"
 import { MetricsScrapeCard } from "@/components/metrics-scrape-card"
+import { settingsSections } from "@/lib/extensions"
 import { Dot, PageHead, Panel, Tabs, type Tone } from "@/components/ld"
 
 import { SettingsEditor } from "./settings-editor"
@@ -35,13 +36,18 @@ export default function SettingsPage() {
   const { user } = useAuth()
   const section = (search.get("section") as Section | null) ?? "integrations"
   const setSection = (s: string) => router.push(s === "integrations" ? "/settings" : `/settings?section=${s}`)
+  // Sections an extension (Enterprise) adds; Community has none.
+  const extra = settingsSections.filter((x) => !x.permission || can(user, x.permission))
+  const tabs = [...SECTIONS, ...extra.map((x) => ({ k: x.key, label: x.label }))]
+  const ExtraSection = extra.find((x) => x.key === section)?.Component
 
   return (
     <>
       <PageHead title="Settings" sub="Integrations are a registry; the rest is database-backed and takes effect immediately.">
-        <Tabs tabs={SECTIONS} value={section} onChange={setSection} />
+        <Tabs tabs={tabs} value={section} onChange={setSection} />
       </PageHead>
       <div className="scroll flex-1 p-3.5">
+        {ExtraSection && <ExtraSection />}
         {section === "integrations" && <Integrations />}
         {section === "ai" && (
           <div className="flex flex-col gap-3">

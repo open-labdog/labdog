@@ -8,6 +8,7 @@ import { useApiMutation } from "@/lib/mutations"
 import { shortAgo } from "@/lib/fleet"
 import { can, ROLE_INFO, useAuth, type Role } from "@/lib/auth"
 import type { AdminUser } from "@/lib/types"
+import { userPanels } from "@/lib/extensions"
 import { Banner, Confirm, Empty, Field, Filter, Modal, PageHead, Table, Tag, type Sort } from "@/components/ld"
 
 const CRUMBS = [
@@ -431,6 +432,13 @@ export default function UsersPage() {
           {!isSelf(selectedUser) && editRole !== selectedUser.role && selectedUser.role && (
             <p className="tt">Changing the role signs them out everywhere.</p>
           )}
+          {/* Panels an extension adds (Enterprise: directory accounts). They
+              sit inside this form, so their buttons are type="button". */}
+          {userPanels
+            .filter((x) => !x.permission || can(currentUser, x.permission))
+            .map(({ key, Component }) => (
+              <Component key={key} user={selectedUser} />
+            ))}
           {editMutation.error && <Banner tone="danger">{editMutation.error.message}</Banner>}
         </Modal>
       )}
