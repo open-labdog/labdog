@@ -13,12 +13,12 @@ stages:
     goal: "A complete audit trail and the first extension hooks"
     base_commit: null
     status: todo
-    items: [C-008, C-047, C-022, S-001, S-002]
+    items: [C-008, C-047, C-022, S-001, S-002, S-015, S-016]
   - stage: 2
     goal: "The rename, and a clean image"
     base_commit: null
     status: todo
-    items: [C-048, C-049, C-050, C-051, S-008, S-014, S-009, C-026, S-010]
+    items: [C-048, C-049, C-050, C-051, S-008, S-014, S-017, S-009, C-026, S-010]
   - stage: 3
     goal: "Release unbork 2.0.0"
     base_commit: null
@@ -43,7 +43,7 @@ stages:
     goal: "Integrations"
     base_commit: null
     status: todo
-    items: [C-030, S-004, C-060, S-005, C-046]
+    items: [C-030, S-004, C-060, S-005, C-046, S-018]
   - stage: 8
     goal: "A safer assistant"
     base_commit: null
@@ -53,7 +53,7 @@ stages:
     goal: "Rollback beyond Proxmox, tickets and teams"
     base_commit: null
     status: todo
-    items: []
+    items: [S-019, S-020]
   - stage: 10
     goal: "Scale and assurance"
     base_commit: null
@@ -248,6 +248,34 @@ items:
     branch: null
     spec: items/S-002-extension-hook-gate-a-run-before-it.md
     notes: "Several planned extensions need to refuse or defer a sync, run, schedule or AI fix; one seam is safer than four."
+  - id: S-015
+    title: "Extension hook: register Celery tasks and periodic jobs"
+    edition: shared
+    source: roadmap
+    tier: P0
+    score: 13.0
+    stage: 1
+    depends_on: []
+    autonomy: B
+    effort: S
+    status: todo
+    branch: null
+    spec: items/S-015-extension-hook-register-celery-tasks-and-periodic.md
+    notes: "Found while writing specs: an extension cannot run a background or scheduled job, and six Enterprise items need one (outboxes, scheduled directory sync, verified backups)."
+  - id: S-016
+    title: "Extension hook: declare additional permissions"
+    edition: shared
+    source: roadmap
+    tier: P0
+    score: 12.0
+    stage: 1
+    depends_on: []
+    autonomy: B
+    effort: S
+    status: todo
+    branch: null
+    spec: items/S-016-extension-hook-declare-additional-permissions.md
+    notes: "Found while writing specs: an extension route cannot ask for a permission of its own, so maintenance-window overrides cannot be expressed."
   - id: C-048
     title: "Rename: configuration and environment, with the old names as fallbacks"
     edition: community
@@ -297,7 +325,7 @@ items:
     tier: P0
     score: 7.0
     stage: 2
-    depends_on: [C-048]
+    depends_on: [C-048, C-049, C-050]
     autonomy: A
     effort: S
     status: todo
@@ -332,6 +360,20 @@ items:
     branch: null
     spec: items/S-014-remove-the-subscription-token-field-from-ai.md
     notes: "D-04: Community keeps only the operator's own Claude Code sign-in."
+  - id: S-017
+    title: "Extension hook: restrict which AI provider types may be configured"
+    edition: shared
+    source: roadmap
+    tier: P0
+    score: 10.0
+    stage: 2
+    depends_on: [S-014]
+    autonomy: B
+    effort: S
+    status: todo
+    branch: null
+    spec: items/S-017-extension-hook-restrict-which-ai-provider-types.md
+    notes: "Found while writing specs: decision D-04 needs an extension to refuse provider types, and Community has no seam for it."
   - id: S-009
     title: "Stop bundling the Claude Code binary in the Docker image"
     edition: shared
@@ -577,7 +619,7 @@ items:
     tier: P1
     score: 11.0
     stage: 5
-    depends_on: []
+    depends_on: [C-061]
     autonomy: B
     effort: S
     status: todo
@@ -752,6 +794,20 @@ items:
     branch: null
     spec: items/C-046-zabbix-alert-intake.md
     notes: "D-05: intake is Community, an adapter on the S-005 seam."
+  - id: S-018
+    title: "Extension hook: register an external sign-in callback path"
+    edition: shared
+    source: roadmap
+    tier: P2
+    score: 9.0
+    stage: 7
+    depends_on: []
+    autonomy: B
+    effort: S
+    status: todo
+    branch: null
+    spec: items/S-018-extension-hook-register-an-external-sign-in.md
+    notes: "Found while writing specs: a SAML response is a cross-site POST larger than the login limiter allows; the only existing exemption is for password logins."
   - id: C-010
     title: "AI verify: narrow the evidence window to before the action"
     edition: community
@@ -836,6 +892,34 @@ items:
     branch: null
     spec: items/C-009-propose-action-let-the-assistant-request-a.md
     notes: "Design settled in D-13: the tool hands off and never waits."
+  - id: S-019
+    title: "Extension hook: add a probe to host state collection"
+    edition: shared
+    source: roadmap
+    tier: P2
+    score: 8.0
+    stage: 9
+    depends_on: []
+    autonomy: B
+    effort: S
+    status: todo
+    branch: null
+    spec: items/S-019-extension-hook-add-a-probe-to-host.md
+    notes: "Found while writing specs: storage-layout detection for non-Proxmox rollback needs to collect a fact from the host, and the collector list is closed."
+  - id: S-020
+    title: "Check host and group creation against scope"
+    edition: shared
+    source: roadmap
+    tier: P2
+    score: 10.0
+    stage: 9
+    depends_on: []
+    autonomy: B
+    effort: S
+    status: todo
+    branch: null
+    spec: items/S-020-check-host-and-group-creation-against-scope.md
+    notes: "Found while writing specs: two of the three soft-tenancy gaps named in D-09 are in Community routes."
   - id: C-029
     title: "Run workers on more than one box"
     edition: community
@@ -927,7 +1011,7 @@ items:
     tier: P2
     score: 5.0
     stage: 11
-    depends_on: [C-054, C-057]
+    depends_on: [C-054, C-057, C-045]
     autonomy: B
     effort: L
     status: todo
@@ -1039,7 +1123,7 @@ items:
     tier: P3
     score: 4.0
     stage: parked
-    depends_on: []
+    depends_on: [C-016]
     autonomy: B
     effort: M
     status: todo

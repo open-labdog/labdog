@@ -8,7 +8,7 @@
 | Stage | 2 |
 | Effort | S |
 | Autonomy | A |
-| Depends on | C-048 |
+| Depends on | C-048, C-049, C-050 |
 
 ## Goal
 
@@ -39,7 +39,7 @@ Out of scope:
 
 ## Dependencies
 
-- C-048 must be merged. This item should run after C-049 and C-050 as well (it is fourth in the stage order), because the sweep documents their final names. If it runs earlier, repeat step 3 afterwards.
+- C-048, C-049 and C-050 must be merged (this item is fourth in the stage order), because the sweep documents their final names.
 - [D-17](../DECISIONS.md) also edits `CLAUDE.md` and `CONTRIBUTING.md`; take care not to undo that wording.
 
 ## Implementation steps

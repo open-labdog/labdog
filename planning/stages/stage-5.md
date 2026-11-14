@@ -10,10 +10,10 @@ Goal: an organisation can govern unbork from its directory and its change calend
 
 | # | ID | Item | Class | Effort | Depends on |
 |---|---|---|---|---|---|
-| 1 | [S-006](../items/S-006-frontend-extension-seam-navigation-entries-pages-host.md) | Frontend extension seam: navigation entries, pages, host and group panels | B | S | none |
+| 1 | [S-006](../items/S-006-frontend-extension-seam-navigation-entries-pages-host.md) | Frontend extension seam: navigation entries, pages, host and group panels | B | S | C-061 |
 | 2 | | Review and hardening: follow `.claude/skills/review-stage/SKILL.md` for stage 5 | | | all of the above |
 
-Enterprise items in this stage, in the Enterprise repository (listed for transparency, with no dates or commitments): E-002 Send the audit log to a SIEM (syslog/CEF and HTTPS webhook); E-003 Maintenance and change-freeze windows: model, API and enforcement; E-004 Maintenance windows: calendar UI on Settings, host and group pages; E-023 LDAP sync: read servers and groups from the directory, with a preview; E-030 LDAP sync: apply on a schedule, flag servers that disappear; E-031 LDAP sync: settings and review UI; E-024 Refresh LDAP group memberships between sign-ins and bind them to synced groups; E-029 (internal Enterprise item).
+Enterprise items in this stage, in the Enterprise repository (listed for transparency, with no dates or commitments): E-029 (internal Enterprise item); E-002 Send the audit log to a SIEM (syslog/CEF and HTTPS webhook); E-003 Maintenance and change-freeze windows: model, API and enforcement; E-004 Maintenance windows: calendar UI on Settings, host and group pages; E-023 LDAP sync: read servers and groups from the directory, with a preview; E-030 LDAP sync: apply on a schedule, flag servers that disappear; E-031 LDAP sync: settings and review UI; E-024 Refresh LDAP group memberships between sign-ins and bind them to synced groups.
 
 ## Exit criteria
 

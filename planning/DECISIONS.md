@@ -8,6 +8,77 @@ D-16) are in the Enterprise repository's `planning/DECISIONS.md`.
 
 ## Open
 
+Raised while the item specs were written (2026-11-14). Unless a question
+says "Blocks", the spec states an assumption and the item can run on it;
+Dennis confirms or corrects it at the stage review. Stage numbers in the
+log below that differ from `roadmap.yaml` predate the final staging;
+`roadmap.yaml` wins.
+
+### D-24 Sandbox network for kennel
+Blocks: C-057. Which Proxmox bridge or SDN zone, which subnet, and which
+subnets a sandboxed VM must never reach.
+
+### D-25 What the CLA check needs from Dennis
+Blocks: finishing S-011. A private repository for signatures, a token
+secret in `unbork` and `unbork-playbooks`, the GitHub logins to put on the
+allowlist, and a second account to prove the check on a fork. Also: do the
+CLA texts live in this repository (assumed, `legal/cla/v1/`) or in
+`open-unbork/.github`?
+
+### D-26 A destructive run on a host that cannot be snapshotted
+Item: C-005. Today it proceeds with a log line. Assumed: refuse by
+default, with a setting to get the old behaviour back. This will stop
+existing schedules on hosts without a VM mapping.
+
+### D-27 How far the rollback policy goes
+Item: C-004. Assumed: the two fields are per host only (the board also
+sketches them on groups), and the `confirm` mode is included, which makes
+the item larger than M. Alternative: split `confirm` into its own item.
+
+### D-28 What a protected host refuses
+Item: C-016. Assumed: config writes only (sync, CA certificates, post-run
+hooks). The board also wants actions refused unless the manifest opts in
+and the assistant held to read-only commands: see PR-12.
+
+### D-29 How long the old names keep working
+Items: C-048 to C-050. Assumed: old on-host markers are recognised with
+no end date; every other old name works for all of 2.x. The `labdog`
+system user is renamed in place.
+
+### D-30 Where Claude Code is installed from, and the new labels
+Items: S-009, S-008. Assumed: the binary comes from the pinned
+`claude-agent-sdk` wheel, hash-checked against the lock file; labels
+become "Claude agent" and "Claude single-shot".
+
+### D-31 Source offer wording and contact address
+Blocks: finishing S-010. Dennis supplies the address and signs off the
+text.
+
+### D-32 Release details
+Items: C-002, C-024, C-064. A `2.0.0-rc.1` first, or straight to 2.0.0
+(assumed)? `planning/` reaches `main` with the release PR (assumed yes)?
+Delete the stale floating `:test` tag on Docker Hub (assumed: leave it)?
+
+### D-33 Who may create API tokens
+Item: C-030. May every role create tokens for itself, and are tokens
+without a user (service accounts) wanted? The spec states its assumption.
+
+### D-34 What a refused or deferred run looks like to the caller
+Item: S-002. Assumed: the request is accepted and the run then fails or
+waits with the reason shown; a gate that raises counts as a refusal.
+Alternative: ask the gate in the API as well and answer 409.
+
+### D-35 Verify while quiesced
+Items: C-014, C-015. Assumed: quiesce closes the service to everything
+but loopback, so verify still works. Alternative: let a pack ask for
+unquiesce before verify.
+
+### D-36 kennel shape
+Items: C-028, C-059. Assumed: Python, FastAPI and Postgres with a job
+table, no Celery. kennel restores beside the original (D-23), so as a
+snapshot provider it can take and delete restore points but not roll back
+in place; unbork's own Proxmox provider stays the default.
+
 ## Assumptions made without asking
 
 - A-01. "Harden the webhook" (C-022) is taken from the board text as

@@ -29,6 +29,7 @@ Out of scope:
 - `frontend/eslint.config.mjs` lines 41 to 49 set `"react-hooks/set-state-in-effect": "warn"` and `"react-hooks/purity": "warn"`, with a comment that calls them advisory "until someone takes the pass (roadmap board)".
 - `npm run lint` on the planning commit reports 0 errors and 11 warnings: nine `incompatible-library`, one `@typescript-eslint/no-unused-vars` (`frontend/e2e/ux-toast.spec.ts` line 23, `group`), and one `set-state-in-effect` at `frontend/components/scheduled-actions/cron-input.tsx` line 46. The board note also names `action-run-dialog.tsx`; that site is no longer flagged. `purity` has no hits.
 - `cron-input.tsx`, component `CronInput` (line 37): a `useEffect` on `[value]` calls `setValidation(null)` synchronously when `value` is empty and `setValidating(true)` synchronously before starting a 250 ms debounce timer that posts to `/api/scheduled-actions/validate-cron`. Those two synchronous calls are what the rule flags.
+- `frontend/lib/local-pref.ts` (`useLocalPref`) already carries one `eslint-disable-next-line react-hooks/set-state-in-effect` with a reason (one read from storage after mount). That existing exception stays; no new ones are added.
 - `frontend/e2e/scheduled-actions.spec.ts` covers the schedule dialog that contains `CronInput`.
 - `frontend/AGENTS.md` says the Next.js version in use has breaking changes and to read `node_modules/next/dist/docs/` before writing frontend code.
 

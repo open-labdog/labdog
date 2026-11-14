@@ -26,9 +26,24 @@ Append-only. Newest entry last.
 
 - Dennis accepted every open proposal, took the recommendation on the
   last open Community-side question, and gave the go-ahead for staging.
-- Final inventory: 107 items in 12 stages (0 to 11), 18 parked. Classes:
-  26 A, 73 B, 8 H.
+- Final inventory: 114 items in 12 stages (0 to 11), 18 parked. Classes:
+  27 A, 79 B, 8 H. Seven of them (S-015 to S-020 and one Enterprise
+  item) were added while the specs were written, because the spec
+  writers found Community hooks that Enterprise features need and that
+  no item covered.
 - Wrote `roadmap.yaml`, `stages/stage-0.md` to `stage-11.md`, one spec per
   item under `items/`, and the `/run-stage` and `/review-stage` skills.
 - No stage has started. `base_commit` is null for every stage until
   `/run-stage` sets it.
+- Questions the spec writers could not settle are D-24 to D-36 in
+  DECISIONS.md; each spec states the assumption it was written on. New
+  ideas are PR-12 to PR-17, open and not scheduled.
+- Self-review: every item in `roadmap.yaml` has a spec; each spec's
+  "Depends on" row equals the yaml; no item depends on a later stage or
+  on a parked item; no `C-` or `S-` item depends on an `E-` item; every
+  class A and B spec has steps, acceptance criteria and a test plan;
+  every stage file ends with "Review and hardening".
+- Known loose ends: a few specs keep an assumption line that a later
+  edit made stale (for example an Enterprise spec asking whether its hook
+  should be an item of its own, which it now is). Specs were written
+  against this branch, which predates #297 on `dev`.

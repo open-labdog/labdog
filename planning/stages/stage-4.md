@@ -32,7 +32,7 @@ Goal: an operator can trust a rollback: unbork knows which hosts hold state, ref
 
 Behaviours to verify:
 
-- [ ] A host marked stateful with `rollback_mode` set to manual is not rolled back automatically; the run stops and says why.
+- [ ] A host marked stateful whose `rollback_mode` is not `auto` is not rolled back automatically; the run stops and says why.
 - [ ] A destructive run against a VM that cannot be snapshotted (no mapping, no space, unsupported storage) is refused before the playbook starts.
 - [ ] With memory in the snapshot turned on, a rolled-back VM is running with its processes intact. Proven on a VM named "test".
 - [ ] Every Proxmox call the executors make goes through the snapshot provider interface, and the existing snapshot tests pass unchanged.

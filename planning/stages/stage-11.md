@@ -16,7 +16,7 @@ Goal: kennel exists as its own AGPL service: it leases VMs, proves backups by re
 | 3 | [C-054](../items/C-054-kennel-leases-and-the-sweeper.md) | kennel: leases and the sweeper | B | L | C-028 |
 | 4 | [C-057](../items/C-057-kennel-isolated-sandbox-network-with-a-jump.md) | kennel: isolated sandbox network with a jump host | H | L | C-028 |
 | 5 | [C-045](../items/C-045-kennel-pbs-restore-points-restored-beside-the.md) | kennel: PBS restore points, restored beside the original | B | L | C-028, C-054 |
-| 6 | [C-055](../items/C-055-kennel-automatic-backup-restore-tests.md) | kennel: automatic backup restore tests | B | L | C-054, C-057 |
+| 6 | [C-055](../items/C-055-kennel-automatic-backup-restore-tests.md) | kennel: automatic backup restore tests | B | L | C-054, C-057, C-045 |
 | 7 | [C-059](../items/C-059-unbork-talks-to-kennel-snapshot-provider-and.md) | unbork talks to kennel: snapshot provider and surge nodes for upgrades | B | L | S-003, C-054, C-058 |
 | 8 | | Review and hardening: follow `.claude/skills/review-stage/SKILL.md` for stage 11 | | | all of the above |
 
@@ -34,9 +34,9 @@ Behaviours to verify:
 - [ ] kennel starts from its own image with its own database and answers a health check.
 - [ ] Every VM kennel creates has a lease with an owner and an expiry, and the sweeper removes what expires or is orphaned.
 - [ ] A restore test restores a PBS backup beside the original in the sandbox network, runs its check, records the result and cleans up.
-- [ ] A sandboxed VM cannot reach a production address; unbork reaches it through the jump host.
+- [ ] A sandboxed VM cannot reach a production address; unbork reaches it through the jump host. Starts only once Dennis has given the sandbox network details (open question D-24).
 - [ ] The readiness API answers, per VM: snapshot possible, with RAM, restore point available, free space.
-- [ ] unbork uses kennel as a snapshot provider behind the S-003 interface, and k8s-upgrade can request and release a surge node.
+- [ ] unbork uses kennel behind the S-003 interface for what kennel can do (take and delete a restore point, report capabilities; it does not roll back in place), and k8s-upgrade can request and release a surge node.
 
 ## Where to test
 

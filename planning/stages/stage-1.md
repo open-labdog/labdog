@@ -15,7 +15,9 @@ Goal: every change unbork makes on a host or to its own rules leaves an audit ro
 | 3 | [C-022](../items/C-022-harden-the-alert-webhook.md) | Harden the alert webhook | A | S | none |
 | 4 | [S-001](../items/S-001-extension-hook-subscribe-to-audit-entries.md) | Extension hook: subscribe to audit entries | B | S | C-008 |
 | 5 | [S-002](../items/S-002-extension-hook-gate-a-run-before-it.md) | Extension hook: gate a run before it starts, and hear when it ends | B | M | none |
-| 6 | | Review and hardening: follow `.claude/skills/review-stage/SKILL.md` for stage 1 | | | all of the above |
+| 6 | [S-015](../items/S-015-extension-hook-register-celery-tasks-and-periodic.md) | Extension hook: register Celery tasks and periodic jobs | B | S | none |
+| 7 | [S-016](../items/S-016-extension-hook-declare-additional-permissions.md) | Extension hook: declare additional permissions | B | S | none |
+| 8 | | Review and hardening: follow `.claude/skills/review-stage/SKILL.md` for stage 1 | | | all of the above |
 
 ## Exit criteria
 
@@ -28,12 +30,14 @@ Goal: every change unbork makes on a host or to its own rules leaves an audit ro
 
 Behaviours to verify:
 
-- [ ] Starting an action run from the API, from a schedule and from the assistant each writes an audit row naming who started it.
+- [ ] Starting an action run from the API and from a schedule each writes an audit row naming who started it, and a guard test fails when a new place creates a run without one. Cancelling a run is audited too.
 - [ ] Creating, editing, deleting and reordering a firewall rule each writes an audit row; BUG-147 is deleted from `BUGS.md`.
 - [ ] The alert webhook rejects what the item's spec says it must reject, with tests.
 - [ ] A test extension registered through the new audit hook receives every committed audit entry and none that was rolled back; a raising subscriber never breaks the request.
 - [ ] A test extension registered through the run gate can refuse and can defer a sync, an action run, a schedule dispatch and an AI fix, and is told when each ends.
-- [ ] `PLUGIN_API` is 1.3 or higher, with the comment above it saying what was added; a Community install with no extension behaves exactly as before.
+- [ ] `PLUGIN_API`'s minor is raised once per hook added here, with the comment above it saying what each added; a Community install with no extension behaves exactly as before.
+- [ ] A test extension can register a Celery task and a periodic job, and both run in the worker and the beat process.
+- [ ] A test extension can declare a permission of its own, a route can require it, and `tests/test_permissions.py` still covers every route.
 
 ## Where to test
 

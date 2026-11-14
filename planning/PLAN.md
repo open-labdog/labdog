@@ -139,10 +139,11 @@ Notes:
 
 ## Inventory
 
-107 items: 62 Community (`C-`), 14 shared foundations (`S-`) and 31
+114 items: 62 Community (`C-`), 20 shared foundations (`S-`) and 32
 Enterprise (`E-`, specified in the Enterprise repository). By source: 77
-from the two roadmap boards, 14 accepted proposals, 11 asked for by Dennis
-during planning, and 5 created by a logged decision. `roadmap.yaml` is the
+from the two roadmap boards plus 6 hooks split out of them while the
+specs were written, 14 accepted proposals, 11 asked for by Dennis during
+planning, and 6 created by a logged decision. `roadmap.yaml` is the
 source of truth; the tables below are a rendering of it.
 
 Board items already done and left out: local accounts with fixed roles,
@@ -174,7 +175,8 @@ No board item was dropped. Splits and merges:
 
 Added after the checkpoint: C-044 and C-045 (Dennis), C-046 (D-05),
 S-013 (a decision about hardening results), S-014 (D-04), C-064 (D-17),
-and the accepted proposals C-047 (PR-01), C-048 to C-051 (PR-02), C-052
+S-015 to S-020 (hooks that Enterprise features turned out to need: see
+each item's reason), and the accepted proposals C-047 (PR-01), C-048 to C-051 (PR-02), C-052
 (PR-03), C-060 (PR-04), C-051 also covers PR-05, C-061 (PR-06), C-062 and
 C-063 (PR-07).
 
@@ -187,8 +189,8 @@ first, shared foundations before what builds on them. Class A is fully
 autonomous, B is autonomous with a human review before merge, H needs a
 decision from Dennis first.
 
-Community and shared items by class: 23 A, 50 B, 3 H. All 107: 26 A,
-73 B, 8 H.
+Community and shared items by class: 23 A, 56 B, 3 H. All 114: 27 A,
+79 B, 8 H.
 
 ### Ranked: Community and shared
 
@@ -198,17 +200,20 @@ Community and shared items by class: 23 A, 50 B, 3 H. All 107: 26 A,
 | [C-008](items/C-008-audit-rows-for-action-runs-who-started.md) | Audit rows for action runs: who started what | roadmap | P0 | 15.0 | 4/3/4/4 | S | A | 1 | none | The audit log is the base of three Enterprise items and has a hole exactly where the product does its riskiest work. |
 | [S-011](items/S-011-contributor-licence-agreement-and-a-cla-check.md) | Contributor licence agreement and a CLA check on pull requests | roadmap | P0 | 14.0 | 1/5/3/5 | S | B | 0 | none | D-01 fixed the form: Apache-style ICLA and CCLA, CLA Assistant Lite. Dennis creates the private signatures repository and marks the check required. |
 | [S-001](items/S-001-extension-hook-subscribe-to-audit-entries.md) | Extension hook: subscribe to audit entries | roadmap | P0 | 13.0 | 2/4/4/3 | S | B | 1 | C-008 | One 37-line module is the single choke point for audit writes; a hook there unblocks every consumer of the audit stream. |
+| [S-015](items/S-015-extension-hook-register-celery-tasks-and-periodic.md) | Extension hook: register Celery tasks and periodic jobs | roadmap | P0 | 13.0 | 2/4/5/2 | S | B | 1 | none | Found while writing specs: an extension cannot run a background or scheduled job, and six Enterprise items need one (outboxes, scheduled directory sync, verified backups). |
 | [C-022](items/C-022-harden-the-alert-webhook.md) | Harden the alert webhook | roadmap | P0 | 12.0 | 3/3/1/5 | S | A | 1 | none | Security work on an unauthenticated-by-nature endpoint goes first by rule. |
 | [C-047](items/C-047-audit-rows-for-firewall-rule-changes-bug.md) | Audit rows for firewall rule changes (BUG-147) | proposed | P0 | 12.0 | 3/3/2/4 | S | A | 1 | none | Accepted proposal PR-01: the same hole as C-008, in the module where the record matters most. |
+| [S-016](items/S-016-extension-hook-declare-additional-permissions.md) | Extension hook: declare additional permissions | roadmap | P0 | 12.0 | 2/4/4/2 | S | B | 1 | none | Found while writing specs: an extension route cannot ask for a permission of its own, so maintenance-window overrides cannot be expressed. |
 | [S-007](items/S-007-say-in-the-readme-which-parts-are.md) | Say in the README which parts are AGPL and which are commercial | roadmap | P0 | 11.0 | 2/4/2/3 | S | B | 3 | none | Open point of the repository-split item, and it should be true on the day of the first release. |
 | [S-008](items/S-008-rename-the-claude-code-provider-labels.md) | Rename the Claude Code provider labels | roadmap | P0 | 11.0 | 2/4/1/4 | S | A | 2 | none | Two labels; cheap to fix before the first release under the new name. |
 | [C-003](items/C-003-bring-the-docs-site-back.md) | Bring the docs site back | roadmap | P0 | 10.0 | 3/4/2/1 | S | A | 3 | C-002 | README links to a site that does not exist; cheap once the release is out. PR #295 already covers a manual deploy from dev. |
 | [S-014](items/S-014-remove-the-subscription-token-field-from-ai.md) | Remove the subscription token field from AI providers | decision | P0 | 10.0 | 1/4/1/4 | S | B | 2 | none | D-04: Community keeps only the operator's own Claude Code sign-in. |
+| [S-017](items/S-017-extension-hook-restrict-which-ai-provider-types.md) | Extension hook: restrict which AI provider types may be configured | roadmap | P0 | 10.0 | 1/4/2/3 | S | B | 2 | S-014 | Found while writing specs: decision D-04 needs an extension to refuse provider types, and Community has no seam for it. |
 | [C-001](items/C-001-verify-and-document-the-upgrade-from-labdog.md) | Verify and document the upgrade from LabDog 1.1.0 to unbork | roadmap | P0 | 9.5 | 4/5/5/5 | M | B | 3 | C-048, C-049, C-050, C-052 | Nothing can be released until an existing install is known to survive it; the rename (D-02) makes the upgrade the riskiest step. |
 | [C-004](items/C-004-rollback-policy-stateful-flag-and-rollback-mode.md) | Rollback policy: stateful flag and rollback_mode on hosts | roadmap | P0 | 9.0 | 5/4/4/5 | M | B | 4 | none | Automatic rollback of a database host silently discards writes; data integrity comes first, and three later items build on the flag. |
 | [C-048](items/C-048-rename-configuration-and-environment-with-the-old.md) | Rename: configuration and environment, with the old names as fallbacks | proposed | P0 | 7.0 | 3/4/4/3 | M | B | 2 | none | D-02 and accepted proposal PR-02: the first release is the cheapest moment to rename. |
 | [C-049](items/C-049-rename-paths-packages-and-service-names-migrated.md) | Rename: paths, packages and service names, migrated on upgrade | proposed | P0 | 7.0 | 3/4/3/4 | M | B | 2 | C-048 | D-02: data and config paths and unit names move, and an upgrade must carry an install across. |
-| [C-051](items/C-051-rename-readme-docs-site-claude-md-and.md) | Rename: README, docs site, CLAUDE.md and changelog wording | proposed | P0 | 7.0 | 2/3/1/1 | S | A | 2 | C-048 | Accepted proposals PR-02 and PR-05: what a new user and a new session read first. |
+| [C-051](items/C-051-rename-readme-docs-site-claude-md-and.md) | Rename: README, docs site, CLAUDE.md and changelog wording | proposed | P0 | 7.0 | 2/3/1/1 | S | A | 2 | C-048, C-049, C-050 | Accepted proposals PR-02 and PR-05: what a new user and a new session read first. |
 | [S-002](items/S-002-extension-hook-gate-a-run-before-it.md) | Extension hook: gate a run before it starts, and hear when it ends | roadmap | P0 | 7.0 | 2/4/5/3 | M | B | 1 | none | Several planned extensions need to refuse or defer a sync, run, schedule or AI fix; one seam is safer than four. |
 | [C-052](items/C-052-test-the-upgrade-from-1-1-0.md) | Test the upgrade from 1.1.0 in packaging-smoke | proposed | P0 | 6.5 | 2/3/3/5 | M | A | 3 | C-049 | Accepted proposal PR-03: turns C-001 from a one-off manual check into a gate. |
 | [S-009](items/S-009-stop-bundling-the-claude-code-binary-in.md) | Stop bundling the Claude Code binary in the Docker image | roadmap | P0 | 6.5 | 2/4/2/5 | M | B | 2 | none | D-04: installed on first use instead of shipped in the image. |
@@ -216,7 +221,7 @@ Community and shared items by class: 23 A, 50 B, 3 H. All 107: 26 A,
 | [C-050](items/C-050-rename-on-host-markers-alert-labels-metrics.md) | Rename: on-host markers, alert labels, metrics and pack variables | proposed | P0 | 4.3 | 3/3/2/5 | L | B | 2 | C-048 | D-02: host checks must recognise both names and the first sync removes the old chains and files; a mistake here touches every managed host, so it is tested on hosts named test first. |
 | [C-012](items/C-012-notify-on-action-run-failure.md) | Notify on action-run failure | roadmap | P1 | 15.0 | 5/3/3/4 | S | A | 4 | none | A scheduled patch run that fails silently defeats the product; the board names it a prerequisite for unattended work. |
 | [C-023](items/C-023-password-reset-by-email.md) | Password reset by email | roadmap | P1 | 11.0 | 4/3/1/3 | S | B | 4 | none | Table stakes for local accounts now that roles shipped; account-recovery flow, so reviewed. |
-| [S-006](items/S-006-frontend-extension-seam-navigation-entries-pages-host.md) | Frontend extension seam: navigation entries, pages, host and group panels | roadmap | P1 | 11.0 | 2/4/4/1 | S | B | 5 | none | Extensions can add a Settings tab and nothing else; additive type change. |
+| [S-006](items/S-006-frontend-extension-seam-navigation-entries-pages-host.md) | Frontend extension seam: navigation entries, pages, host and group panels | roadmap | P1 | 11.0 | 2/4/4/1 | S | B | 5 | C-061 | Extensions can add a Settings tab and nothing else; additive type change. |
 | [C-006](items/C-006-log-what-a-rollback-discarded.md) | Log what a rollback discarded | roadmap | P1 | 10.0 | 3/2/1/4 | S | A | 4 | C-004 | Small, and turns an invisible data loss into an auditable one. |
 | [C-062](items/C-062-measure-backend-coverage-in-ci.md) | Measure backend coverage in CI | proposed | P1 | 8.0 | 1/1/3/3 | S | A | 0 | none | Accepted proposal PR-07: gives every stage review a number to compare. |
 | [S-012](items/S-012-copyright-holder-line-in-license.md) | Copyright holder line in LICENSE | roadmap | P1 | 8.0 | 1/3/1/3 | S | A | 0 | none | D-07: Dennis personally. One line. |
@@ -238,13 +243,16 @@ Community and shared items by class: 23 A, 50 B, 3 H. All 107: 26 A,
 | [C-060](items/C-060-bind-stored-secrets-to-their-row-sec.md) | Bind stored secrets to their row (SEC-50) | proposed | P1 | 4.5 | 2/2/1/4 | M | B | 7 | S-004 | Accepted proposal PR-04: same call sites as S-004, so one pass. |
 | [C-063](items/C-063-record-a-load-test-baseline.md) | Record a load-test baseline | proposed | P1 | 4.5 | 1/2/3/3 | M | A | 0 | none | Accepted proposal PR-07: the only performance measure the project has. |
 | [S-013](items/S-013-store-each-action-run-s-structured-per.md) | Store each action run's structured per-host results | decision | P1 | 4.5 | 2/3/3/1 | M | B | 6 | S-002 | D-10: generic and useful on its own; anything that reports on run results needs it. |
+| [S-020](items/S-020-check-host-and-group-creation-against-scope.md) | Check host and group creation against scope | roadmap | P2 | 10.0 | 2/3/2/3 | S | B | 9 | none | Found while writing specs: two of the three soft-tenancy gaps named in D-09 are in Community routes. |
 | [C-010](items/C-010-ai-verify-narrow-the-evidence-window-to.md) | AI verify: narrow the evidence window to before the action | roadmap | P2 | 9.0 | 3/2/1/3 | S | A | 8 | none | Removes a known false-positive source for little effort. |
+| [S-018](items/S-018-extension-hook-register-an-external-sign-in.md) | Extension hook: register an external sign-in callback path | roadmap | P2 | 9.0 | 1/3/2/3 | S | B | 7 | none | Found while writing specs: a SAML response is a cross-site POST larger than the login limiter allows; the only existing exemption is for password logins. |
 | [C-020](items/C-020-command-policy-count-diagnostics-as-reads.md) | Command policy: count diagnostics as reads | roadmap | P2 | 8.0 | 3/2/1/2 | S | A | 8 | none | Small rule-table change with existing tests to extend. |
 | [C-037](items/C-037-alert-remediation-visibility-on-the-overview-lift.md) | Alert remediation visibility on the Overview; lift the 24-hour lockout | roadmap | P2 | 8.0 | 3/2/1/2 | S | A | 8 | none | Board P3, but small and it finishes the alert-fix story. |
+| [S-019](items/S-019-extension-hook-add-a-probe-to-host.md) | Extension hook: add a probe to host state collection | roadmap | P2 | 8.0 | 1/3/2/2 | S | B | 9 | none | Found while writing specs: storage-layout detection for non-Proxmox rollback needs to collect a fact from the host, and the collector list is closed. |
 | [C-018](items/C-018-save-an-action-run-as-a-schedule.md) | Save an action run as a schedule | roadmap | P2 | 7.0 | 3/2/1/1 | S | A | 6 | none | Convenience on top of existing schedule API. |
 | [C-030](items/C-030-rest-api-tokens.md) | REST API tokens | roadmap | P2 | 6.5 | 4/4/3/2 | M | B | 7 | none | Board P3, raised to P2: every integration and the CLI need non-cookie auth. |
 | [C-058](items/C-058-kennel-per-vm-readiness-api.md) | kennel: per-VM readiness API | user | P2 | 6.0 | 3/3/3/3 | M | B | 11 | C-028 | D-22 scope: one call that says whether a VM can be snapshotted, restored or leased. |
-| [C-055](items/C-055-kennel-automatic-backup-restore-tests.md) | kennel: automatic backup restore tests | user | P2 | 5.0 | 5/4/1/5 | L | B | 11 | C-054, C-057 | Dennis's first use case: a backup that has never been restored is not a backup. |
+| [C-055](items/C-055-kennel-automatic-backup-restore-tests.md) | kennel: automatic backup restore tests | user | P2 | 5.0 | 5/4/1/5 | L | B | 11 | C-054, C-057, C-045 | Dennis's first use case: a backup that has never been restored is not a backup. |
 | [C-028](items/C-028-kennel-repository-service-skeleton-and-proxmox-pool.md) | kennel: repository, service skeleton and Proxmox pool token | roadmap | P2 | 4.7 | 3/4/5/2 | L | H | 11 | S-003 | D-22: Dennis decided to build it. Class H because the repository, its name on GitHub and the Proxmox tokens are his to create. |
 | [C-029](items/C-029-run-workers-on-more-than-one-box.md) | Run workers on more than one box | roadmap | P2 | 4.7 | 3/4/4/3 | L | B | 10 | none | Board P3, raised to P2 because the HA item depends on it. |
 | [C-054](items/C-054-kennel-leases-and-the-sweeper.md) | kennel: leases and the sweeper | user | P2 | 4.7 | 3/4/4/3 | L | B | 11 | C-028 | D-22 scope: every VM kennel creates has an owner and an expiry, and nothing is left behind. |
@@ -259,7 +267,7 @@ Community and shared items by class: 23 A, 50 B, 3 H. All 107: 26 A,
 | [C-025](items/C-025-ci-ubuntu-26-04-runners-and-the.md) | CI: Ubuntu 26.04 runners and the React Compiler lint rules | roadmap | P2 | 3.5 | 2/1/2/2 | M | A | 0 | none | Toolchain drift is cheapest to fix before a run of feature stages. |
 | [C-031](items/C-031-command-line-tool-for-the-api.md) | Command-line tool for the API | roadmap | P3 | 4.0 | 3/3/1/1 | M | B | parked | C-030 | Useful after tokens exist; board P3. |
 | [C-032](items/C-032-host-tagging-and-filtering.md) | Host tagging and filtering | roadmap | P3 | 4.0 | 3/2/2/1 | M | B | parked | none | Board P3 idea. |
-| [C-036](items/C-036-enable-or-disable-modules-per-group.md) | Enable or disable modules per group | roadmap | P3 | 4.0 | 3/2/1/2 | M | B | parked | none | Board P3 idea; overlaps protected hosts. |
+| [C-036](items/C-036-enable-or-disable-modules-per-group.md) | Enable or disable modules per group | roadmap | P3 | 4.0 | 3/2/1/2 | M | B | parked | C-016 | Board P3 idea; overlaps protected hosts. |
 | [C-039](items/C-039-notification-channels-webhook-ntfy-slack-matrix-email.md) | Notification channels: webhook, ntfy, Slack, Matrix; email follow-ups | roadmap | P3 | 4.0 | 3/3/1/1 | M | B | parked | C-013 | Board P3; email covers the need for now. |
 | [C-041](items/C-041-k8s-upgrade-on-rhel-family-hosts.md) | k8s-upgrade on RHEL-family hosts | roadmap | P3 | 4.0 | 3/3/1/1 | M | B | parked | none | Needs RHEL-family test hosts. |
 | [C-027](items/C-027-application-rollback-and-cluster-rejoin-starting-with.md) | Application rollback and cluster rejoin, starting with etcd | roadmap | P3 | 3.3 | 3/2/1/4 | L | B | parked | C-014 | Needs a real cluster to test against; board P3. |
@@ -349,6 +357,12 @@ Community and shared items by class: 23 A, 50 B, 3 H. All 107: 26 A,
 - **S-012** Copyright holder line in LICENSE: LICENSE (no holder), README.md (names Dennis Tyresson and contributors)
 - **S-013** Store each action run's structured per-host results: backend/app/models (ActionHostRun), backend/app/tasks/action_host.py, action_group.py, backend/app/ansible_runtime/outcomes.py
 - **S-014** Remove the subscription token field from AI providers: frontend/app/(dashboard)/ai-providers/client-page.tsx, backend/app/ai/providers/, docs/ui/assistant.md
+- **S-015** Extension hook: register Celery tasks and periodic jobs: backend/app/tasks/__init__.py (celery_app.conf.include is a fixed list; plugins load in worker_process_init), backend/app/tasks/beat_registry.py, backend/app/plugins.py
+- **S-016** Extension hook: declare additional permissions: backend/app/auth/permissions.py (Permission is a closed StrEnum; require() rejects unknown names at import)
+- **S-017** Extension hook: restrict which AI provider types may be configured: backend/app/ai/ (provider types and their API), backend/app/api/ai*.py
+- **S-018** Extension hook: register an external sign-in callback path: backend/app/auth/login_paths.py (register_password_login_path), backend/app/main.py:254 (login limiter body cap), CSRF middleware
+- **S-019** Extension hook: add a probe to host state collection: backend/app/api/host_state.py (_build_collectors is a fixed list)
+- **S-020** Check host and group creation against scope: backend/app/api/hosts.py (create_host), backend/app/api/groups.py (create_group): both ask for config.edit globally
 
 ### Enterprise features
 
@@ -381,6 +395,7 @@ internal items, are in the Enterprise repository.
 | E-025 | Multi-tenancy: provision and upgrade many installs | parked |
 | E-030 | LDAP sync: apply on a schedule, flag servers that disappear | 5 |
 | E-031 | LDAP sync: settings and review UI | 5 |
+| E-032 | Follow the Community rename: dependency name, cookies and test variables | 2 |
 
 ### Dependencies
 
@@ -395,6 +410,7 @@ generated). The chains that matter:
 - C-004 then C-005, C-006, C-007, C-014; S-003 then C-005, C-044 and,
   much later, kennel (C-059) and the Enterprise non-Proxmox providers.
 - S-013 then the Enterprise hardening results view.
+- S-015 (background jobs for extensions) then six Enterprise items.
 - C-028 then every other kennel item.
 
 ## Stages
@@ -406,15 +422,15 @@ run from the Enterprise repository's own stage file with the same number.
 | Stage | Goal | Items, in order |
 |---|---|---|
 | [0](stages/stage-0.md) | Foundations: safety nets and contributor terms | C-064, S-012, S-011, C-024, C-025, C-062, C-061, C-063, E-001, E-028, E-022, E-021 |
-| [1](stages/stage-1.md) | A complete audit trail and the first extension hooks | C-008, C-047, C-022, S-001, S-002 |
-| [2](stages/stage-2.md) | The rename, and a clean image | C-048, C-049, C-050, C-051, S-008, S-014, S-009, C-026, S-010 |
+| [1](stages/stage-1.md) | A complete audit trail and the first extension hooks | C-008, C-047, C-022, S-001, S-002, S-015, S-016 |
+| [2](stages/stage-2.md) | The rename, and a clean image | C-048, C-049, C-050, C-051, S-008, S-014, S-017, S-009, C-026, S-010, E-032 |
 | [3](stages/stage-3.md) | Release unbork 2.0.0 | S-007, C-052, C-001, E-020, C-002, C-003, E-026, E-027 |
 | [4](stages/stage-4.md) | Rollback you can trust | C-004, S-003, C-005, C-044, C-006, C-007, C-016, C-012, C-023 |
-| [5](stages/stage-5.md) | Governance and the directory | S-006, E-002, E-003, E-004, E-023, E-030, E-031, E-024, E-029 |
+| [5](stages/stage-5.md) | Governance and the directory | S-006, E-029, E-002, E-003, E-004, E-023, E-030, E-031, E-024 |
 | [6](stages/stage-6.md) | Day-two operations | C-017, C-018, C-013, S-013, C-014, C-015, C-021 |
-| [7](stages/stage-7.md) | Integrations | C-030, S-004, C-060, S-005, C-046, E-005, E-006, E-007 |
+| [7](stages/stage-7.md) | Integrations | C-030, S-004, C-060, S-005, C-046, S-018, E-005, E-006, E-007 |
 | [8](stages/stage-8.md) | A safer assistant | C-010, C-020, C-037, C-011, C-019, C-009 |
-| [9](stages/stage-9.md) | Rollback beyond Proxmox, tickets and teams | E-011, E-012, E-008, E-014 |
+| [9](stages/stage-9.md) | Rollback beyond Proxmox, tickets and teams | S-019, S-020, E-011, E-012, E-008, E-014 |
 | [10](stages/stage-10.md) | Scale and assurance | C-029, E-018, E-019, E-017, E-016 |
 | [11](stages/stage-11.md) | kennel, a VM operations service | C-028, C-058, C-054, C-057, C-045, C-055, C-059 |
 | parked | P3, not scheduled | C-027, C-031, C-032, C-033, C-034, C-035, C-036, C-038, C-039, C-040, C-041, C-042, C-043, E-009, E-010, E-013, E-015, E-025 |
@@ -438,6 +454,22 @@ Main risks:
   else in stage 4 builds on it.
 - Stage 11 (kennel) needs a repository that does not exist yet, and its
   design is the least settled part of the plan.
+
+## What the stages need from Dennis
+
+- Before stage 0: the answers in D-25 (CLA check), and SSH from the
+  session to `lin-manager-2` for the load-test baseline (about 100
+  minutes, 6 GB of RAM).
+- Before stage 2: two hosts named "test", one on iptables and one on
+  nftables, first synced by a 1.1.0 install, to prove the rename of the
+  on-host markers. Stage 3 uses the same two for the upgrade test.
+- Before stage 3: the README wording (S-007) and D-31, D-32.
+- Before stage 4: a VM named "test" with a Proxmox mapping.
+- Before stage 6: test GitLab and Nextcloud VMs named "test" for C-015.
+- Before stage 11: the kennel repository, and D-24.
+- This branch was cut before the visible rename (#297) merged to `dev`.
+  `/run-stage` always starts from `origin/dev`; line numbers in the specs
+  may have moved, and the skill tells the session to re-read the code.
 
 ## How to run it
 

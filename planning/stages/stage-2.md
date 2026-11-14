@@ -13,13 +13,16 @@ Goal: the product is called unbork everywhere a user or an operator can see or t
 | 1 | [C-048](../items/C-048-rename-configuration-and-environment-with-the-old.md) | Rename: configuration and environment, with the old names as fallbacks | B | M | none |
 | 2 | [C-049](../items/C-049-rename-paths-packages-and-service-names-migrated.md) | Rename: paths, packages and service names, migrated on upgrade | B | M | C-048 |
 | 3 | [C-050](../items/C-050-rename-on-host-markers-alert-labels-metrics.md) | Rename: on-host markers, alert labels, metrics and pack variables | B | L | C-048 |
-| 4 | [C-051](../items/C-051-rename-readme-docs-site-claude-md-and.md) | Rename: README, docs site, CLAUDE.md and changelog wording | A | S | C-048 |
+| 4 | [C-051](../items/C-051-rename-readme-docs-site-claude-md-and.md) | Rename: README, docs site, CLAUDE.md and changelog wording | A | S | C-048, C-049, C-050 |
 | 5 | [S-008](../items/S-008-rename-the-claude-code-provider-labels.md) | Rename the Claude Code provider labels | A | S | none |
 | 6 | [S-014](../items/S-014-remove-the-subscription-token-field-from-ai.md) | Remove the subscription token field from AI providers | B | S | none |
-| 7 | [S-009](../items/S-009-stop-bundling-the-claude-code-binary-in.md) | Stop bundling the Claude Code binary in the Docker image | B | M | none |
-| 8 | [C-026](../items/C-026-make-the-ai-assistant-removable-from-a.md) | Make the AI assistant removable from a build or install | B | L | S-009 |
-| 9 | [S-010](../items/S-010-third-party-notices-and-a-source-offer.md) | Third-party notices and a source offer in the Docker image | B | M | none |
-| 10 | | Review and hardening: follow `.claude/skills/review-stage/SKILL.md` for stage 2 | | | all of the above |
+| 7 | [S-017](../items/S-017-extension-hook-restrict-which-ai-provider-types.md) | Extension hook: restrict which AI provider types may be configured | B | S | S-014 |
+| 8 | [S-009](../items/S-009-stop-bundling-the-claude-code-binary-in.md) | Stop bundling the Claude Code binary in the Docker image | B | M | none |
+| 9 | [C-026](../items/C-026-make-the-ai-assistant-removable-from-a.md) | Make the AI assistant removable from a build or install | B | L | S-009 |
+| 10 | [S-010](../items/S-010-third-party-notices-and-a-source-offer.md) | Third-party notices and a source offer in the Docker image | B | M | none |
+| 11 | | Review and hardening: follow `.claude/skills/review-stage/SKILL.md` for stage 2 | | | all of the above |
+
+Enterprise items in this stage, in the Enterprise repository (listed for transparency, with no dates or commitments): E-032 Follow the Community rename: dependency name, cookies and test variables.
 
 ## Exit criteria
 
@@ -39,6 +42,7 @@ Behaviours to verify:
 - [ ] A build or install made without the assistant has no AI routes, pages or providers, and the test suite passes in that configuration.
 - [ ] No provider label says "Claude Code", and there is no subscription token field.
 - [ ] The image carries a third-party notices file and a source offer.
+- [ ] A test extension can refuse AI provider types, and the API and the UI stop offering them.
 
 ## Where to test
 

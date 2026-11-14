@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Edition | shared |
-| Source | roadmap, "Licensing groundwork: commercial licence, copyright line, third-party notices, IP check" (the copyright line part); decision D-07 |
+| Source | roadmap (a licensing item on the other board), decision D-07 |
 | Tier / score | P1 / 8.0 |
 | Stage | 0 |
 | Effort | S |

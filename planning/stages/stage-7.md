@@ -15,7 +15,8 @@ Goal: unbork fits into the tools an organisation already runs: scripts authentic
 | 3 | [C-060](../items/C-060-bind-stored-secrets-to-their-row-sec.md) | Bind stored secrets to their row (SEC-50) | B | M | S-004 |
 | 4 | [S-005](../items/S-005-alert-source-seam-with-grafana-as-the.md) | Alert source seam, with Grafana as the first source | B | M | C-022 |
 | 5 | [C-046](../items/C-046-zabbix-alert-intake.md) | Zabbix alert intake | B | M | S-005 |
-| 6 | | Review and hardening: follow `.claude/skills/review-stage/SKILL.md` for stage 7 | | | all of the above |
+| 6 | [S-018](../items/S-018-extension-hook-register-an-external-sign-in.md) | Extension hook: register an external sign-in callback path | B | S | none |
+| 7 | | Review and hardening: follow `.claude/skills/review-stage/SKILL.md` for stage 7 | | | all of the above |
 
 Enterprise items in this stage, in the Enterprise repository (listed for transparency, with no dates or commitments): E-005 SAML sign-in; E-006 Secrets from HashiCorp Vault; E-007 Zabbix write-back: acknowledge problems with the run result, sync maintenance periods.
 
@@ -35,6 +36,7 @@ Behaviours to verify:
 - [ ] A ciphertext copied to another row no longer decrypts; existing rows are migrated; SEC-50 is deleted from `BUGS.md`.
 - [ ] A second alert source can be registered without touching dedupe or severity policy.
 - [ ] A Zabbix webhook creates an alert event and, under the severity policy, an investigation.
+- [ ] An extension can register a sign-in callback path that accepts a cross-site POST larger than the login limiter's cap, and no other path gains that exemption.
 
 ## Where to test
 

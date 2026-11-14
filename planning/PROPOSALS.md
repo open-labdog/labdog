@@ -5,7 +5,8 @@ accepts it; an accepted proposal becomes a normal item marked
 `source: proposed`. Status is one of open, accepted, rejected, deferred.
 Proposals about the Enterprise repository (PR-08 to PR-10) are in its
 `planning/PROPOSALS.md`. Ranked across both files: PR-01, PR-02, PR-03,
-PR-08, PR-09, PR-07, PR-06, PR-04, PR-10, PR-05.
+PR-08, PR-09, PR-07, PR-06, PR-04, PR-10, PR-05. PR-12 to PR-17 came
+later and are unranked.
 
 | ID | Title | Raised by | When | From | Status |
 |---|---|---|---|---|---|
@@ -16,6 +17,12 @@ PR-08, PR-09, PR-07, PR-06, PR-04, PR-10, PR-05.
 | PR-05 | Bring CLAUDE.md up to date | Claude | 2026-11-14 | planning | accepted 2026-11-14, now C-051 |
 | PR-06 | A unit-test harness for the frontend | Claude | 2026-11-14 | planning | accepted 2026-11-14, now C-061 |
 | PR-07 | Measure coverage in CI and record a load-test baseline | Claude | 2026-11-14 | planning | accepted 2026-11-14, now C-062, C-063 |
+| PR-12 | Protected hosts: refuse actions and hold the assistant to reads | Claude | 2026-11-14 | C-016 spec | open |
+| PR-13 | k8s-upgrade: default the etcd backup off the node's own disk | Claude | 2026-11-14 | C-027 spec | open |
+| PR-14 | Jump host support for managed hosts, as its own item | Claude | 2026-11-14 | C-057 spec | open |
+| PR-15 | kennel: its own UI, a "last restore test" badge, a built-in restore-test action, OpenTofu blueprints | Claude | 2026-11-14 | C-028 specs | open |
+| PR-16 | Split the GitOps export out of C-033 and schedule it | Claude | 2026-11-14 | C-033 spec | open |
+| PR-17 | Build the assistant usage quota half of C-038 now | Claude | 2026-11-14 | C-038 spec | open |
 
 ## PR-01 Audit rows for firewall rule changes
 - **Why:** BUG-147 in `BUGS.md` (Medium): `backend/app/api/rules.py` has
@@ -80,6 +87,21 @@ PR-08, PR-09, PR-07, PR-06, PR-04, PR-10, PR-05.
 - **Edition and effort:** Community, S for coverage, M for a recorded
   load-test run on lin-manager-2.
 - **Where:** stage 0.
+
+## PR-12 to PR-17 Found while writing the specs
+- **PR-12:** the board's protected-host item also wants action runs
+  refused unless the manifest opts in, and the assistant's SSH tool held
+  to read-only commands. C-016 stops at config writes. Community, M.
+- **PR-13:** `etcd_backup_dir` in the public pack's `k8s-upgrade`
+  manifest defaults to the node's own disk, so a lost node loses its
+  backup. Pack-only, S. Independent of C-027.
+- **PR-14:** unbork cannot reach a host through a jump host. C-057 adds
+  it for the kennel sandbox; it is useful without kennel. Community, M.
+- **PR-15:** four things on the board's kennel notes have no item.
+- **PR-16:** `backend/app/gitops/serializer.py` already serialises every
+  module; a loader and a route are missing. Much smaller than C-033's L.
+- **PR-17:** the quota half of C-038 is fully designed on the board; the
+  per-session allowance is not.
 
 ## Other work Dennis asked to add
 

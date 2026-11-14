@@ -8,7 +8,7 @@
 | Stage | 5 |
 | Effort | S |
 | Autonomy | B |
-| Depends on | none (C-061 for the unit tests, which lands in stage 0) |
+| Depends on | C-061 |
 
 ## Goal
 

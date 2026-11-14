@@ -2,8 +2,6 @@
 
 Goal: Enterprise customers get rollback on servers that are not Proxmox VMs, runs tied to change tickets, and teams that share one install cleanly.
 
-This stage has no Community or shared items; its work is in the Enterprise repository.
-
 ## Entry criteria
 
 - Stage 8 has passed its exit criteria, or Dennis has said to start this one anyway.
@@ -12,7 +10,9 @@ This stage has no Community or shared items; its work is in the Enterprise repos
 
 | # | ID | Item | Class | Effort | Depends on |
 |---|---|---|---|---|---|
-| 1 | | Review and hardening: follow `.claude/skills/review-stage/SKILL.md` for stage 9 | | | all of the above |
+| 1 | [S-019](../items/S-019-extension-hook-add-a-probe-to-host.md) | Extension hook: add a probe to host state collection | B | S | none |
+| 2 | [S-020](../items/S-020-check-host-and-group-creation-against-scope.md) | Check host and group creation against scope | B | S | none |
+| 3 | | Review and hardening: follow `.claude/skills/review-stage/SKILL.md` for stage 9 | | | all of the above |
 
 Enterprise items in this stage, in the Enterprise repository (listed for transparency, with no dates or commitments): E-011 Bare-metal rollback: detect LVM, ZFS and Btrfs layouts in state collection; E-012 Bare-metal rollback: LVM snapshot provider with driven reboot; E-008 Change tickets through ServiceNow; E-014 Multi-tenancy: close the soft-tenancy gaps for teams.
 
@@ -27,6 +27,8 @@ Enterprise items in this stage, in the Enterprise repository (listed for transpa
 
 Behaviours to verify:
 
+- [ ] A test extension can add a probe to host state collection, and its result is stored with the host's state.
+- [ ] A scoped user can create a host or a group only where their scope allows; a global user is unaffected.
 
 ## Where to test
 

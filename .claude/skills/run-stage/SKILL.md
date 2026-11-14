@@ -79,6 +79,10 @@ whose status is `todo` or `in_progress`:
 1. **Class H:** if its decision is not in the Log section of
    `planning/DECISIONS.md`, set `status: blocked`, note the decision id,
    and go to the next item. Do not guess the answer.
+   The same goes for any item named on a "Blocks:" line of an open
+   decision. An open decision without "Blocks" does not stop an item: the
+   spec states an assumption, you build on it, and you list the
+   assumption in the stage report so Dennis can confirm or correct it.
 2. **Dependencies:** if an item in `depends_on` is not `done` or
    `review`, set `status: blocked` with the reason and go on.
 3. Set `status: in_progress` and `branch: roadmap/stage-$ARGUMENTS`.

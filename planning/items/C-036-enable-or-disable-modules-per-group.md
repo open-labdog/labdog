@@ -8,7 +8,7 @@
 | Stage | parked |
 | Effort | M |
 | Autonomy | B |
-| Depends on | none |
+| Depends on | C-016 |
 
 ## Goal
 An operator can state per group which configuration modules apply, so that hosts in that group are not synced or drift-checked for a module the group has switched off.
