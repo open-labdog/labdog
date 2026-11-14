@@ -194,7 +194,7 @@ decision from Dennis first.
 |---|---|---|---|---|---|---|---|---|---|
 | C-002 | Release dev to main as the first unbork release | P0 | 17.0 | 4/5/5/3 | S | B | 1 | C-001, S-007, S-008, S-009 | 632 unreleased commits is the largest single risk on the board; every later stage ships through this path. Dennis merges the PR. |
 | C-008 | Audit rows for action runs: who started what | P0 | 15.0 | 4/3/4/4 | S | A | 0 | none | The audit log is the base of three Enterprise items and has a hole exactly where the product does its riskiest work. |
-| S-011 | Contributor licence agreement and a CLA check on pull requests | P0 | 14.0 | 1/5/3/5 | S | H | 0 | D-01 | Board P0: one outside PR merged under today's terms cannot be undone. |
+| S-011 | Contributor licence agreement and a CLA check on pull requests | P0 | 14.0 | 1/5/3/5 | S | B | 0 | none | Board P0: one outside PR merged under today's terms cannot be undone. |
 | S-001 | Extension hook: subscribe to audit entries | P0 | 13.0 | 2/4/4/3 | S | B | 0 | C-008 | One 37-line module is the single choke point for audit writes; a hook there unblocks every consumer of the audit stream. |
 | C-022 | Harden the alert webhook | P0 | 12.0 | 3/3/1/5 | S | A | 0 | none | Security work on an unauthenticated-by-nature endpoint goes first by rule. |
 | S-007 | Say in the README which parts are AGPL and which are commercial | P0 | 11.0 | 2/4/2/3 | S | B | 1 | D-06 | Open point of the repository-split item, and it should be true on the day of the first release. |
@@ -208,7 +208,7 @@ decision from Dennis first.
 | C-023 | Password reset by email | P1 | 11.0 | 4/3/1/3 | S | B | 2 | none | Table stakes for local accounts now that roles shipped; account-recovery flow, so reviewed. |
 | S-006 | Frontend extension seam: navigation entries, pages, host and group panels | P1 | 11.0 | 2/4/4/1 | S | B | 3 | none | Extensions can add a Settings tab and nothing else; additive type change. |
 | C-006 | Log what a rollback discarded | P1 | 10.0 | 3/2/1/4 | S | A | 2 | C-004 | Small, and turns an invisible data loss into an auditable one. |
-| S-012 | Copyright holder line in LICENSE | P1 | 8.0 | 1/3/1/3 | S | H | 1 | D-07 | One line, but only Dennis can say who the holder is. |
+| S-012 | Copyright holder line in LICENSE | P1 | 8.0 | 1/3/1/3 | S | A | 0 | none | One line, but only Dennis can say who the holder is. |
 | C-005 | Check that a snapshot is possible before a destructive run | P1 | 7.0 | 4/3/2/5 | M | B | 2 | C-004, S-003 | Refusing before the run is safer than discovering mid-run that no rollback point exists. |
 | C-016 | Protected hosts: a per-host never-write-config flag | P1 | 7.0 | 4/3/2/5 | M | B | 2 | none | One group mistake away from breaking a Proxmox node; a guard the fleet model lacks today. |
 | C-024 | CI: stop every PR moving the floating :test image tag | P1 | 7.0 | 2/1/2/2 | S | A | 0 | none | Stage branches will open many PRs; a moving tag makes test deploys unreliable. |
@@ -355,8 +355,8 @@ visible.
 
 | Stage | Goal | Items |
 |---|---|---|
-| 0 | Foundations: audit and run-gate hooks, webhook hardening, CI, contributor terms | C-008, C-022, S-001, S-002, C-024, C-025, S-011, E-001, E-021, E-022 |
-| 1 | The first release as unbork | S-008, S-009, C-026, S-010, S-007, S-012, E-020, C-001, C-002, C-003 |
+| 0 | Foundations: audit and run-gate hooks, webhook hardening, CI, contributor terms | C-008, C-022, S-001, S-002, C-024, C-025, S-011, S-012, E-001, E-021, E-022 |
+| 1 | The first release as unbork | S-008, S-009, C-026, S-010, S-007, E-020, C-001, C-002, C-003 |
 | 2 | Rollback you can trust | C-004, S-003, C-005, C-006, C-007, C-016, C-012, C-023 |
 | 3 | Governance for larger organisations | S-006, E-002, E-003, E-004 |
 | 4 | Day-two operations | C-017, C-018, C-013, C-014, C-015, C-021 |

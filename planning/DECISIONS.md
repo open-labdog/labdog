@@ -8,18 +8,6 @@ D-16) are in the Enterprise repository's `planning/DECISIONS.md`.
 
 ## Open
 
-### D-01 Contributor terms: which agreement, signed to whom
-Blocks: S-011.
-CONTRIBUTING.md says "We don't use a CLA".
-- A. A CLA (Apache-style individual agreement) checked on every PR by a
-  CLA bot, granted to Dennis personally with a clause that lets him assign
-  it to a company later.
-- B. DCO sign-off only. Lighter, but grants no right to relicense.
-- C. Wait until a company exists.
-
-Recommendation: A. The board marks this P0 because one merged outside PR
-under today's terms cannot be undone, and B does not solve that.
-
 ### D-04 The Claude Code binary in the image
 Blocks: S-009, C-026. Details and the edition question are in the
 Enterprise repository.
@@ -29,12 +17,6 @@ Enterprise repository.
 - C. Keep it.
 
 Recommendation: A.
-
-### D-07 Copyright holder line
-Blocks: S-012.
-LICENSE names no holder; the README says "Dennis Tyresson and
-contributors". Options: Dennis personally now and the company later, or
-wait for the company. Recommendation: Dennis personally now.
 
 ### D-19 Memory restore: snapshot with RAM, or Proxmox Backup Server
 Blocks: C-045. Shapes C-044.
@@ -74,6 +56,8 @@ image, so C-044 should be a per-action or per-host choice.
 
 | Date | Decision | By |
 |---|---|---|
+| 2026-11-14 | D-01: A CLA, granted to Dennis personally with successors and assigns. The choice of agreement text and bot is in the D-01 thread. | Dennis, as relayed by the coordinator |
+| 2026-11-14 | D-07: Dennis personally is the copyright holder. S-012 moves to stage 0, class A. | Dennis, as relayed by the coordinator |
 | 2026-11-14 | D-02: Full rename with the old names as fallbacks, including on-host markers, alert labels, metrics and pack variables. Postgres database and role names stay; only new example defaults change. Host checks must recognise both names; the first sync removes old chains and files; test on hosts named "test" first. Map: `/mnt/project-files/rename-depth/rename-map.md` (project files). This accepts proposal PR-02 and unblocks C-001. | Dennis, as relayed from the D-02 thread |
 | 2026-11-14 | D-03: The first unbork release is 2.0.0. The release PR (C-002) also needs an "Upgrading to 2.0.0" section in docs/upgrade.md, a reworded Versioning section, and a fix for docs/production-deploy.md, which pins an image tag that does not exist (unbork/unbork:1.0.0). | Dennis, as relayed from the D-03 thread |
 | 2026-11-14 | D-05: Zabbix alert intake is Community: C-046, an adapter on the S-005 alert source seam, next to Grafana. | Dennis, as relayed by the D-05 thread |
