@@ -55,9 +55,9 @@ def _body(**overrides) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_create_with_ca(regular_user_client):
+async def test_create_with_ca(superuser_client):
     pem, fingerprint = _make_cert_pem()
-    resp = await regular_user_client.post(_BASE, json=_body(ca_cert_pem=pem))
+    resp = await superuser_client.post(_BASE, json=_body(ca_cert_pem=pem))
     assert resp.status_code == 201, resp.text
     data = resp.json()
     assert data["has_ca_cert"] is True
@@ -66,8 +66,8 @@ async def test_create_with_ca(regular_user_client):
 
 
 @pytest.mark.asyncio
-async def test_create_without_ca(regular_user_client):
-    resp = await regular_user_client.post(_BASE, json=_body())
+async def test_create_without_ca(superuser_client):
+    resp = await superuser_client.post(_BASE, json=_body())
     assert resp.status_code == 201, resp.text
     data = resp.json()
     assert data["has_ca_cert"] is False
@@ -75,11 +75,11 @@ async def test_create_without_ca(regular_user_client):
 
 
 @pytest.mark.asyncio
-async def test_put_omit_leaves_ca_unchanged(regular_user_client):
+async def test_put_omit_leaves_ca_unchanged(superuser_client):
     pem, fingerprint = _make_cert_pem()
-    created = (await regular_user_client.post(_BASE, json=_body(ca_cert_pem=pem))).json()
+    created = (await superuser_client.post(_BASE, json=_body(ca_cert_pem=pem))).json()
 
-    resp = await regular_user_client.put(f"{_BASE}/{created['id']}", json={"name": created["name"]})
+    resp = await superuser_client.put(f"{_BASE}/{created['id']}", json={"name": created["name"]})
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert data["has_ca_cert"] is True
@@ -87,12 +87,12 @@ async def test_put_omit_leaves_ca_unchanged(regular_user_client):
 
 
 @pytest.mark.asyncio
-async def test_put_new_ca_replaces(regular_user_client):
+async def test_put_new_ca_replaces(superuser_client):
     pem1, _ = _make_cert_pem()
-    created = (await regular_user_client.post(_BASE, json=_body(ca_cert_pem=pem1))).json()
+    created = (await superuser_client.post(_BASE, json=_body(ca_cert_pem=pem1))).json()
 
     pem2, fingerprint2 = _make_cert_pem()
-    resp = await regular_user_client.put(f"{_BASE}/{created['id']}", json={"ca_cert_pem": pem2})
+    resp = await superuser_client.put(f"{_BASE}/{created['id']}", json={"ca_cert_pem": pem2})
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert data["has_ca_cert"] is True
@@ -100,11 +100,11 @@ async def test_put_new_ca_replaces(regular_user_client):
 
 
 @pytest.mark.asyncio
-async def test_put_empty_string_clears_ca(regular_user_client):
+async def test_put_empty_string_clears_ca(superuser_client):
     pem, _ = _make_cert_pem()
-    created = (await regular_user_client.post(_BASE, json=_body(ca_cert_pem=pem))).json()
+    created = (await superuser_client.post(_BASE, json=_body(ca_cert_pem=pem))).json()
 
-    resp = await regular_user_client.put(f"{_BASE}/{created['id']}", json={"ca_cert_pem": ""})
+    resp = await superuser_client.put(f"{_BASE}/{created['id']}", json={"ca_cert_pem": ""})
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert data["has_ca_cert"] is False
@@ -112,32 +112,32 @@ async def test_put_empty_string_clears_ca(regular_user_client):
 
 
 @pytest.mark.asyncio
-async def test_get_never_returns_raw_pem(regular_user_client):
+async def test_get_never_returns_raw_pem(superuser_client):
     pem, _ = _make_cert_pem()
-    created = (await regular_user_client.post(_BASE, json=_body(ca_cert_pem=pem))).json()
+    created = (await superuser_client.post(_BASE, json=_body(ca_cert_pem=pem))).json()
 
-    resp = await regular_user_client.get(f"{_BASE}/{created['id']}")
+    resp = await superuser_client.get(f"{_BASE}/{created['id']}")
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert "ca_cert_pem" not in data
     assert "BEGIN CERTIFICATE" not in resp.text
     assert data["has_ca_cert"] is True
 
-    list_resp = await regular_user_client.get(_BASE)
+    list_resp = await superuser_client.get(_BASE)
     assert "BEGIN CERTIFICATE" not in list_resp.text
 
 
 @pytest.mark.asyncio
-async def test_create_invalid_pem_rejected(regular_user_client):
+async def test_create_invalid_pem_rejected(superuser_client):
     body = _body(ca_cert_pem="this is not a certificate")
-    resp = await regular_user_client.post(_BASE, json=body)
+    resp = await superuser_client.post(_BASE, json=body)
     assert resp.status_code == 422, resp.text
 
 
 @pytest.mark.asyncio
-async def test_create_oversized_pem_rejected(regular_user_client):
+async def test_create_oversized_pem_rejected(superuser_client):
     oversized = (
         "-----BEGIN CERTIFICATE-----\n" + ("A" * (65 * 1024)) + "\n-----END CERTIFICATE-----"
     )
-    resp = await regular_user_client.post(_BASE, json=_body(ca_cert_pem=oversized))
+    resp = await superuser_client.post(_BASE, json=_body(ca_cert_pem=oversized))
     assert resp.status_code == 422, resp.text

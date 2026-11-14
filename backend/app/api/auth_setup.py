@@ -3,7 +3,8 @@ import secrets
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import func, select, text
 
-from app.auth.schemas import UserCreate, UserRead
+from app.auth.permissions import permissions_for
+from app.auth.schemas import MeRead, UserCreate, UserRead
 from app.auth.users import UserManager, current_active_user, get_user_manager
 from app.config import settings
 from app.db import AsyncSessionLocal
@@ -78,3 +79,15 @@ async def refresh_csrf_token(
         samesite="lax",
     )
     return {"ok": True}
+
+
+#: ``GET /api/users/me`` with the caller's permissions. Registered in
+#: place of fastapi-users' own GET (``app.main`` keeps only its PATCH), so
+#: the frontend learns who it is and what it may do in one request.
+me_router = APIRouter(prefix="/api/users", tags=["users"])
+
+
+@me_router.get("/me", response_model=MeRead)
+async def read_me(user: User = Depends(current_active_user)):
+    data = UserRead.model_validate(user).model_dump()
+    return MeRead(**data, permissions=sorted(await permissions_for(user)))

@@ -13,7 +13,7 @@ from app.api._scoped_rules import (
     require_host,
     scoped_row_or_404,
 )
-from app.auth.users import current_active_user
+from app.auth.permissions import require
 from app.db import get_db
 from app.models.user import User
 from app.services.merge import get_effective_services
@@ -45,7 +45,7 @@ _AUDIT = RuleAudit("service_rule", _audit_state)
 @router.get("/groups/{group_id}/services", response_model=list[ServiceRuleResponse])
 async def list_group_services(
     group_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     await require_group(db, group_id)
@@ -66,7 +66,7 @@ async def list_group_services(
 async def create_group_service(
     group_id: int,
     body: ServiceRuleCreate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -86,7 +86,7 @@ async def update_group_service(
     group_id: int,
     rule_id: int,
     body: ServiceRuleUpdate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -103,7 +103,7 @@ async def update_group_service(
 async def delete_group_service(
     group_id: int,
     rule_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -121,7 +121,7 @@ async def delete_group_service(
 @router.get("/hosts/{host_id}/services", response_model=list[ServiceRuleResponse])
 async def list_host_services(
     host_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     await require_host(db, host_id)
@@ -142,7 +142,7 @@ async def list_host_services(
 async def create_host_service(
     host_id: int,
     body: ServiceRuleCreate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     await require_host(db, host_id)
@@ -161,7 +161,7 @@ async def update_host_service(
     host_id: int,
     rule_id: int,
     body: ServiceRuleUpdate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     rule = await scoped_row_or_404(
@@ -177,7 +177,7 @@ async def update_host_service(
 async def delete_host_service(
     host_id: int,
     rule_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     rule = await scoped_row_or_404(
@@ -197,7 +197,7 @@ async def delete_host_service(
 )
 async def effective_services(
     host_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     await require_host(db, host_id)

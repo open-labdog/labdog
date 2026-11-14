@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.users import current_active_user
+from app.auth.permissions import require
 from app.crypto.encryption import decrypt_ssh_key
 from app.crypto.key_management import get_master_key
 from app.db import get_db
@@ -44,7 +44,7 @@ class DriftSettingsRequest(BaseModel):
 @router.post("/hosts/{host_id}/drift-check", response_model=ServiceDriftResponse)
 async def check_service_drift(
     host_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("sync.run")),
     db: AsyncSession = Depends(get_db),
 ):
     """Manual drift check: collect current service states and compare to desired."""
@@ -139,7 +139,7 @@ async def check_service_drift(
 async def update_drift_settings(
     host_id: int,
     body: DriftSettingsRequest,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     """Toggle service drift checking for a host."""

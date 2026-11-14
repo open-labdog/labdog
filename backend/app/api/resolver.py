@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api._gitops_lock import check_gitops_lock
 from app.audit.logger import log_action
-from app.auth.users import current_active_user
+from app.auth.permissions import require
 from app.db import get_db
 from app.models.host import Host
 from app.models.host_group import HostGroup
@@ -19,13 +19,10 @@ from app.resolver.schemas import (
     ResolverConfigResponse,
 )
 
-# Auth is applied at the router so it cannot be forgotten on a new route. The
-# four GET handlers below previously carried no dependency at all — unlike
-# their sibling PUT/DELETE handlers — which left resolver config, the
-# effective merge, and the rendered resolv.conf preview readable without a
-# session. Every user is equally privileged here (see the privilege model note
-# in CLAUDE.md); the requirement is simply that a caller be authenticated.
-router = APIRouter(tags=["resolver"], dependencies=[Depends(current_active_user)])
+# Each route declares its permission. The GET handlers take no user
+# argument, so theirs is on the decorator; the guardrail test in
+# tests/test_permissions.py fails on any route that has none.
+router = APIRouter(tags=["resolver"])
 
 
 # ---------------------------------------------------------------------------
@@ -33,7 +30,11 @@ router = APIRouter(tags=["resolver"], dependencies=[Depends(current_active_user)
 # ---------------------------------------------------------------------------
 
 
-@router.get("/groups/{group_id}/resolver", response_model=ResolverConfigResponse | None)
+@router.get(
+    "/groups/{group_id}/resolver",
+    response_model=ResolverConfigResponse | None,
+    dependencies=[Depends(require("hosts.view"))],
+)
 async def get_group_resolver(group_id: int, db: AsyncSession = Depends(get_db)):
     """Return the group's resolver config, or `null` when none has been configured."""
     result = await db.execute(select(ResolverConfig).where(ResolverConfig.group_id == group_id))
@@ -45,7 +46,7 @@ async def upsert_group_resolver(
     group_id: int,
     payload: ResolverConfigCreate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
 ):
     await check_gitops_lock(group_id, db)
     grp = await db.scalar(select(HostGroup).where(HostGroup.id == group_id))
@@ -92,7 +93,7 @@ async def upsert_group_resolver(
 async def delete_group_resolver(
     group_id: int,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
 ):
     await check_gitops_lock(group_id, db)
     result = await db.execute(select(ResolverConfig).where(ResolverConfig.group_id == group_id))
@@ -121,7 +122,11 @@ async def delete_group_resolver(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/hosts/{host_id}/resolver", response_model=ResolverConfigResponse | None)
+@router.get(
+    "/hosts/{host_id}/resolver",
+    response_model=ResolverConfigResponse | None,
+    dependencies=[Depends(require("hosts.view"))],
+)
 async def get_host_resolver(host_id: int, db: AsyncSession = Depends(get_db)):
     """Return the host's resolver override, or `null` when none has been configured."""
     result = await db.execute(select(ResolverConfig).where(ResolverConfig.host_id == host_id))
@@ -133,7 +138,7 @@ async def upsert_host_resolver(
     host_id: int,
     payload: ResolverConfigCreate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
 ):
     host = await db.scalar(select(Host).where(Host.id == host_id))
     if not host:
@@ -179,7 +184,7 @@ async def upsert_host_resolver(
 async def delete_host_resolver(
     host_id: int,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
 ):
     result = await db.execute(select(ResolverConfig).where(ResolverConfig.host_id == host_id))
     config = result.scalar_one_or_none()
@@ -210,6 +215,7 @@ async def delete_host_resolver(
 @router.get(
     "/hosts/{host_id}/effective-resolver",
     response_model=EffectiveResolverResponse | None,
+    dependencies=[Depends(require("hosts.view"))],
 )
 async def effective_resolver(host_id: int, db: AsyncSession = Depends(get_db)):
     """Return the resolver merged from host override + group config, or `null`.
@@ -220,7 +226,11 @@ async def effective_resolver(host_id: int, db: AsyncSession = Depends(get_db)):
     return await get_effective_resolver(host_id, db)
 
 
-@router.get("/hosts/{host_id}/resolver-preview", response_class=PlainTextResponse)
+@router.get(
+    "/hosts/{host_id}/resolver-preview",
+    response_class=PlainTextResponse,
+    dependencies=[Depends(require("hosts.view"))],
+)
 async def resolver_preview(host_id: int, db: AsyncSession = Depends(get_db)):
     config = await get_effective_resolver(host_id, db)
     if not config:

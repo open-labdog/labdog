@@ -28,6 +28,7 @@ from app.api.admin_users import router as admin_users_router
 from app.api.ai import router as ai_router
 from app.api.alerts import router as alerts_router
 from app.api.audit import router as audit_router
+from app.api.auth_setup import me_router
 from app.api.auth_setup import router as auth_setup_router
 from app.api.ca_cert_actions import router as ca_cert_actions_router
 from app.api.ca_certs import router as ca_certs_router
@@ -754,9 +755,14 @@ def _include_auth_routers(app: FastAPI) -> None:
     # themselves, past the guards in app/api/admin_users.py, which is the
     # one path for administering other users.
     users_router = fastapi_users.get_users_router(UserRead, UserUpdate)
+    # GET /me is served by app.api.auth_setup.me_router instead, which
+    # adds the caller's permissions; only PATCH /me is kept from here.
     users_router.routes = [
-        route for route in users_router.routes if getattr(route, "path", "").startswith("/me")
+        route
+        for route in users_router.routes
+        if getattr(route, "path", "") == "/me" and "GET" not in getattr(route, "methods", set())
     ]
+    app.include_router(me_router)
     app.include_router(users_router, prefix="/api/users", tags=["users"])
 
 

@@ -69,6 +69,7 @@ class TestAuth:
             hashed_password=ph.hash(password),
             is_active=True,
             is_superuser=False,
+            role="operator",
             is_verified=True,
         )
         db.add(user)
@@ -106,6 +107,7 @@ class TestAuth:
             hashed_password=ph.hash(password),
             is_active=True,
             is_superuser=False,
+            role="operator",
             is_verified=True,
         )
         db.add(user)

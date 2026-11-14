@@ -81,7 +81,9 @@ class TestSelfServiceUpdateCannotBypassIt:
         assert "12" in resp.text
 
     async def test_a_conforming_password_is_still_accepted(self, regular_user_client):
-        resp = await regular_user_client.patch("/api/users/me", json={"password": GOOD})
+        resp = await regular_user_client.patch(
+            "/api/users/me", json={"current_password": "TestPass1!", "password": GOOD}
+        )
         assert resp.status_code == 200, resp.text
 
     async def test_an_update_that_does_not_touch_the_password_is_unaffected(

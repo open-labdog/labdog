@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
-from app.auth.users import current_active_user
+from app.auth.permissions import require
 from app.crypto import decrypt_ssh_key, get_master_key
 from app.db import get_db
 from app.models.host import Host
@@ -31,7 +31,7 @@ router = APIRouter(prefix="/services", tags=["service-live"])
 @router.get("/hosts/{host_id}/inventory", response_model=list[ServiceInventoryItem])
 async def get_service_inventory(
     host_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """List all systemd services on a host via SSH."""
@@ -76,7 +76,7 @@ async def get_service_inventory(
 async def run_service_command(
     host_id: int,
     body: ServiceCommandRequest,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("actions.run")),
     db: AsyncSession = Depends(get_db),
 ):
     """Execute an ad-hoc start/stop/restart command on a service via SSH."""
@@ -136,7 +136,7 @@ async def run_service_command(
 async def get_unit_file(
     host_id: int,
     service_name: str,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     host_result = await db.execute(select(Host).where(Host.id == host_id))

@@ -15,7 +15,7 @@ from app.api._scoped_rules import (
     require_host,
     scoped_row_or_404,
 )
-from app.auth.users import current_active_user
+from app.auth.permissions import require
 from app.cron.merge import get_effective_cron_jobs
 from app.cron.models import CronJob
 from app.cron.schemas import (
@@ -47,7 +47,7 @@ _AUDIT = RuleAudit("cron_job", _audit_state)
 @router.get("/groups/{group_id}/cron-jobs", response_model=list[CronJobResponse])
 async def list_group_cron_jobs(
     group_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     await require_group(db, group_id)
@@ -68,7 +68,7 @@ async def list_group_cron_jobs(
 async def create_group_cron_job(
     group_id: int,
     body: CronJobCreate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -91,7 +91,7 @@ async def update_group_cron_job(
     group_id: int,
     rule_id: int,
     body: CronJobUpdate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -111,7 +111,7 @@ async def update_group_cron_job(
 async def delete_group_cron_job(
     group_id: int,
     rule_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -130,7 +130,7 @@ async def delete_group_cron_job(
 @router.get("/hosts/{host_id}/cron-jobs", response_model=list[CronJobResponse])
 async def list_host_cron_jobs(
     host_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     await require_host(db, host_id)
@@ -151,7 +151,7 @@ async def list_host_cron_jobs(
 async def create_host_cron_job(
     host_id: int,
     body: CronJobCreate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     await require_host(db, host_id)
@@ -173,7 +173,7 @@ async def update_host_cron_job(
     host_id: int,
     rule_id: int,
     body: CronJobUpdate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     rule = await scoped_row_or_404(
@@ -192,7 +192,7 @@ async def update_host_cron_job(
 async def delete_host_cron_job(
     host_id: int,
     rule_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     rule = await scoped_row_or_404(
@@ -213,7 +213,7 @@ async def delete_host_cron_job(
 )
 async def effective_cron_jobs(
     host_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     await require_host(db, host_id)

@@ -14,7 +14,7 @@ from app.actions.registry import ACTION_REGISTRY, reload_registry_async
 from app.actions.run_target import describe_target
 from app.actions.validation import DRY_RUN_PARAM, build_param_model
 from app.ai.run_log import FAILURE_WINDOW_SQL, failure_reason
-from app.auth.users import current_active_user
+from app.auth.permissions import require, row_scope
 from app.db import get_db
 from app.grafana.models import GrafanaInstance
 from app.grafana.service import METRICS_DESTINATIONS_PARAM
@@ -87,7 +87,7 @@ def _definition_to_out(defn) -> ActionDefinitionOut:
 
 @router.get("/", response_model=list[ActionDefinitionOut])
 async def list_actions(
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
 ):
     """Return all registered actions from the catalog."""
     return [_definition_to_out(defn) for defn in ACTION_REGISTRY.values()]
@@ -95,7 +95,7 @@ async def list_actions(
 
 @router.post("/refresh")
 async def refresh_actions(
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("actions.run")),
     db: AsyncSession = Depends(get_db),
 ):
     """Sync every enabled pack from its source, then rebuild ACTION_REGISTRY.
@@ -127,7 +127,7 @@ async def refresh_actions(
 @router.post("/runs", response_model=ActionRunOut, status_code=201)
 async def create_run(
     body: RunCreateBody,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("actions.run")),
     db: AsyncSession = Depends(get_db),
 ):
     """Create an action run and dispatch the Celery task."""
@@ -346,7 +346,7 @@ async def list_runs(
     ),
     limit: int = Query(default=20, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """List action runs, newest first, optionally filtered by scope, status,
@@ -441,7 +441,7 @@ async def list_host_runs(
         default=None, description="true: only runs a schedule started; false: only the rest"
     ),
     limit: int = Query(default=100, ge=1, le=500),
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """Every run that reached this host, newest first, with this host's
@@ -539,7 +539,7 @@ async def list_host_runs(
 @router.get("/runs/{id}", response_model=ActionRunOut)
 async def get_run(
     id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view", scope=row_scope(ActionRun, "id"))),
     db: AsyncSession = Depends(get_db),
 ):
     """Return a single action run with all host run details."""
@@ -609,7 +609,7 @@ async def get_run(
 async def get_host_run_output(
     id: int,
     host_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view", scope=row_scope(ActionRun, "id"))),
     db: AsyncSession = Depends(get_db),
 ):
     """Return the raw Ansible output for a specific host run as plain text.
@@ -638,7 +638,7 @@ async def get_host_run_output(
 async def get_host_run_output_by_row(
     id: int,
     host_run_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view", scope=row_scope(ActionRun, "id"))),
     db: AsyncSession = Depends(get_db),
 ):
     """Return one host run's raw output, addressed by the row's own id.
@@ -671,7 +671,7 @@ async def investigate_run(
     id: int,
     response: Response,
     body: RunInvestigateBody | None = None,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("ai.use", scope=row_scope(ActionRun, "id"))),
     db: AsyncSession = Depends(get_db),
 ):
     """Start a read-only assistant session about this run, or reopen one.
@@ -746,7 +746,7 @@ async def investigate_run(
 @router.post("/runs/{id}/cancel")
 async def cancel_run(
     id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("actions.run", scope=row_scope(ActionRun, "id"))),
     db: AsyncSession = Depends(get_db),
 ):
     """Cancel a run: stop the hosts it has not started, let running ones finish.
@@ -842,7 +842,7 @@ async def cancel_run(
 @router.get("/runs/{id}/stream")
 async def stream_run_events(
     id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view", scope=row_scope(ActionRun, "id"))),
     db: AsyncSession = Depends(get_db),
 ):
     """Server-Sent Events stream for a run. Subscribes to Redis pub/sub channel
@@ -880,7 +880,7 @@ async def stream_run_events(
 @router.get("/{action_key}", response_model=ActionDefinitionOut)
 async def get_action(
     action_key: str,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
 ):
     """Return a single action definition by key."""
     defn = ACTION_REGISTRY.get(action_key)

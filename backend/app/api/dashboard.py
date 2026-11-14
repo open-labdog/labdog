@@ -4,7 +4,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.users import current_active_user
+from app.auth.permissions import require
 from app.db import get_db
 from app.metrics import overview, service
 from app.metrics.schemas import (
@@ -26,7 +26,7 @@ async def get_sync_success_rate(
     granularity: Literal["day", "hour"] = Query("day"),
     module: str | None = Query(None),
     group_id: int | None = Query(None, description="only syncs of this group's members"),
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ) -> SyncRateSeries:
     """Sync success-rate chart data: bucketed totals + success rate over time."""
@@ -42,7 +42,7 @@ async def get_drift_trend(
     granularity: Literal["day", "hour"] = Query("day"),
     module: str | None = Query(None),
     group_id: int | None = Query(None, description="only checks of this group's members"),
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ) -> DriftTrendSeries:
     """Drift trend chart data: bucketed drift-check counts + drift volume over time."""
@@ -54,7 +54,7 @@ async def get_drift_trend(
 
 @router.get("/drift-coverage", response_model=DriftCoverage)
 async def get_drift_coverage(
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ) -> DriftCoverage:
     """How many hosts have any drift checking switched on.
@@ -70,7 +70,7 @@ async def get_drift_coverage(
 
 @router.get("/stuck-operations", response_model=StuckOperations)
 async def get_stuck_operations(
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ) -> StuckOperations:
     """Syncs and action runs still running past the stale threshold, each
@@ -80,7 +80,7 @@ async def get_stuck_operations(
 
 @router.get("/module-status", response_model=list[ModuleStatusCount])
 async def get_module_status(
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ) -> list[ModuleStatusCount]:
     """Hosts per module and sync status, across the fleet."""
@@ -89,7 +89,7 @@ async def get_module_status(
 
 @router.get("/ca-cert-expiries", response_model=list[CACertExpiry])
 async def get_ca_cert_expiries(
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ) -> list[CACertExpiry]:
     """Deployed CA certificates with a known expiry, soonest first."""

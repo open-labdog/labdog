@@ -7,7 +7,7 @@ from sqlalchemy import delete, func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
-from app.auth.users import current_active_user
+from app.auth.permissions import require, visible_host_ids
 from app.ca_certs.actions import auto_enqueue_for_new_membership
 from app.crypto.encryption import decrypt_ssh_key
 from app.crypto.key_management import get_master_key
@@ -79,12 +79,18 @@ def _enqueue_facts(host_id: int) -> None:
         )
 
 
+async def _visible(user: User, hosts: list) -> list:
+    """Drop hosts an extension says *user* may not see (Community: none)."""
+    allowed = await visible_host_ids(user)
+    return hosts if allowed is None else [h for h in hosts if h.id in allowed]
+
+
 @router.get("", response_model=list[HostResponse])
 async def list_hosts(
-    _: User = Depends(current_active_user),
+    user: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
-    hosts = await _load_hosts_resilient(db)
+    hosts = await _visible(user, await _load_hosts_resilient(db))
 
     # Populate group_ids for all hosts in a single query
     if hosts:
@@ -133,7 +139,7 @@ def _enable_all_drift_modules(db, host_id: int) -> None:
 @router.post("", response_model=HostResponse, status_code=201)
 async def create_host(
     body: HostCreate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     hostname = body.hostname
@@ -222,7 +228,7 @@ async def create_host(
 
 @router.get("/summary")
 async def list_hosts_summary(
-    _: User = Depends(current_active_user),
+    user: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """Return all hosts with group memberships and per-module override counts."""
@@ -235,7 +241,7 @@ async def list_hosts_summary(
     from app.services.models import ServiceRule
     from app.user_mgmt.models import LinuxGroup, LinuxUser
 
-    hosts = await _load_hosts_resilient(db)
+    hosts = await _visible(user, await _load_hosts_resilient(db))
     if not hosts:
         return []
 
@@ -322,7 +328,7 @@ async def list_hosts_summary(
 @router.get("/{host_id}", response_model=HostResponse)
 async def get_host(
     host_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Host).where(Host.id == host_id))
@@ -341,7 +347,7 @@ async def get_host(
 async def update_host(
     host_id: int,
     body: HostUpdate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Host).where(Host.id == host_id))
@@ -391,7 +397,7 @@ async def update_host(
 @router.get("/{host_id}/dependents")
 async def get_host_dependents_endpoint(
     host_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """Return rules and hosts entries that reference this host.
@@ -414,7 +420,7 @@ async def get_host_dependents_endpoint(
 @router.delete("/{host_id}", status_code=204)
 async def delete_host(
     host_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.hosts.dependents import get_host_dependents
@@ -442,7 +448,7 @@ async def delete_host(
 @router.post("/{host_id}/detect-firewall", status_code=202)
 async def detect_firewall(
     host_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("sync.run")),
     db: AsyncSession = Depends(get_db),
 ):
     """Re-run host facts collection, which re-probes the firewall backend.
@@ -465,7 +471,7 @@ async def detect_firewall(
 @router.post("/{host_id}/facts/refresh", status_code=202)
 async def refresh_host_facts(
     host_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("sync.run")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.tasks.facts import collect_host_facts
@@ -481,7 +487,7 @@ async def refresh_host_facts(
 @router.get("/{host_id}/current-rules")
 async def get_current_rules(
     host_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """Fetch current firewall rules from host via SSH."""
@@ -516,7 +522,7 @@ async def get_current_rules(
 async def import_rules(
     host_id: int,
     body: ImportRulesRequest,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     """Import selected rules from host into a group."""
@@ -549,7 +555,7 @@ async def import_rules(
 @router.post("/{host_id}/trust-host-key", status_code=204)
 async def trust_host_key(
     host_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     """Clear the stored SSH host key so the next connection re-TOFUs.

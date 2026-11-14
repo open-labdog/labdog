@@ -18,7 +18,7 @@ const POLL = 30_000
  * non-empty. Drift is a count inside Pending, never a badge — a badge
  * that says 214 because of drift findings is a badge you stop reading.
  */
-export function useShellCounts(enabled = true): ShellCounts {
+export function useShellCounts(enabled = true, aiEnabled = enabled): ShellCounts {
   const q = { refetchInterval: POLL, retry: false, enabled }
   const hosts = useQuery<Host[]>({ queryKey: ["hosts"], queryFn: () => apiFetch<Host[]>("/api/hosts"), ...q })
   const groups = useQuery<HostGroup[]>({ queryKey: ["groups"], queryFn: () => apiFetch<HostGroup[]>("/api/groups"), ...q })
@@ -31,6 +31,8 @@ export function useShellCounts(enabled = true): ShellCounts {
     queryKey: ["ai-approvals"],
     queryFn: () => apiFetch<AIApprovalRequest[]>("/api/ai/approvals?status=pending"),
     ...q,
+    // A viewer has no ai.use and would get a 403 every poll.
+    enabled: enabled && aiEnabled,
   })
   const alerts = useQuery<AlertEvent[]>({
     queryKey: ["alerts", "firing"],

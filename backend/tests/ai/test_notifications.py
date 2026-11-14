@@ -82,6 +82,7 @@ async def _user(db, *, events: tuple[str, ...] = (), active: bool = True) -> Use
         hashed_password="x",
         is_active=active,
         is_superuser=False,
+        role="operator",
         is_verified=True,
     )
     db.add(user)

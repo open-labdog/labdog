@@ -59,42 +59,65 @@ The audit log is in the Operations zone — see
 
 ## Users
 
-**Path:** `/users` (Settings › Access) — superusers only
+**Path:** `/users` (Settings › Access) — admins only
 
-LabDog user accounts. Anyone else who opens the page is told it is for
-administrators rather than shown an empty table.
+Every account has one of three roles. The role decides what the account can
+do everywhere: on every page, through the API, and in the SSH terminal.
 
-| Column | Description |
-|--------|-------------|
-| user | The email address they sign in with; **you** marks your own row |
-| status | `active` or `inactive` — an inactive account cannot sign in |
-| role | **superuser** — manages accounts, integrations and settings |
-| created | When the account was created |
+| Role | Can |
+|------|-----|
+| **viewer** | See hosts, groups, configuration, drift, runs, dashboards and the audit log. Change nothing. |
+| **operator** | Everything a viewer can, plus: edit host and group configuration, plan and run syncs, run discovery and scans, run actions, manage scheduled actions, open the SSH terminal, use the AI assistant and approve its changes, and set up alert-triggered actions. |
+| **admin** | Everything an operator can, plus: integrations that hold credentials (git repositories, action packs and pack winners, Proxmox nodes, Grafana, notification email, AI providers, SSH keys), application settings, and user accounts. |
 
-Each row has **edit** (email, and whether the account is active), **reset
-password** and **delete**. **New user…** creates an account from an email,
-a password typed twice, and whether it is a superuser — the role is chosen
-at creation; the screen has no promote or demote. The search box filters by
-email; the **status** (active / inactive) and **role** (superuser / user)
-chips narrow the list.
+SSH session transcripts in the audit log need the operator role: a
+transcript is everything typed and printed in a root shell.
+
+A role change, disabling an account, and a password reset all end that
+account's sessions at once; the user signs in again and gets the new rights.
+
+Accounts that existed before roles were added kept what they could do:
+superusers became admins and everyone else became an operator.
+
+### Rules that always hold
+
+- At least one active admin remains. Demoting, disabling or deleting the
+  last one is refused.
+- Nobody changes their own role, disables themselves, or deletes their own
+  account.
 
 ### First user
 
-The first account to register is made a superuser automatically.
-Registration is open only until that first account exists; after that, new
-accounts are created here by a superuser.
+The first account to register becomes an admin. Registration is open only
+until that first account exists; after that, admins create accounts here.
 
-### Resetting a password
+### New accounts and password resets
 
-**reset password** sets a new password for the user. They are not notified
-— tell them out of band.
-
-### Deleting
-
-You cannot delete your own account, and the last superuser cannot be
-deleted — there is always at least one.
+An admin who creates an account or resets a password chooses that password,
+so by default the user must replace it at their next sign-in. Until they do,
+everything except changing their password is refused. The user is not
+notified; tell them out of band. New accounts are viewers unless a role is
+chosen.
 
 ### Changing your own password
 
 Use **Change password…** in the account menu behind the avatar at the foot
-of the rail. Every user has it; it does not need superuser access.
+of the rail. Every role has it. It asks for your current password, and it
+signs you out everywhere, including the browser you are using.
+
+### Recovering access from the server
+
+When no admin can sign in, use the command line on the server (inside the
+container for Docker installs):
+
+```bash
+python -m app.auth.users_cli list
+python -m app.auth.users_cli set-role someone@example.com admin
+python -m app.auth.users_cli reset-password someone@example.com
+python -m app.auth.users_cli create new@example.com --role admin
+```
+
+Passwords are read from a prompt, or from standard input with
+`--password-stdin`, never from the command line. Every command writes an
+audit row. `set-role` also re-enables the account and still refuses to leave
+no active admin.

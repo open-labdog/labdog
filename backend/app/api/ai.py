@@ -63,7 +63,7 @@ from app.ai.schemas import (
 )
 from app.ai.service import AIDisabledError, BudgetExceededError
 from app.audit.logger import log_action
-from app.auth.users import current_active_user
+from app.auth.permissions import require
 from app.crypto import encrypt_ssh_key, get_master_key
 from app.db import get_db
 from app.models.user import User
@@ -122,7 +122,7 @@ def _check_subscription_token(provider_type: str, api_key: str | None) -> None:
 
 @router.get("/providers", response_model=list[AIProviderResponse])
 async def list_providers(
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("ai.use")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(AIProvider).order_by(AIProvider.name))
@@ -132,7 +132,7 @@ async def list_providers(
 @router.post("/providers", response_model=AIProviderResponse, status_code=201)
 async def create_provider(
     payload: AIProviderCreate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("ai.use")),
     db: AsyncSession = Depends(get_db),
 ):
     existing = await db.execute(select(AIProvider).where(AIProvider.name == payload.name))
@@ -204,7 +204,7 @@ async def create_provider(
 async def update_provider(
     provider_id: int,
     payload: AIProviderUpdate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("ai.use")),
     db: AsyncSession = Depends(get_db),
 ):
     provider = await db.get(AIProvider, provider_id)
@@ -256,7 +256,7 @@ async def update_provider(
 @router.delete("/providers/{provider_id}", status_code=204)
 async def delete_provider(
     provider_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("ai.use")),
     db: AsyncSession = Depends(get_db),
 ):
     provider = await db.get(AIProvider, provider_id)
@@ -277,7 +277,7 @@ async def delete_provider(
 @router.post("/providers/{provider_id}/test", response_model=AIProviderTestResponse)
 async def test_provider(
     provider_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("ai.use")),
     db: AsyncSession = Depends(get_db),
 ):
     """Check the endpoint answers with the stored credentials."""
@@ -322,7 +322,7 @@ async def list_sessions(
     before_id: int | None = None,
     view: SessionView = "active",
     host_id: int | None = None,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("ai.use")),
     db: AsyncSession = Depends(get_db),
 ):
     """Sessions, newest first, a page at a time.
@@ -353,7 +353,7 @@ async def list_sessions(
 @router.post("/sessions/archive", response_model=AISessionBulkResult)
 async def archive_sessions(
     payload: AISessionArchiveRequest,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("ai.use")),
     db: AsyncSession = Depends(get_db),
 ):
     """Archive finished sessions: these ids, or every one that finished
@@ -427,7 +427,7 @@ async def archive_sessions(
 @router.post("/sessions/unarchive", response_model=AISessionBulkResult)
 async def unarchive_sessions(
     payload: AISessionIdsRequest,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("ai.use")),
     db: AsyncSession = Depends(get_db),
 ):
     """Put archived sessions back in the list."""
@@ -455,7 +455,7 @@ async def unarchive_sessions(
 @router.post("/sessions/delete", response_model=AISessionBulkResult)
 async def delete_sessions(
     payload: AISessionIdsRequest,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("ai.use")),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete several sessions, skipping the ones that may not go.
@@ -490,7 +490,7 @@ async def delete_sessions(
 
 @router.get("/investigations", response_model=list[InvestigationRef])
 async def list_investigations(
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("ai.use")),
     db: AsyncSession = Depends(get_db),
 ):
     """The session each Investigate with AI subject would reopen.
@@ -515,7 +515,7 @@ async def list_investigations(
 async def investigate_subject(
     payload: InvestigateRequest,
     response: Response,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("ai.use")),
     db: AsyncSession = Depends(get_db),
 ):
     """Start a read-only assistant session about a subject, or reopen one.
@@ -569,7 +569,7 @@ async def investigate_subject(
 @router.post("/sessions", response_model=AISessionResponse, status_code=201)
 async def create_session(
     payload: AISessionCreate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("ai.use")),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a chat session and dispatch it to a worker."""
@@ -640,7 +640,7 @@ async def _follow_up_refusal(db: AsyncSession, session: AISession) -> str | None
 @router.get("/sessions/{session_id}", response_model=AISessionDetail)
 async def get_session(
     session_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("ai.use")),
     db: AsyncSession = Depends(get_db),
 ):
     session = await db.get(AISession, session_id)
@@ -757,7 +757,7 @@ async def _rollback_targets(
 async def roll_back_session(
     session_id: int,
     payload: AIRollbackRequest,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("ai.use")),
     db: AsyncSession = Depends(get_db),
 ):
     """Restore a host to the snapshot taken before this session changed it.
@@ -835,7 +835,7 @@ async def roll_back_session(
 async def send_message(
     session_id: int,
     payload: AISessionMessageRequest,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("ai.use")),
     db: AsyncSession = Depends(get_db),
 ):
     """Add a follow-up turn and re-dispatch the session."""
@@ -890,7 +890,7 @@ async def send_message(
 @router.post("/sessions/{session_id}/cancel", response_model=AISessionResponse)
 async def cancel_session(
     session_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("ai.use")),
     db: AsyncSession = Depends(get_db),
 ):
     session = await db.get(AISession, session_id)
@@ -931,7 +931,7 @@ async def cancel_session(
 @router.delete("/sessions/{session_id}", status_code=204)
 async def delete_session(
     session_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("ai.use")),
     db: AsyncSession = Depends(get_db),
 ):
     """Remove a session and its transcript.
@@ -1020,7 +1020,7 @@ async def _with_snapshot_expectation(
 async def list_approvals(
     status: str = "pending",
     limit: int = 50,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("ai.use")),
     db: AsyncSession = Depends(get_db),
 ):
     """Approval requests, newest first — pending ones by default.
@@ -1040,7 +1040,7 @@ async def list_approvals(
 async def decide_approval(
     approval_id: int,
     payload: AIApprovalDecision,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("ai.use")),
     db: AsyncSession = Depends(get_db),
 ):
     """Approve or reject a paused command, and resume the session.
@@ -1114,7 +1114,7 @@ async def decide_approval(
 @router.get("/sessions/{session_id}/stream")
 async def stream_session(
     session_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("ai.use")),
     db: AsyncSession = Depends(get_db),
 ):
     """Relay a session's live events as SSE.
@@ -1147,7 +1147,7 @@ async def stream_session(
 @router.get("/usage", response_model=AIUsageSummary)
 async def get_usage(
     days: int = 30,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("ai.use")),
     db: AsyncSession = Depends(get_db),
 ):
     """Spend against every active limit, plus a per-day breakdown."""
@@ -1197,7 +1197,7 @@ async def get_usage(
 async def list_alerts(
     limit: int = 100,
     status: str | None = None,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("ai.use")),
     db: AsyncSession = Depends(get_db),
 ):
     """Deprecated alias of ``GET /api/alerts``, kept for the life of 1.x."""
@@ -1209,7 +1209,7 @@ async def list_alerts(
 @router.post("/alerts/{alert_id}/investigate", response_model=AlertEventResponse, deprecated=True)
 async def investigate_alert_now(
     alert_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("ai.use")),
     db: AsyncSession = Depends(get_db),
 ):
     """Deprecated alias of ``POST /api/alerts/{id}/investigate``, kept for
