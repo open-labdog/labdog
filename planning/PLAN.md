@@ -175,8 +175,8 @@ Zabbix alert intake**, an adapter on the S-005 alert source seam next to
 Grafana (`backend/app/api/webhooks.py`). Community, M, class B, stage 5.
 
 Added by Dennis on 2026-11-14 (`source: user`), to be scored in Phase 4:
-C-044 (memory in the rollback snapshot), C-045 (Proxmox Backup Server as
-a rollback source, waiting on D-19) and one Enterprise item. See
+C-044 (memory in the rollback snapshot, stage 2), C-045 (PBS restore
+points through kennel, parked with C-028 by D-19) and one Enterprise item. See
 PROPOSALS.md.
 
 ### Scoring

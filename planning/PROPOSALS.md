@@ -93,11 +93,10 @@ scores, a stage and specs in Phases 4 and 5.
   disks only and a rollback leaves the VM as if it had lost power.
   Proxmox takes a `vmstate` flag on that same call. Community, M, class B.
   Fits stage 2, after S-003.
-- **C-045 Proxmox Backup Server as a rollback source.** Take a backup
+- **C-045 PBS restore points through kennel.** Parked with C-028 by decision D-19. Original wording: take a backup
   before a destructive run and restore from it on failure, for hosts or
   storage where a snapshot is not possible, and keep restore points
-  beyond the run. Community, L, class H until D-19 is answered. Builds on
-  S-003.
+  beyond the run. Not specified until kennel is decided.
 - **Coupling with kennel (Dennis, 2026-11-14).** C-044, C-045 and S-003
   are to be designed together with the possible intermediate VM service
   called kennel (C-028, the board's "Companion VM layer"), which would

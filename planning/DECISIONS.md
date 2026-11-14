@@ -18,34 +18,6 @@ Enterprise repository.
 
 Recommendation: A.
 
-### D-19 Memory restore: snapshot with RAM, or Proxmox Backup Server
-Blocks: C-045. Shapes C-044 and S-003.
-Finding from the kennel exploration (2026-11-14, checked in the
-proxmox/qemu-server source): a Proxmox backup, to PBS or elsewhere, never
-holds RAM. It copies the disk volumes only and skips the config's
-snapshot sections. Memory comes back only from a snapshot taken with
-`vmstate=1`. Write-up: https://claude.ai/artifact/MJo5wKpzFdKspSeMNDrL3S
-- A. RAM in snapshots (C-044) and PBS as a disk-only fallback inside
-  unbork (C-045).
-- B. PBS only, with no memory restore.
-- D. C-044 in unbork; backup-based restore belongs to kennel (C-028), and
-  C-045 is recast as "PBS restore points through kennel" and parked with
-  it.
-
-Recommendation: D. unbork keeps the in-run snapshot and rollback direct,
-with RAM, and decides when to revert; kennel would own restore tests,
-PBS restore points, leases for surge nodes and test VMs, sandbox copies
-and a sweeper.
-
-Carried into S-003 whatever is picked: a per-VM capability check
-(snapshot, RAM, restore point, free space), which is also what C-005
-calls; `create(vm, label, include_ram)` returning an opaque handle;
-`rollback(handle, start)`; `delete`; asynchronous completion.
-
-Kennel itself (go or no-go, sandbox network, how far in-place restore
-goes, its name) is Dennis's to decide from the write-up; it stays parked
-as C-028 until then.
-
 ## Assumptions made without asking
 
 - A-01. "Harden the webhook" (C-022) is taken from the board text as
@@ -62,6 +34,7 @@ as C-028 until then.
 
 | Date | Decision | By |
 |---|---|---|
+| 2026-11-14 | D-19: RAM in unbork, PBS in kennel. C-044 (memory in the rollback snapshot) goes ahead in stage 2. C-045 is recast as "PBS restore points through kennel" and parked with C-028. A Proxmox backup never holds RAM (checked in the qemu-server source; write-up https://claude.ai/artifact/MJo5wKpzFdKspSeMNDrL3S). S-003 carries: a per-VM capability check (snapshot, RAM, restore point, free space), which C-005 calls; `create(vm, label, include_ram)` returning an opaque handle; `rollback(handle, start)`; `delete`; asynchronous completion. | Dennis, on the card |
 | 2026-11-14 | D-01: Apache-style individual and corporate CLAs, granted to Dennis "and his successors and assigns", with an explicit transfer clause and a promise that contributions stay available under the AGPL. CLA Assistant Lite checks every PR on unbork and unbork-playbooks, with signatures stored in a private repository in the organisation. Write-up: https://claude.ai/artifact/T7vmNSbLCWN54EF9EWJXFn. S-011 (texts, workflow and required check, CONTRIBUTING licensing section) is stage 0, class B. | Dennis, as relayed by the coordinator |
 | 2026-11-14 | D-07: Dennis personally is the copyright holder. S-012 moves to stage 0, class A. | Dennis, as relayed by the coordinator |
 | 2026-11-14 | D-02: Full rename with the old names as fallbacks, including on-host markers, alert labels, metrics and pack variables. Postgres database and role names stay; only new example defaults change. Host checks must recognise both names; the first sync removes old chains and files; test on hosts named "test" first. Map: `/mnt/project-files/rename-depth/rename-map.md` (project files). This accepts proposal PR-02 and unblocks C-001. | Dennis, as relayed from the D-02 thread |
