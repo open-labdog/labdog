@@ -217,7 +217,7 @@ decision from Dennis first.
 | C-018 | Save an action run as a schedule | P2 | 7.0 | 3/2/1/1 | S | A | 4 | none | Convenience on top of existing schedule API. |
 | C-030 | REST API tokens | P2 | 6.5 | 4/4/3/2 | M | B | 5 | none | Board P3, raised to P2: every integration and the CLI need non-cookie auth. |
 | C-029 | Run workers on more than one box | P2 | 4.7 | 3/4/4/3 | L | B | 8 | none | Board P3, raised to P2 because the HA item depends on it. |
-| C-009 | propose_action: let the assistant request a vetted action | P2 | 4.0 | 3/4/2/3 | L | H | 6 | D-13 | Valuable, but the board itself says two design questions must be settled first (waiting inside a locked session, approval shape). |
+| C-009 | propose_action: let the assistant request a vetted action | P2 | 4.0 | 3/4/2/3 | L | B | 6 | none | Valuable, but the board itself says two design questions must be settled first (waiting inside a locked session, approval shape). |
 | C-015 | Quiesce playbooks for gitlab-upgrade and nextcloud-vm-update | P2 | 4.0 | 3/1/1/3 | M | B | 4 | C-014 | Proves the hooks on real stateful apps; lives in the private pack repository. |
 | C-019 | Command policy rules that operators can edit | P2 | 3.7 | 3/3/2/3 | L | B | 6 | none | Stops a release being needed for every new read-only command; the 2026-10-02 decision that any user may edit predates roles. |
 | C-011 | AI verify: second evidence producer with stored evidence packs | P2 | 3.5 | 2/2/1/2 | M | B | 6 | C-010 | Only pays off once a second producer exists; schema change, so reviewed. |

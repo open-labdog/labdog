@@ -62,15 +62,6 @@ LICENSE names no holder; the README says "Dennis Tyresson and
 contributors". Options: Dennis personally now and the company later, or
 wait for the company. Recommendation: Dennis personally now.
 
-### D-13 propose_action: the two open design questions
-Blocks: C-009.
-The board item says two things must be designed first: the tool must not
-wait inside a session that owns a host lock, and how the request is
-approved. Recommendation: the tool records a pending request and ends
-the turn, the way approvals pause a session today
-(`backend/app/ai/approvals.py`), and an approved request starts an
-ordinary action run. Needs Dennis to confirm before a spec is written.
-
 ### D-19 Memory restore: snapshot with RAM, or Proxmox Backup Server
 Blocks: C-045. Shapes C-044.
 Dennis asked for rollback through Proxmox Backup with memory restore as
@@ -103,6 +94,7 @@ image, so C-044 should be a per-action or per-host choice.
 
 | Date | Decision | By |
 |---|---|---|
+| 2026-11-14 | D-13: propose_action hands off. It creates the ActionRun and ends the turn with a new `waiting_action` session status; the session resumes when the run finishes; `host_lock.py` is unchanged. Approval uses the existing `AIApprovalRequest` cards with frozen arguments. `allowed_action_keys` limits the tool at every level, and under full_auto a listed key runs without asking. The approver needs `ai.approve` and `actions.run` on the target. No AI snapshot. Write-up: https://claude.ai/artifact/AVhU8tSKwe6LeeQmfzE4AG. C-009 becomes class B. | Dennis, as relayed by the D-13 thread |
 | 2026-11-14 | D-14: a new `ai.policy.manage` permission, admins only, checked at global scope, with a `PLUGIN_API` minor bump. Replaces the 2026-10-02 "any signed-in user" decision. Unblocks C-019. | Dennis, as relayed by the D-14 thread |
 | 2026-11-14 | D-17: keep `planning/` on dev and amend the rule; `plans/` stays branch-scoped scratch. To amend in Phase 6: CONTRIBUTING.md (the `plans/` section and the release checklist line), CLAUDE.md, `.github/PULL_REQUEST_TEMPLATE/release.md`, and `.dockerignore` (add `planning/`). | Dennis, on the card in the D-17 thread |
 | 2026-11-14 | D-18: customer-facing Enterprise feature titles appear in the public plan with an Enterprise tag and a no-commitment line; scores, specs, decisions and internal items stay private. | Dennis |
