@@ -10,7 +10,7 @@ const EDIT_BRANCH = 'main';
 const config: Config = {
   title: 'unbork',
   tagline: "A homelabber's best friend",
-  favicon: 'img/favicon.ico',
+  favicon: 'img/unbork-favicon.ico',
 
   future: {
     v4: true, // Improve compatibility with the upcoming Docusaurus v4
