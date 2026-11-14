@@ -437,6 +437,16 @@ Where work is tracked: the [roadmap board](https://github.com/orgs/open-unbork/p
 in-flight scratchpad on work branches). See
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full workflow.
 
+## Staged roadmap (`planning/`)
+
+`planning/` holds the long-lived execution plan (it is not the `plans/`
+scratchpad above and is meant to stay on `dev`): `PLAN.md` for the
+overview, `roadmap.yaml` as the source of truth, one file per stage under
+`stages/` and one spec per item under `items/`. `/run-stage <N>` executes
+a stage and `/review-stage <N>` reviews it; both are in `.claude/skills/`
+and are started by a person, never automatically. Decisions go in
+`planning/DECISIONS.md`, unscheduled ideas in `planning/PROPOSALS.md`.
+
 ## Key Files
 
 | File | Purpose |
