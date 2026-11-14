@@ -48,6 +48,12 @@ was not verified against a Proxmox host in this session.
 - B. PBS only, accepting that memory is not restored.
 - C. Both, with C-044 first.
 
+- D. Leave backup-based restore to kennel (C-028) and keep only C-044 in
+  unbork.
+
+Dennis asked on 2026-11-14 to couple this with kennel, so this decision
+waits for the kennel exploration.
+
 Recommendation: C, after confirming on a test VM what a PBS restore
 brings back. Snapshots with RAM are slower and need space for the memory
 image, so C-044 should be a per-action or per-host choice.

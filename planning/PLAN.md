@@ -240,7 +240,7 @@ decision from Dennis first.
 | C-041 | k8s-upgrade on RHEL-family hosts | P3 | 4.0 | 3/3/1/1 | M | B | park | none | Needs RHEL-family test hosts. |
 | C-027 | Application rollback and cluster rejoin, starting with etcd | P3 | 3.3 | 3/2/1/4 | L | B | park | C-014 | Needs a real cluster to test against; board P3. |
 | C-033 | Export: GitOps YAML, standalone playbooks, settings backup | P3 | 3.3 | 3/3/1/3 | L | B | park | none | Three exports in one item; split when promoted. |
-| C-028 | Companion VM layer (separate project) | P3 | 3.0 | 3/3/1/2 | L | H | park | none | A new product, not a stage item; needs a go/no-go from Dennis. |
+| C-028 | Companion VM layer, "kennel" (separate project) | P3 | 3.0 | 3/3/1/2 | L | H | park | none | A new product, not a stage item; needs a go/no-go from Dennis. |
 | C-038 | Assistant usage: plan quota and session limits | P3 | 3.0 | 2/2/1/1 | M | B | park | none | Board P3. |
 | C-035 | Visualise rule calculation: show losing candidates | P3 | 2.5 | 2/1/1/1 | M | A | park | none | Board P3 idea. |
 | C-042 | Run log: fold task lines, PLAY RECAP as a table | P3 | 2.5 | 2/1/1/1 | M | A | park | none | Polish. |

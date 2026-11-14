@@ -98,5 +98,14 @@ scores, a stage and specs in Phases 4 and 5.
   storage where a snapshot is not possible, and keep restore points
   beyond the run. Community, L, class H until D-19 is answered. Builds on
   S-003.
+- **Coupling with kennel (Dennis, 2026-11-14).** C-044, C-045 and S-003
+  are to be designed together with the possible intermediate VM service
+  called kennel (C-028, the board's "Companion VM layer"), which would
+  own Proxmox communication and VM state for automatic backup restore
+  tests and Kubernetes surge nodes during upgrades. Kennel is future
+  work; how far it can be taken is being explored separately. Until that
+  comes back: S-003's interface must be one kennel could sit behind, and
+  C-045 is not specified, because restoring from backups may belong in
+  kennel instead of unbork.
 - A third item from the same message is Enterprise and is recorded in
   that repository.
