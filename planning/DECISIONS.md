@@ -39,13 +39,6 @@ Recommendation: A. The first release is the cheapest moment, because
 every existing install has to go through an upgrade step anyway. C means
 two disruptive upgrades.
 
-### D-03 Version number of the first unbork release
-Blocks: C-002.
-`VERSION` is 1.1.0. Options: 1.2.0, or 2.0.0.
-Recommendation: 2.0.0. The image name changed, roles replaced the
-superuser flag, and (with D-02 A) so do paths and variables. Semantic
-versioning calls that a major.
-
 ### D-04 The Claude Code binary in the image
 Blocks: S-009, C-026. Details and the edition question are in the
 Enterprise repository.
@@ -94,6 +87,7 @@ image, so C-044 should be a per-action or per-host choice.
 
 | Date | Decision | By |
 |---|---|---|
+| 2026-11-14 | D-03: The first unbork release is 2.0.0. The release PR (C-002) also needs an "Upgrading to 2.0.0" section in docs/upgrade.md, a reworded Versioning section, and a fix for docs/production-deploy.md, which pins an image tag that does not exist (unbork/unbork:1.0.0). | Dennis, as relayed from the D-03 thread |
 | 2026-11-14 | D-05: Zabbix alert intake is Community: C-046, an adapter on the S-005 alert source seam, next to Grafana. | Dennis, as relayed by the D-05 thread |
 | 2026-11-14 | D-13: propose_action hands off. It creates the ActionRun and ends the turn with a new `waiting_action` session status; the session resumes when the run finishes; `host_lock.py` is unchanged. Approval uses the existing `AIApprovalRequest` cards with frozen arguments. `allowed_action_keys` limits the tool at every level, and under full_auto a listed key runs without asking. The approver needs `ai.approve` and `actions.run` on the target. No AI snapshot. Write-up: https://claude.ai/artifact/AVhU8tSKwe6LeeQmfzE4AG. C-009 becomes class B. | Dennis, as relayed by the D-13 thread |
 | 2026-11-14 | D-14: a new `ai.policy.manage` permission, admins only, checked at global scope, with a `PLUGIN_API` minor bump. Replaces the 2026-10-02 "any signed-in user" decision. Unblocks C-019. | Dennis, as relayed by the D-14 thread |
