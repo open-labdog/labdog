@@ -358,6 +358,12 @@ sign-in hooks, none of which Community uses itself:
 - `users.hashed_password` is nullable: NULL is a directory-only account,
   which password login and `PATCH /api/users/me` refuse.
 
+The frontend seam is `frontend/lib/extensions.ts`: lists of extra Settings
+sections and Users-page edit panels, empty in Community. The Enterprise
+build copies this frontend, adds its files and replaces that one module.
+Change its types only additively, and keep it the one place Community
+pages read extension UI from.
+
 ### About / version surface
 
 `GET /api/version` is a public (no-auth) endpoint exposing
