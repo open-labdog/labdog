@@ -351,9 +351,9 @@ visible.
 | 4 | Day-two operations | C-017, C-018, C-013, C-014, C-015, C-021 |
 | 5 | Integrations | C-030, S-004, S-005, E-005, E-006, E-007 |
 | 6 | A safer assistant | C-010, C-020, C-037, C-011, C-019, C-009 |
-| 7 | Rollback beyond Proxmox | E-011, E-012, E-010, E-008 |
+| 7 | Rollback beyond Proxmox | E-011, E-012, E-008 |
 | 8 | Scale and assurance | C-029, E-018, E-019, E-017, E-016, E-015 |
-| parked | P3 | C-027, C-028, C-031 to C-036, C-038 to C-043, E-009, E-013, E-014 |
+| parked | P3 | C-027, C-028, C-031 to C-036, C-038 to C-043, E-009, E-010, E-013, E-014 |
 
 Critical path: stage 0 hooks, then the release in stage 1. Everything
 after stage 1 ships through the release path that stage 1 proves.
