@@ -6,7 +6,7 @@
 
 **Path:** `/groups`
 
-Groups are the core organisational unit in LabDog. Each group holds desired-state configuration for one or more modules. Hosts belong to groups, and when a host belongs to multiple groups, configurations are merged by priority (higher number wins).
+Groups are the core organisational unit in unbork. Each group holds desired-state configuration for one or more modules. Hosts belong to groups, and when a host belongs to multiple groups, configurations are merged by priority (higher number wins).
 
 ### Columns
 
@@ -118,7 +118,7 @@ The desired firewall state for every host in the group.
 Two selects in the toolbar set the **input** and **output** default
 policies: *default (drop)* / *drop* / *accept* for input, *default (accept)*
 / *accept* / *drop* for output. *default* means the group does not set one;
-another group, or LabDog's default, decides.
+another group, or unbork's default, decides.
 
 ### Rule table
 
@@ -133,7 +133,7 @@ another group, or LabDog's default, decides.
 | port | A port or range (`22`, `8000-8080`); an **ssh** tag marks port 22 |
 | comment | Why the rule exists |
 
-LabDog always injects its own SSH rule so it can never lock itself out; it
+unbork always injects its own SSH rule so it can never lock itself out; it
 is not listed here, but it shows on every host's Firewall tab as *system*.
 The **ssh** tag on a rule for port 22 is a reminder that this control-plane
 rule is re-injected on apply whatever the group says.
@@ -222,7 +222,7 @@ The dialog also takes a GPG key URL.
 `/etc/hosts` entries on every host in the group. An entry is either:
 
 - **Literal address + name** — an IP address and a hostname, or
-- **Registered host** — a LabDog host, written with its *current* address
+- **Registered host** — a unbork host, written with its *current* address
   and name at sync time, so the entry follows the host when it moves.
 
 | Column | Description |
@@ -233,7 +233,7 @@ The dialog also takes a GPG key URL.
 | priority | Decides between groups declaring the same hostname |
 | comment | Optional note |
 
-LabDog writes `/etc/hosts` only on a host at least one entry applies to;
+unbork writes `/etc/hosts` only on a host at least one entry applies to;
 any other host's file is left as it is. When it does write the file it
 adds `127.0.0.1 localhost`, `::1 localhost` and the host's own name on
 `127.0.1.1` — the full name and the short one, as the host reports them,
@@ -255,7 +255,7 @@ Scheduled tasks, deployed with `ansible.builtin.cron`.
 
 | Column | Description |
 |--------|-------------|
-| job | Unique name for the job — how LabDog finds it again to update it |
+| job | Unique name for the job — how unbork finds it again to update it |
 | user | The Linux user it runs as |
 | schedule | Five-field cron expression (`minute hour day month weekday`), with a plain-English reading |
 | command | Shell command to run |
@@ -296,7 +296,7 @@ field. A sudo rule is a sudoers line without the username, e.g.
 
 ### Groups
 
-System groups (not LabDog groups), so users can be given supplementary
+System groups (not unbork groups), so users can be given supplementary
 membership.
 
 | Column | Description |
@@ -318,7 +318,7 @@ The resolver configuration. It is a **singleton** — at most one per group
 (or host). With none declared, hosts keep whatever DNS settings they have.
 
 **Configure DNS** opens the form; once a configuration exists the form
-shows it, with **Save changes**, **Preview file** (the file LabDog would
+shows it, with **Save changes**, **Preview file** (the file unbork would
 write) and **Delete config**.
 
 | Field | Description |
@@ -361,7 +361,7 @@ Below the table, the most recent deployment runs show each host's outcome.
 
 ## Syncing changes
 
-LabDog applies a group's desired configuration to its hosts over SSH,
+unbork applies a group's desired configuration to its hosts over SSH,
 always **preview-first**, on the [Plans](operations.md#plans) screen:
 
 - **Plan sync — N hosts** on the group's page opens a plan scoped to the
@@ -373,7 +373,7 @@ always **preview-first**, on the [Plans](operations.md#plans) screen:
 ### 1. Preview
 
 Opening a plan runs a dry run on every host in scope: a per-host diff
-between the desired state (stored in LabDog's database, merged across all
+between the desired state (stored in unbork's database, merged across all
 groups the host belongs to) and the current state fetched live over SSH.
 Each host shows config to **add**, **remove** and leave **unchanged**;
 hosts already in sync are flagged as such, hosts that cannot be reached are
@@ -388,7 +388,7 @@ follow the selection, and **Review & apply…** arms only once you have
 typed the host count. Each selected host then runs as a background job
 through the unified per-host orchestrator: one Ansible playbook per host
 covering every requested module, so two syncs targeting the same host
-queue rather than race over SSH. LabDog generates the playbook from the
+queue rather than race over SSH. unbork generates the playbook from the
 previewed diff, runs it via `ansible-runner`, updates the per-host and
 per-module sync status, and writes an audit-log entry.
 

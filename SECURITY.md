@@ -1,11 +1,11 @@
 # Security Policy
 
-LabDog manages SSH keys, Proxmox API tokens, and pack credentials on
+unbork manages SSH keys, Proxmox API tokens, and pack credentials on
 behalf of administrators. Security reports are taken seriously.
 
 ## Supported versions
 
-LabDog is pre-release software. Security fixes land on `dev` first
+unbork is pre-release software. Security fixes land on `dev` first
 and are included in the next tagged release. When tagged releases
 exist, only the most recent minor version receives security
 backports.
@@ -40,8 +40,8 @@ confidential discussion visible only to you and the maintainers.
 
 ### In scope
 
-- The LabDog backend (FastAPI) and its Celery workers.
-- The LabDog frontend (Next.js static export).
+- The unbork backend (FastAPI) and its Celery workers.
+- The unbork frontend (Next.js static export).
 - The action-pack subsystem, including credential handling on
   linked Git repositories.
 - Authentication, session handling, and the SSH / web-terminal
@@ -56,9 +56,9 @@ confidential discussion visible only to you and the maintainers.
   (run behind a reasonable reverse proxy).
 - Social engineering against maintainers.
 - Vulnerabilities in third-party dependencies without a proof of
-  exploitation in LabDog — file those with the upstream project
+  exploitation in unbork — file those with the upstream project
   instead; we'll track the CVE and update when a fix is available.
-- Issues requiring physical access to the LabDog host.
+- Issues requiring physical access to the unbork host.
 - Findings on deployments not running an official release (modified
   forks, source-built commits other than tagged versions).
 
@@ -89,7 +89,7 @@ If you're auditing, these are the areas most worth scrutinising:
   paths.
 - **Ansible playbook execution.** Playbooks are executed against
   managed hosts over SSH. Any path where an untrusted YAML file
-  could gain execution on the LabDog host itself (not just the
+  could gain execution on the unbork host itself (not just the
   target) is serious.
 - **The web-shell.** `asyncssh` WebSocket bridge lets users open
   interactive SSH sessions. Authentication scope and channel

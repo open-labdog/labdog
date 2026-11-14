@@ -1,6 +1,6 @@
 # Production Deploy (Docker Compose)
 
-A reference Docker Compose layout for running LabDog in production
+A reference Docker Compose layout for running unbork in production
 behind a TLS-terminating reverse proxy, with persistent volumes
 and env-sourced secrets.
 
@@ -234,7 +234,7 @@ api     = "100/minute"
 ```
 
 How long the audit log, action runs and drift samples are kept is not a
-`labdog.toml` setting. Set it once LabDog is up, under
+`labdog.toml` setting. Set it once unbork is up, under
 [Settings › System](ui/settings.md#logging-and-retention); a production
 install usually wants the audit log kept longer than the 90-day default.
 
@@ -251,7 +251,7 @@ worker slot**, counting both pools — `[celery] concurrency` plus
 for `psql` and backups.
 
 The defaults (4 + 4 slots) need about 70, which fits stock Postgres
-(`max_connections = 100`). At 16 + 12 slots LabDog measured 90–130
+(`max_connections = 100`). At 16 + 12 slots unbork measured 90–130
 connections idle and 183 at peak; on a stock server it logged hundreds of
 `TooManyConnectionsError` within minutes, and failed syncs with them. So
 before raising either concurrency, raise `max_connections` to match
@@ -290,11 +290,11 @@ image tag: PostgreSQL 18's Docker image changed the data-directory
 layout (data now lives in a version-specific subdirectory, and the
 volume is mounted at `/var/lib/postgresql` instead of `.../data`), and
 a major version won't start on a cluster written by an older major.
-Because LabDog's database is small, a **logical dump/restore** is the
+Because unbork's database is small, a **logical dump/restore** is the
 right method (not in-place `pg_upgrade`).
 
 > **Keep `LABDOG_SECURITY__ENCRYPTION_KEY` (and `SECRET_KEY`)
-> unchanged.** LabDog encrypts stored SSH credentials at the app layer,
+> unchanged.** unbork encrypts stored SSH credentials at the app layer,
 > so the dump holds ciphertext — restoring under a different encryption
 > key makes every credential undecryptable.
 
@@ -338,7 +338,7 @@ docker compose logs -f labdog
 docker volume rm labdog_postgres_data
 ```
 
-**Redis needs none of this** — Redis 8 reads 7.x RDB/AOF and LabDog's
+**Redis needs none of this** — Redis 8 reads 7.x RDB/AOF and unbork's
 Redis holds only transient broker/schedule state, so
 `redis:7.4-alpine` → `redis:8-alpine` is a plain tag swap.
 

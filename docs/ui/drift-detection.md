@@ -1,7 +1,7 @@
 # Drift detection
 
 Drift detection asks a host "does your live configuration still match what
-LabDog says it should be?" and records the answer. It is read-only — a drift
+unbork says it should be?" and records the answer. It is read-only — a drift
 check never changes anything on the host. Fixing drift is a sync.
 
 Checks run on a timer (`drift.check_interval_minutes`, default 30, see
@@ -13,7 +13,7 @@ module's tab or **collect all** on a host's page, **Re-check** on the
 ## It is off by default, and the Add Host form asks
 
 `drift_check_enabled` defaults to **off**. That is deliberate: drift checking
-means LabDog connects to the host on a timer, and a tool should not start
+means unbork connects to the host on a timer, and a tool should not start
 doing that to a machine because nobody said otherwise.
 
 What was missing was being *asked*. The **Add Host** form now carries a

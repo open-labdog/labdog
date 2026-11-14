@@ -8,7 +8,7 @@ const REPO_URL = 'https://github.com/open-unbork/unbork';
 const EDIT_BRANCH = 'main';
 
 const config: Config = {
-  title: 'LabDog',
+  title: 'unbork',
   tagline: "A homelabber's best friend",
   favicon: 'img/favicon.ico',
 
@@ -69,9 +69,9 @@ const config: Config = {
       respectPrefersColorScheme: true,
     },
     navbar: {
-      title: 'LabDog',
+      title: 'unbork',
       logo: {
-        alt: 'LabDog',
+        alt: 'unbork',
         src: 'img/logo.svg',
       },
       items: [
@@ -106,7 +106,7 @@ const config: Config = {
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} LabDog.`,
+      copyright: `Copyright © ${new Date().getFullYear()} unbork.`,
     },
     prism: {
       theme: prismThemes.github,

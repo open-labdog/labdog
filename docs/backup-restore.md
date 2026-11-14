@@ -69,7 +69,7 @@ diff, but larger on disk):
 pg_dump --format=plain --clean --if-exists --dbname=labdog > labdog.sql
 ```
 
-**What's inside:** every LabDog table, including `ssh_keys`,
+**What's inside:** every unbork table, including `ssh_keys`,
 `proxmox_nodes`, `action_packs`, and `git_repositories` with
 their `encrypted_*` columns. **The dump itself does not contain
 the encryption key.** The ciphertext alone is useless without
@@ -123,7 +123,7 @@ this at `/etc/systemd/system/labdog-backup.service` and
 ```ini
 # labdog-backup.service
 [Unit]
-Description=Nightly LabDog backup
+Description=Nightly unbork backup
 Requires=postgresql.service
 After=postgresql.service
 
@@ -138,7 +138,7 @@ ExecStart=/usr/local/bin/labdog-backup.sh
 ```ini
 # labdog-backup.timer
 [Unit]
-Description=Run LabDog backup nightly
+Description=Run unbork backup nightly
 
 [Timer]
 OnCalendar=*-*-* 03:00:00
@@ -190,7 +190,7 @@ This is the common case: new machine, install the .deb / .rpm,
 restore data from the backup set.
 
 ```bash
-# 1. Install LabDog from the same version you backed up from
+# 1. Install unbork from the same version you backed up from
 #    (newer minor versions work, but pick the same version first
 #    then upgrade afterwards to keep the trail clear).
 sudo apt install ./labdog_0.2.0-1_amd64.deb
@@ -277,7 +277,7 @@ existing credentials without the key.** Recovery path:
    ```bash
    python3 -c "import base64, os; print(base64.b64encode(os.urandom(32)).decode())"
    ```
-2. Start the service. LabDog will come up, but every existing
+2. Start the service. unbork will come up, but every existing
    SSH key, Proxmox token, and pack credential is unreadable —
    sync operations will fail with decryption errors.
 3. **Clear the rows and re-enter.** For each table, `TRUNCATE`
@@ -313,10 +313,10 @@ Restore from the most recent `pg_dump` (see
 The key decrypts the restored ciphertext without any additional
 steps.
 
-If you don't have any DB backup: LabDog is going to look like
+If you don't have any DB backup: unbork is going to look like
 a fresh install. Re-register the first user, reconfigure from
 scratch. Host records, groups, rules, audit log — all gone.
-Host OS's themselves are unaffected (LabDog only manages them,
+Host OS's themselves are unaffected (unbork only manages them,
 it doesn't own their state), so rediscovery + reimport gets
 them back in the inventory even if the rule history doesn't
 return.
@@ -331,7 +331,7 @@ Fresh install. See `docs/README.md` installation section.
 
 - Backups contain encrypted credentials **and** (separately) the
   key that decrypts them. Together they are as sensitive as
-  giving someone direct access to the LabDog server. Treat them
+  giving someone direct access to the unbork server. Treat them
   as such: restricted filesystem perms, encrypted offsite,
   access logged.
 - The `pg_dump` files alone are *less* sensitive than the live

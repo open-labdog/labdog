@@ -3,7 +3,7 @@
     {
       "name": "DS_PROMETHEUS",
       "label": "Prometheus",
-      "description": "The Prometheus instance scraping LabDog.",
+      "description": "The Prometheus instance scraping unbork.",
       "type": "datasource",
       "pluginId": "prometheus",
       "pluginName": "Prometheus"
@@ -53,7 +53,7 @@
   "time": { "from": "now-24h", "to": "now" },
   "timepicker": {},
   "timezone": "",
-  "title": "LabDog — Overview",
+  "title": "unbork — Overview",
   "uid": "labdog-overview",
   "version": 1,
   "panels": [
@@ -503,7 +503,7 @@
     {
       "type": "stat",
       "title": "Scheduling & pack health",
-      "description": "Orphaned schedules fire but do nothing. Failed pack syncs mean LabDog is running stale playbooks.",
+      "description": "Orphaned schedules fire but do nothing. Failed pack syncs mean unbork is running stale playbooks.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 48 },
       "targets": [
@@ -631,7 +631,7 @@
         {
           "type": "timeseries",
           "title": "Collection cost",
-          "description": "LabDog aggregates from PostgreSQL per scrape, cached for cache_ttl_seconds.",
+          "description": "unbork aggregates from PostgreSQL per scrape, cached for cache_ttl_seconds.",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "gridPos": { "h": 7, "w": 12, "x": 0, "y": 66 },
           "targets": [

@@ -1,8 +1,8 @@
 <p align="left">
-  <img src="assets/logo-banner.svg" alt="LabDog — A homelabber's best friend" width="100%" />
+  <img src="assets/logo-banner.svg" alt="unbork — A homelabber's best friend" width="100%" />
 </p>
 
-# LabDog
+# unbork
 
 [![ci](https://img.shields.io/github/actions/workflow/status/open-unbork/unbork/ci.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=ci)](https://github.com/open-unbork/unbork/actions/workflows/ci.yml)
 [![release](https://img.shields.io/github/v/release/open-unbork/unbork?style=for-the-badge&logo=github&color=16a34a)](https://github.com/open-unbork/unbork/releases/latest)
@@ -52,7 +52,7 @@ Declare state per host or per group. Everything goes through Ansible. Same rule 
 **AI assistant** &nbsp;*(off by default)*
 
 Connect a local or hosted LLM and hand it an investigation. It works through
-LabDog's own tools — every command it runs is classified by a default-deny
+unbork's own tools — every command it runs is classified by a default-deny
 parser, bounded by a host allowlist, redacted, and written to the audit log.
 
 - **Three autonomy levels** — read-only, approval-required, or full-auto. A
@@ -63,10 +63,10 @@ parser, bounded by a host allowlist, redacted, and written to the audit log.
 - **Spend control** — daily and monthly budgets, per-provider caps, and
   per-session iteration/command/token/wall-clock limits, all enforced mid-run.
 - **AI verification** — a destructive action can ask an LLM whether it left
-  the host healthy, judged on evidence LabDog collected rather than anything
+  the host healthy, judged on evidence unbork collected rather than anything
   the model went looking for.
 - **Alert-driven actions, investigation and fixes** — point a Grafana
-  contact point at LabDog and let the alert rule's labels say what
+  contact point at unbork and let the alert rule's labels say what
   happens. `labdog_action` runs an action you have allowed on the alert's
   host, no AI needed. `labdog_ai` has the assistant investigate, within
   budget; it only looks unless you allow more, and can ask for approval
@@ -89,12 +89,12 @@ Anthropic API, or a Claude subscription. See the
 
 **Integrations**
 
-- **Ansible** — every change is applied via `ansible-runner`; standard playbook YAML, no LabDog-specific DSL
+- **Ansible** — every change is applied via `ansible-runner`; standard playbook YAML, no unbork-specific DSL
 - **SSH** — push config to hosts and serve an in-browser terminal (asyncssh + xterm.js)
 - **Git** — pull GitOps configs and Action packs from any Git server; SSH key or HTTPS PAT auth, credentials encrypted at rest
 - **Proxmox VE** — automatic snapshot + rollback, VM discovery
 - **Grafana Mimir/Loki** — register a Prometheus-compatible endpoint to show instant CPU/memory/disk on the host page; ties into the Alloy install action from `labdog-playbooks` so metrics flow back automatically
-- **Prometheus / Alloy** — the other direction: an opt-in `/metrics` endpoint exposing fleet state and LabDog's own health for your existing scraper, with a ready-made Grafana dashboard and alert rules
+- **Prometheus / Alloy** — the other direction: an opt-in `/metrics` endpoint exposing fleet state and unbork's own health for your existing scraper, with a ready-made Grafana dashboard and alert rules
 - **Webhooks** — inbound triggers from your Git host for GitOps sync, and
   from Grafana Alerting for alert intake
 
@@ -129,6 +129,6 @@ See **[BUGS.md](BUGS.md)** for known issues and **[CONTRIBUTING.md](CONTRIBUTING
 
 ## 📜 License
 
-**AGPL-3.0-or-later.** See [LICENSE](LICENSE). The network-use clause means anyone running a modified version of LabDog as a service must make the source of their modifications available to its users. Private internal deployments without modifications carry no extra obligations.
+**AGPL-3.0-or-later.** See [LICENSE](LICENSE). The network-use clause means anyone running a modified version of unbork as a service must make the source of their modifications available to its users. Private internal deployments without modifications carry no extra obligations.
 
 Copyright © 2026 Dennis Tyresson and contributors.

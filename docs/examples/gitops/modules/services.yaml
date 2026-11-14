@@ -86,7 +86,7 @@ services:
 
       [Install]
       WantedBy=multi-user.target
-    comment: "Custom unit file, delivered by LabDog"
+    comment: "Custom unit file, delivered by unbork"
 
   # -------------------------------------------------------------
   # Template instance -- `@` is a legal character in service_name.

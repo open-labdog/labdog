@@ -111,7 +111,7 @@ cron_jobs:
     state: present
 
   # -------------------------------------------------------------
-  # Remove an old job (explicit absent).  LabDog will delete
+  # Remove an old job (explicit absent).  unbork will delete
   # /etc/cron.d/labdog-old-job on next sync.
   # -------------------------------------------------------------
   - name: old-job

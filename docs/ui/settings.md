@@ -7,10 +7,10 @@ Settings has five sections, each a tab with its own URL
 
 | Section | What is in it |
 |---------|---------------|
-| **Integrations** | A registry of what LabDog is connected to — Proxmox, Grafana / Mimir / Loki, Git remotes, AI providers, email, the Prometheus export and alert intake — each with its state and a link to configure it. See [Integrations](#integrations). |
+| **Integrations** | A registry of what unbork is connected to — Proxmox, Grafana / Mimir / Loki, Git remotes, AI providers, email, the Prometheus export and alert intake — each with its state and a link to configure it. See [Integrations](#integrations). |
 | **AI** | The AI providers, then every `ai.*` setting. See [AI](#ai). |
 | **Access** | [SSH keys](admin.md#ssh-keys), [Users](admin.md#users) (admins only) and your own account — change password, sign out. |
-| **Fleet defaults** | How LabDog talks to hosts: drift checks, SSH, Ansible, actions, workflows and discovery. |
+| **Fleet defaults** | How unbork talks to hosts: drift checks, SSH, Ansible, actions, workflows and discovery. |
 | **System** | Logging and retention, the [Prometheus export](../metrics-export.md) and [About](#about). |
 
 The settings in the sections below are stored in the database and take
@@ -38,7 +38,7 @@ always visible.
 ## Integrations
 
 Each card says what is connected and opens the page where it is set up.
-Two of them cover what comes *in* to LabDog:
+Two of them cover what comes *in* to unbork:
 
 - **Git remotes** shows the repositories, when one was last synced, and
   **push webhooks on N of M**: how many of them have a webhook secret. A
@@ -46,7 +46,7 @@ Two of them cover what comes *in* to LabDog:
   pick up a push straight away. Each row's **webhooks** on the
   [Git repositories](gitops-ui.md) page has the URLs to paste into GitHub,
   GitLab or Gitea.
-- **Alert intake** shows whether Grafana alerts can reach LabDog, with the
+- **Alert intake** shows whether Grafana alerts can reach unbork, with the
   URL to give a Grafana contact point and when the last alert arrived.
   It says **needs attention** when intake is on but the webhook would
   refuse everything because `[alerts] webhook_token` is not set in
@@ -88,7 +88,7 @@ Two of them cover what comes *in* to LabDog:
 
 | Setting | Key | Default | Range | Description |
 |---------|-----|---------|-------|-------------|
-| Timezone | `scheduling.timezone` | `UTC` | IANA name | The timezone [scheduled actions](scheduled-actions.md#timezone) and cron-scheduled discovery scans read their cron expressions in, e.g. `Europe/Stockholm`. Picked from a searchable list of the names the server knows: type any part of one, such as `stockholm` or `new york`. Changing it keeps each schedule's clock time and moves it to the new zone — `0 3 * * *` then runs at 03:00 there — so check existing schedules afterwards. Cron jobs LabDog manages on hosts run on each host's own clock and are not affected. |
+| Timezone | `scheduling.timezone` | `UTC` | IANA name | The timezone [scheduled actions](scheduled-actions.md#timezone) and cron-scheduled discovery scans read their cron expressions in, e.g. `Europe/Stockholm`. Picked from a searchable list of the names the server knows: type any part of one, such as `stockholm` or `new york`. Changing it keeps each schedule's clock time and moves it to the new zone — `0 3 * * *` then runs at 03:00 there — so check existing schedules afterwards. Cron jobs unbork manages on hosts run on each host's own clock and are not affected. |
 
 ### Workflows
 
@@ -99,7 +99,7 @@ Two of them cover what comes *in* to LabDog:
 
 ### Alert intake
 
-Whether LabDog records alerts at all. Recording costs nothing and starts
+Whether unbork records alerts at all. Recording costs nothing and starts
 nothing; what an alert sets off is up to its Grafana labels — an action
 from the list on the Alerts page's Handling tab, and an AI investigation,
 which is `ai.auto_investigate_enabled` under [AI](#ai). The webhook also needs `[alerts] webhook_token` in
@@ -108,8 +108,8 @@ which is `ai.auto_investigate_enabled` under [AI](#ai). The webhook also needs `
 | Setting | Key | Default | Range | Description |
 |---------|-----|---------|-------|-------------|
 | Alert Intake | `alerts.intake_enabled` | `0` (off) | 0 – 1 | Accept alerts from Grafana and Alertmanager. |
-| Action Check | `alerts.action_check_minutes` | `10` | 1 – 1440 min | How long after a run an alert's `labdog_action` started finishes LabDog waits for the alert to resolve before judging that the action did not fix it. See [Alerts](alerts.md#afterwards). |
-| Alertmanager Poll | `alerts.poll_minutes` | `0` (never) | 0 – 1440 min | Poll the default Mimir instance's Alertmanager API, as a fallback for alerts that arrived while LabDog was unreachable. **Only useful when your alert rules live in Mimir's ruler** — Grafana-managed rules go to Grafana's own Alertmanager, which this cannot see, and the poll then records nothing while looking healthy. See [Alerts](alerts.md#alertmanager-poll-catch-up). |
+| Action Check | `alerts.action_check_minutes` | `10` | 1 – 1440 min | How long after a run an alert's `labdog_action` started finishes unbork waits for the alert to resolve before judging that the action did not fix it. See [Alerts](alerts.md#afterwards). |
+| Alertmanager Poll | `alerts.poll_minutes` | `0` (never) | 0 – 1440 min | Poll the default Mimir instance's Alertmanager API, as a fallback for alerts that arrived while unbork was unreachable. **Only useful when your alert rules live in Mimir's ruler** — Grafana-managed rules go to Grafana's own Alertmanager, which this cannot see, and the poll then records nothing while looking healthy. See [Alerts](alerts.md#alertmanager-poll-catch-up). |
 
 ### Discovery
 
@@ -142,7 +142,7 @@ The AI section starts with the configured
 [AI providers](assistant.md#ai-providers) — **Manage providers…** opens their
 page — followed by these settings.
 
-Every one of these defaults closed. LabDog does nothing with an LLM until
+Every one of these defaults closed. unbork does nothing with an LLM until
 `ai.enabled` is turned on **and** a provider is configured on the
 [AI Providers](assistant.md#ai-providers) page. See the
 [Assistant guide](assistant.md) for what the feature actually does.
@@ -151,7 +151,7 @@ Every one of these defaults closed. LabDog does nothing with an LLM until
 |---------|-----|---------|-------|-------------|
 | AI Enabled | `ai.enabled` | `0` (off) | 0 – 1 | Master switch. While off, chat sessions, scheduled AI checks, and AI verification are all skipped. |
 | Allow Cloud Providers | `ai.allow_cloud_providers` | `0` (off) | 0 – 1 | Permit providers that send host data outside your network. While off, only local endpoints and the Claude CLI may run. |
-| Currency | `ai.currency` | `USD` | USD EUR GBP SEK NOK DKK CHF CAD AUD | Label for costs and budgets. **Formatting only** — LabDog never converts between currencies, so enter provider rates in the same unit you pick here. |
+| Currency | `ai.currency` | `USD` | USD EUR GBP SEK NOK DKK CHF CAD AUD | Label for costs and budgets. **Formatting only** — unbork never converts between currencies, so enter provider rates in the same unit you pick here. |
 
 **Spend limits.** Checked before a session starts *and* between steps, so a
 long run that crosses a limit stops rather than finishing on credit.
@@ -196,13 +196,13 @@ safeguards a named alert must pass.
 |---------|-----|---------|-------|-------------|
 | Alert Autonomy | `ai.alert_autonomy_level` | `read_only` | read_only / approval | What an alert's session may change. At `approval` each change waits in the approvals queue, and a request nobody sees expires after `ai.approval_expiry_hours` — subscribe to [email](notifications.md) for it. |
 | Full-Auto by Rules | `ai.alert_full_auto_rules_enabled` | `0` | 0 – 1 | Off: an alert may change the host without asking when Grafana labels it `labdog_ai_automate=true`. On: `ai.alert_full_auto_rules` decides. |
-| Full-Auto Rules | `ai.alert_full_auto_rules` | `labdog_ai_automate=true` | up to 4000 characters | One rule per line; comma-separated conditions that must all hold — an alert name, `key=value` / `key!=value` labels, `host:` and `group:` (LabDog's), `!host:` / `!group:` exceptions. A rule naming a host or group LabDog does not have is refused on save and flagged afterwards. See [Alerts](alerts.md#which-alerts-may-run-at-full-auto). |
-| Full Auto Needs Snapshot | `ai.alert_full_auto_requires_snapshot` | `1` (on) | 0 – 1 | Allow full auto only on hosts LabDog can snapshot first. Off allows it on bare metal and unmapped hosts, whose changes then have no rollback point. |
+| Full-Auto Rules | `ai.alert_full_auto_rules` | `labdog_ai_automate=true` | up to 4000 characters | One rule per line; comma-separated conditions that must all hold — an alert name, `key=value` / `key!=value` labels, `host:` and `group:` (unbork's), `!host:` / `!group:` exceptions. A rule naming a host or group unbork does not have is refused on save and flagged afterwards. See [Alerts](alerts.md#which-alerts-may-run-at-full-auto). |
+| Full Auto Needs Snapshot | `ai.alert_full_auto_requires_snapshot` | `1` (on) | 0 – 1 | Allow full auto only on hosts unbork can snapshot first. Off allows it on bare metal and unmapped hosts, whose changes then have no rollback point. |
 | Remediation Cooldown | `ai.alert_remediation_cooldown_minutes` | `60` | 0 – 10080 min | After a full-auto session for an alert changes a host, how long before that alert may change it again (0 = no cooldown). |
 | Remediation Daily Cap | `ai.alert_remediation_daily_cap` | `3` | 1 – 100 | Most full-auto sessions that may change one host in 24 hours, across all alerts. |
 | Alert Max Commands | `ai.alert_max_commands` | `15` | 1 – 200 | Shell commands in a full-auto alert session. The lower of this and `ai.max_commands` applies. Too few, and a fix whose first attempts fail runs out partway and leaves the host half changed. The session gets this many model turns plus five, even above `ai.max_iterations`. |
 | Alert Wall Clock | `ai.alert_wall_clock_seconds` | `900` | 30 – 21600 s | Run time for a full-auto alert session. The lower of this and `ai.wall_clock_seconds` applies. Each change waits for its snapshot first, so a fix of several changes needs more time than an investigation. |
-| Fix Check Delay | `ai.alert_remediation_check_minutes` | `10` | 2 – 120 min | How long after a full-auto session ends before LabDog [checks whether its fix worked](alerts.md#checking-the-fix-and-rolling-back). Long enough for the alert to resolve. |
+| Fix Check Delay | `ai.alert_remediation_check_minutes` | `10` | 2 – 120 min | How long after a full-auto session ends before unbork [checks whether its fix worked](alerts.md#checking-the-fix-and-rolling-back). Long enough for the alert to resolve. |
 | Automatic Rollback | `ai.alert_auto_rollback` | `1` (on) | 0 – 1 | Restore the snapshot from before the first change when the check finds the fix made the host worse. A fix that only failed is never rolled back automatically. |
 
 **Changes and approvals.**
@@ -218,7 +218,7 @@ safeguards a named alert must pass.
 
 `ai.alert_mission_template` is the text an alert investigation begins with,
 and it is editable because the built-in wording has to work for an alert
-LabDog has never seen. It asks a deliberately generic question — is this
+unbork has never seen. It asks a deliberately generic question — is this
 real, and what is causing it. You know things it cannot: which alerts on
 your estate are chronically noisy, that an exporter lies during backups,
 that an answer should always name the service the host runs.
@@ -282,13 +282,13 @@ settings below.
 Two actions sit in the head:
 
 - **Discover VM mappings** scans every configured node and links each
-  LabDog host to its backing VM or container in one pass. A single host's
+  unbork host to its backing VM or container in one pass. A single host's
   mapping can also be discovered from
   [its page](hosts.md#proxmox-vm-mapping).
-- **Clean up orphaned snapshots** deletes LabDog's snapshots that are no
+- **Clean up orphaned snapshots** deletes unbork's snapshots that are no
   longer needed: those tied to a finished action run, and those older than
-  `workflow.snapshot_max_age_hours` whose run LabDog does not know.
-  LabDog also runs this every hour on its own, more cautiously: it removes
+  `workflow.snapshot_max_age_hours` whose run unbork does not know.
+  unbork also runs this every hour on its own, more cautiously: it removes
   only snapshots older than `workflow.snapshot_max_age_hours`, so a
   snapshot a failed run kept for you stays at least that long. AI
   sessions' `labdog-ai-` snapshots are left to their own retention
@@ -296,12 +296,12 @@ Two actions sit in the head:
 
 ### TLS verification
 
-Each node has two TLS settings that together decide how LabDog validates
+Each node has two TLS settings that together decide how unbork validates
 the node's HTTPS certificate when it calls the Proxmox API:
 
-- **verify the node's TLS certificate** — when unticked, LabDog performs
+- **verify the node's TLS certificate** — when unticked, unbork performs
   **no** certificate validation at all. This is the last-resort escape hatch
-  for a node with a certificate LabDog can't otherwise trust; prefer a CA
+  for a node with a certificate unbork can't otherwise trust; prefer a CA
   certificate (below) instead.
 - **ca certificate** — paste a PEM-encoded certificate to verify the node
   against it, instead of the operating system's trust store. Use this for
@@ -335,9 +335,9 @@ Notes:
 ## About
 
 **Path:** Settings › System (`/settings?section=system`; `/settings/about`
-redirects here). **About LabDog** in the account menu opens it too.
+redirects here). **About unbork** in the account menu opens it too.
 
-Build metadata for the running LabDog instance, read from
+Build metadata for the running unbork instance, read from
 `GET /api/version` (a public endpoint — no authentication required):
 
 | Field | Source |

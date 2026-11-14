@@ -1,15 +1,15 @@
 # Live host metrics (Grafana Mimir/Loki)
 
 > **Two different features share the word "metrics".**
-> This page is about LabDog **reading** per-host CPU / memory / disk *inward*
+> This page is about unbork **reading** per-host CPU / memory / disk *inward*
 > from a Grafana Mimir backend.
-> For LabDog **exposing** its own fleet state and health *outward* so Prometheus
+> For unbork **exposing** its own fleet state and health *outward* so Prometheus
 > can scrape it, see [Metrics export](../metrics-export.md).
 > They are independent — you can use either, both, or neither.
 
-LabDog can show **instant** CPU, memory, and disk usage on each host's page
+unbork can show **instant** CPU, memory, and disk usage on each host's page
 by querying a Grafana Mimir (or any Prometheus-compatible)
-backend. These are single current values, not graphs — LabDog points you at
+backend. These are single current values, not graphs — unbork points you at
 Grafana for history; it just surfaces "what is this host doing right now"
 next to everything else it already shows about the host.
 
@@ -26,7 +26,7 @@ automatically.
    - **Kind** — Mimir / Prometheus (metrics) or Loki (logs).
    - **Ingest URL** — a single URL: the remote-write / push URL the agent
      ships to, e.g. `https://mimir.example.com/api/v1/push` (add whatever
-     path your setup needs). LabDog hands this to the Alloy install action
+     path your setup needs). unbork hands this to the Alloy install action
      as-is, and for querying it strips the path down to the host and appends
      the right API path automatically (Mimir →
      `…/prometheus/api/v1/query`). You never enter the query URL.
@@ -38,7 +38,7 @@ automatically.
      tenants on the same URL are two instances.
    - Optional authentication (none, bearer token, or basic
      username/password), TLS verification and a CA certificate (PEM) for a
-     private CA. LabDog uses these when it **queries**. Of them, only
+     private CA. unbork uses these when it **queries**. Of them, only
      *TLS verification* reaches the Alloy action today (as
      `insecure_skip_verify`); a backend that needs a token, basic auth or a
      private CA for **ingest** can't yet be set up through the action.
@@ -51,7 +51,7 @@ automatically.
    Tick **default** on another instance's edit dialog to move it.
 
 2. **Run the *Install Alloy agent* action** against a host or group
-   (**Run action…** on its page). LabDog automatically:
+   (**Run action…** on its page). unbork automatically:
    - fills each host's Alloy remote-write/Loki URLs, tenants and TLS
      setting from the instances that host ships to (no need to re-type
      them). The run dialog's destination pickers start on **Each host's
@@ -94,7 +94,7 @@ the Overview's fleet resource hot spots (each host is read from its own
 destination only), the assistant's metrics and log tools, and the
 Alertmanager poll, which reads every Mimir some host ships to.
 
-Saving a destination changes what LabDog **queries** at once, but the host
+Saving a destination changes what unbork **queries** at once, but the host
 keeps shipping where its Alloy config says until the **Install Alloy
 agent** action runs on it again. Run the action after changing a
 destination. An instance that a host or group still names can't be deleted;
@@ -109,7 +109,7 @@ front page, and a set-up prompt on every host would be noise. The
 | Situation | Metrics tab | Overview | What to do |
 |-----------|-------------|----------|------------|
 | No Mimir instance registered | **No metrics backend**, with **Add a Mimir instance…** | nothing | Add one under Settings › Integrations → Grafana. |
-| Several Mimir instances, none marked default | **No default Mimir instance** | nothing | Edit one of them and tick **default**. LabDog won't guess which to ask. |
+| Several Mimir instances, none marked default | **No default Mimir instance** | nothing | Edit one of them and tick **default**. unbork won't guess which to ask. |
 | Mimir set up, nothing from this host | **No metrics from this host yet**, with a button to run the metrics agent action — **Run Install Alloy agent…** with the default pack | **no metrics yet** | Run the action on the host, then allow a minute for the first scrape. The tab checks again every 15 seconds. |
 | The query failed | **The metrics query failed:** and the backend's error | **query error** — hover for the error | Check the instance's URL and token with **test** on the Grafana page. |
 | No new sample for two minutes | A banner saying how long since the last sample; the last values dimmed | **stale** (amber), values dimmed | The agent may have stopped, or can't reach Mimir from the host. |
@@ -127,7 +127,7 @@ Disk reports the root filesystem (`/`).
 ## Notes & limits
 
 - Metrics come from node_exporter via Alloy's `prometheus.exporter.unix`.
-- LabDog queries the Mimir each host ships to (see
+- unbork queries the Mimir each host ships to (see
   [Per-host and per-group destinations](#per-host-and-per-group-destinations)).
 - Ingest authentication (token, basic auth) and a private CA are not passed
   to the Alloy action yet; only TLS verification is.

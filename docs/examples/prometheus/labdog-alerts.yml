@@ -1,4 +1,4 @@
-# Example Prometheus alerting rules for LabDog.
+# Example Prometheus alerting rules for unbork.
 #
 # Load with `rule_files: [labdog-alerts.yml]` in prometheus.yml, or drop into
 # a PrometheusRule CR (the `groups:` block below is the CR's `spec:` verbatim).
@@ -20,10 +20,10 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: "LabDog is not scrapeable"
+          summary: "unbork is not scrapeable"
           description: >-
             Prometheus has failed to scrape {{ $labels.instance }} for 5
-            minutes. Either LabDog is down, or [metrics] enabled was turned
+            minutes. Either unbork is down, or [metrics] enabled was turned
             off (the endpoint returns 404 when disabled).
           runbook_url: "https://github.com/open-unbork/unbork/blob/main/docs/metrics-export.md#troubleshooting"
 
@@ -36,7 +36,7 @@ groups:
         annotations:
           summary: "{{ $value }} host(s) in error state"
           description: >-
-            LabDog cannot reach or manage {{ $value }} host(s). Check the
+            unbork cannot reach or manage {{ $value }} host(s). Check the
             Fleet Overview triage table for the affected hosts.
           runbook_url: "https://github.com/open-unbork/unbork/blob/main/docs/metrics-export.md#fleet-state"
 
@@ -135,7 +135,7 @@ groups:
         annotations:
           summary: "{{ $value }} action pack(s) failing to sync"
           description: >-
-            LabDog is running against a stale copy of the pack's playbooks.
+            unbork is running against a stale copy of the pack's playbooks.
 
       # --- Certificates ------------------------------------------------------
       - alert: LabDogCACertExpiringSoon
@@ -171,7 +171,7 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "LabDog metric collection is taking over 5s"
+          summary: "unbork metric collection is taking over 5s"
           description: >-
             Collection runs ~13 aggregate queries against PostgreSQL. Sustained
             slowness usually means a large history table wants pruning or an

@@ -5,7 +5,7 @@
 #   Groups -> web-servers -> Enable GitOps -> file path: docs/examples/gitops/web-servers.yaml
 #
 # This file assumes:
-#   * The group is named "web-servers" in LabDog.
+#   * The group is named "web-servers" in unbork.
 #   * The group's priority in the UI matches (or is higher than) any
 #     competing group you want to be overridden by this file.
 #   * The hosts in this group run Debian/Ubuntu (see the package_manager

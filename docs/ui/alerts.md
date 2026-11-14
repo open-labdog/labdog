@@ -2,7 +2,7 @@
 
 **Path:** `/alerts` (Operations · Alerts)
 
-Alerts LabDog has received from Grafana or Alertmanager, and what each one
+Alerts unbork has received from Grafana or Alertmanager, and what each one
 set off. What an alert sets off is up to its **labels**, which you put on
 the alert rule in Grafana:
 
@@ -55,7 +55,7 @@ webhook_token = "a-long-random-string"
 
 or `LABDOG_ALERTS__WEBHOOK_TOKEN`. **An unset token refuses every
 request**, and the **Intake** card on the Handling tab says so. An alert receiver that accepted unauthenticated POSTs would let
-anyone on the network write rows LabDog might then spend money
+anyone on the network write rows unbork might then spend money
 investigating.
 
 ---
@@ -71,7 +71,7 @@ POST https://labdog.example.com/api/webhooks/grafana-alerts
 Authorization: Bearer <your webhook_token>
 ```
 
-Basic auth works too — LabDog accepts the token as either the username or
+Basic auth works too — unbork accepts the token as either the username or
 the password, because which fields a contact-point form offers varies by
 Grafana version.
 
@@ -81,7 +81,7 @@ Grafana version.
 alerts.poll_minutes = 5     # 0 = never poll — the default
 ```
 
-LabDog reads the Alertmanager API of your default Mimir instance — the
+unbork reads the Alertmanager API of your default Mimir instance — the
 same one registered under [Grafana](README.md) — so there is no second
 endpoint to configure and keep in step. It derives the path by swapping
 `/prometheus` for `/alertmanager` on that instance's URL.
@@ -103,7 +103,7 @@ forever. Leave `alerts.poll_minutes` at `0` and use the webhook
 alone.
 
 If it does apply, run both. The webhook is immediate but only works while
-LabDog is reachable from Grafana; the poller is slower but catches what
+unbork is reachable from Grafana; the poller is slower but catches what
 happened while it was not — a restart, a partition, an upgrade. They
 deduplicate against each other, so there is no cost to having both.
 
@@ -131,7 +131,7 @@ month's row and lose the history. Including the start time keeps one
 continuous firing as one row, while a genuinely new firing becomes a new
 one.
 
-The `×3` badge on a row is `dedup_count` — how many times LabDog has been
+The `×3` badge on a row is `dedup_count` — how many times unbork has been
 told about that same firing. A high count on a short-lived alert is what
 flapping looks like from here.
 
@@ -141,12 +141,12 @@ flapping looks like from here.
 
 Put them on the alert rule in Grafana (**Configure labels and
 notifications** in the rule's form). They travel with every notification
-the rule sends, so LabDog reads them from the alert itself. How they
+the rule sends, so unbork reads them from the alert itself. How they
 combine:
 
 | The alert's labels | What happens |
 |---|---|
-| `labdog_action=restart-nginx` | LabDog runs `restart-nginx` on the host. Nothing else, whether or not it works. |
+| `labdog_action=restart-nginx` | unbork runs `restart-nginx` on the host. Nothing else, whether or not it works. |
 | `labdog_action=restart-nginx`, `labdog_ai=true` | It runs `restart-nginx`. If the run fails, or the alert is still firing afterwards, the AI investigates, told what was tried. |
 | `labdog_action=restart-nginx`, `labdog_ai_automate=true` | The same, and the AI may fix what it finds. |
 | `labdog_ai=true` | The AI investigates, at `ai.alert_autonomy_level`. |
@@ -159,7 +159,7 @@ key, as shown under each action on the [Actions](actions.md) page.
 To make a label depend on the host, give it a template. The
 [alloy-install action](actions.md) stamps `labdog_hostname` (and
 `labdog_host_id`) on every series it ships, so the template can use
-LabDog's own names:
+unbork's own names:
 
 ```
 labdog_action      = restart-nginx
@@ -170,7 +170,7 @@ labdog_ai_automate = {{ if match "^(web-1|web-2)$" $labels.labdog_hostname }}tru
 Write the `false` branch too rather than leaving the label empty.
 
 With labels, **whoever can edit alert rules in Grafana decides what an
-alert asks for.** LabDog keeps the last word on what it does: only an
+alert asks for.** unbork keeps the last word on what it does: only an
 action on the list runs, only on the hosts its entry allows, and full
 auto only while every safeguard holds.
 
@@ -199,12 +199,12 @@ alerts did with it stays on their rows.
 
 ### When an alert arrives
 
-LabDog checks, in this order:
+unbork checks, in this order:
 
 1. Only a **new firing** alert counts. Repeat notifications of the same
    firing, and resolved notifications, never start a run.
-2. The alert must name a **host LabDog manages**. See [Scope](#scope) for
-   how LabDog works that out.
+2. The alert must name a **host unbork manages**. See [Scope](#scope) for
+   how unbork works that out.
 3. The action must exist and be **on the list**, enabled, with the host
    inside its **Where**.
 4. An alert that came **by webhook** needs `[alerts] webhook_token` to be
@@ -213,7 +213,7 @@ LabDog checks, in this order:
 5. No alert run of the action may be queued, waiting or running on the
    host, and the **cooldown** must have passed.
 
-If all hold, LabDog starts a single-host run of the action with the
+If all hold, unbork starts a single-host run of the action with the
 entry's parameters. It runs like any other: it waits for a busy host,
 takes a snapshot first if the action is destructive and the entry says
 so, and shows on the [Runs](operations.md#runs) page. The run page says which alert
@@ -229,7 +229,7 @@ because that run decides.
 ### Afterwards
 
 While the action runs, an investigation the labels ask for **waits**.
-Once the run has finished, LabDog checks every minute:
+Once the run has finished, unbork checks every minute:
 
 | Outcome | When |
 |---|---|
@@ -239,7 +239,7 @@ Once the run has finished, LabDog checks every minute:
 
 If the action did not fix it and the alert is labelled `labdog_ai` or
 `labdog_ai_automate`, it goes to the AI, through the same checks as any
-investigation (below). Its prompt gains a section saying what LabDog
+investigation (below). Its prompt gains a section saying what unbork
 already tried: the action, the run, how it ended, and the end of its
 output. Without either label nothing more happens.
 
@@ -274,13 +274,13 @@ it asks.
 
 **There is no rate limit on investigations, and that is deliberate.**
 (Automatic *fixes* have one — see
-[Full auto](#full-auto-safeguards).) LabDog does not own
+[Full auto](#full-auto-safeguards).) unbork does not own
 your alerts; Grafana or Alertmanager does. A rule that fires, resolves
 and fires again every few minutes passes every check above each time,
 because each firing is genuinely new — and the fix belongs where the
 rule lives: a longer `for:` duration, a threshold with hysteresis, or
 Alertmanager routing (`group_wait`, `repeat_interval`, inhibition) that
-sends LabDog only what is worth investigating. Adding a cooldown here
+sends unbork only what is worth investigating. Adding a cooldown here
 would paper over a rule that needs tuning and hide it from the person
 who can tune it.
 
@@ -300,7 +300,7 @@ happened" has several causes and each has a different fix:
 | **investigating** | A session was started; **view →** opens it |
 | **auto-investigate off** | The policy switch is off |
 | **not labelled for the AI** | Neither `labdog_ai=true` nor `labdog_ai_automate=true`, and no full-auto rule matched |
-| **already resolved** | It cleared before LabDog got to it |
+| **already resolved** | It cleared before unbork got to it |
 | **already investigated** | A repeat notification |
 | **AI budget reached** | Spend limit hit; the alert is still recorded |
 | **could not start** | AI disabled, no provider, or a provider that cannot run tools |
@@ -338,7 +338,7 @@ labels say — you have already made the judgement `labdog_ai` exists to
 automate.
 
 It does **not** bypass the kill switch, the provider check, or the
-budget. Those are about whether LabDog may spend at all, which a button
+budget. Those are about whether unbork may spend at all, which a button
 press does not change.
 
 ---
@@ -397,8 +397,8 @@ does. There is no order and no "deny" line, so no rule overrides another.
 | `NginxDown` | the alert's name is exactly this (spaces allowed, no wildcards) |
 | `severity=critical` | the alert has this label value; quote a value with a comma: `team="a, b"` |
 | `severity!=info` | the label has another value, or is missing |
-| `host:web-1`, `host:web-1\|web-2` | the LabDog host the alert resolved to is one of these (by hostname, any case) |
-| `group:web` | that host is in this LabDog group |
+| `host:web-1`, `host:web-1\|web-2` | the unbork host the alert resolved to is one of these (by hostname, any case) |
+| `group:web` | that host is in this unbork group |
 | `!host:…`, `!group:…` | that host is not one of these, or in none of these groups |
 
 Lines starting with `#` are comments. The default list is the single rule
@@ -424,7 +424,7 @@ hosts in `lab`.
 An alert a rule lets run at full auto is also one that gets investigated,
 with or without `labdog_ai`.
 
-Saving a rule that names a host or group LabDog does not have is refused.
+Saving a rule that names a host or group unbork does not have is refused.
 If one is renamed or deleted later, the setting shows a warning beside the
 list, because the rule would otherwise silently match nothing.
 
@@ -444,13 +444,13 @@ holds. The first that fails drops the session to
 row's tag says which:
 
 1. The alert is **firing**.
-2. It resolved to a **LabDog host**, and the session may touch only that
+2. It resolved to a **unbork host**, and the session may touch only that
    host.
 3. If it arrived by webhook, `[alerts] webhook_token` is **at least 32
    characters**. With full auto on, that token is all that stands between
    anyone who can reach the webhook and a root command on your hosts —
    `openssl rand -hex 16` makes one.
-4. LabDog can **snapshot the host first**: `ai.snapshot_before_mutating`
+4. unbork can **snapshot the host first**: `ai.snapshot_before_mutating`
    is on and the host has a Proxmox VM mapping. Turn
    `ai.alert_full_auto_requires_snapshot` off to allow full auto on bare
    metal, whose changes then have no rollback point.
@@ -462,9 +462,9 @@ row's tag says which:
 7. The host is under its **daily cap**: fewer than
    `ai.alert_remediation_daily_cap` (3) full-auto sessions changed it in
    the last 24 hours, across all alerts.
-8. **LabDog does not run on the host.** A fix there could take LabDog
-   down with it, and LabDog cannot roll back the machine it runs on — see
-   [below](#the-machine-labdog-runs-on) for how it tells.
+8. **unbork does not run on the host.** A fix there could take unbork
+   down with it, and unbork cannot roll back the machine it runs on — see
+   [below](#the-machine-unbork-runs-on) for how it tells.
 9. **The last automatic fix on the host has been checked**, and none made
    it worse in the last 24 hours — see
    [Checking the fix](#checking-the-fix-and-rolling-back). A second fix
@@ -481,7 +481,7 @@ or the general caps if those are lower. Its model turns go the other
 way: it gets at least five more than its command cap, even above
 `ai.max_iterations`, so a fix that takes a command a turn is ended by
 the command cap rather than a turn short of it. And it does not change a host
-LabDog is itself changing: a change it attempts while a sync or an action
+unbork is itself changing: a change it attempts while a sync or an action
 run is working on the host is refused, and it reports what it would have
 done instead. That narrows the overlap rather than closing it — a sync
 can still start while one of its commands is running.
@@ -499,31 +499,31 @@ it has been checked, whether the fix worked.
 
 A full-auto session ends when the model says it is done, which is its own
 opinion of its work. `ai.alert_remediation_check_minutes` (10) after the
-session ended, LabDog checks for itself, whenever the session changed the
+session ended, unbork checks for itself, whenever the session changed the
 host. A session someone **cancelled** is not checked: they have most
 likely taken the host over, and the check would judge — and perhaps roll
 back — their work.
 
 1. Can it still reach the host over SSH? Three attempts, twenty seconds
    apart, so a host that is restarting is not mistaken for a dead one. A
-   changed SSH host key counts as unreachable: LabDog will not connect.
-   When the host does not answer, LabDog asks Proxmox as well. If Proxmox
-   does not answer either, the fault may be on LabDog's side — a lost
+   changed SSH host key counts as unreachable: unbork will not connect.
+   When the host does not answer, unbork asks Proxmox as well. If Proxmox
+   does not answer either, the fault may be on unbork's side — a lost
    route, DNS — and the fix is reported as **not checked** instead.
 2. Has a new **critical** alert fired on the host since the first change,
    and is it still firing?
 3. Has the alert the session was started for resolved?
 
 The answer lands on the alert's row as a tag — **fixed**, **fix did not
-work**, or **fix made it worse** — with what LabDog found on hover.
+work**, or **fix made it worse** — with what unbork found on hover.
 
 **A fix that made the host worse is rolled back** while
 `ai.alert_auto_rollback` is on (the default). "Worse" is a yes to either of
-the first two questions. LabDog restores the snapshot taken before the
+the first two questions. unbork restores the snapshot taken before the
 session's first change, starts the machine, waits for SSH, and marks the
 host out of sync. That costs something: the machine restarts and
 **everything written on it since the snapshot is lost** — mail delivered,
-files uploaded, rows committed. If LabDog's own sync or action run is
+files uploaded, rows committed. If unbork's own sync or action run is
 working on the host it waits up to ten minutes for it first, then checks
 the host again: a sync that reloaded the firewall can make a host look
 unreachable for a moment, and that is no reason to undo the fix. While
@@ -538,7 +538,7 @@ that state before. You are told, and the session has a
 [Roll back](assistant.md#rolling-back) button if you want the host as it
 was before the fix anyway.
 
-A check that falls due while LabDog is down runs when it is back, up to
+A check that falls due while unbork is down runs when it is back, up to
 30 minutes late. Past that it is marked **fix not checked** rather than
 made: judging — and perhaps rolling back — a host long after the fact
 would throw away all that time's writes on stale evidence.
@@ -547,21 +547,21 @@ The check depends on hearing that the alert resolved, so leave **Disable
 resolved message** off on the Grafana contact point. Without resolved
 notifications every fix reads as not working.
 
-#### The machine LabDog runs on
+#### The machine unbork runs on
 
-Rolling that machine back would stop LabDog half-way, with nothing left
-to start it again, and put LabDog's own database back to the snapshot. So
-LabDog refuses both full auto and rollbacks there. A host whose address is
-`[security] labdog_server_ip` in LabDog's configuration — the address the
-firewall rules keep SSH open for — is that machine. Otherwise LabDog finds
+Rolling that machine back would stop unbork half-way, with nothing left
+to start it again, and put unbork's own database back to the snapshot. So
+unbork refuses both full auto and rollbacks there. A host whose address is
+`[security] labdog_server_ip` in unbork's configuration — the address the
+firewall rules keep SSH open for — is that machine. Otherwise unbork finds
 it from the address each host sees it connect from:
 
-- **Every other host sees LabDog coming from this host's address.** A
+- **Every other host sees unbork coming from this host's address.** A
   container on a bridge network — the usual Docker install — reaches the
   rest of the LAN through its host's address.
-- **This host sees LabDog coming from one of its own addresses, or from
+- **This host sees unbork coming from one of its own addresses, or from
   inside one of its container bridges.** A native install, or a container
-  with host networking or on a compose network. LabDog asks the host for
+  with host networking or on a compose network. unbork asks the host for
   its interfaces over SSH to tell.
 
 A container on a **macvlan** network has a LAN address of its own and
@@ -570,7 +570,7 @@ auto.
 
 ### Scope
 
-The session is scoped to the host LabDog resolved from the alert's
+The session is scoped to the host unbork resolved from the alert's
 labels. It checks `labdog_host_id` first: the alloy-install action stamps
 it on every series, so an alert on those metrics names its host exactly.
 An id that is no longer a host is skipped. Then it tries `labdog_hostname`,
@@ -580,7 +580,7 @@ session runs with **no host in scope**, because putting an investigation
 on the wrong host is worse than putting it on none: it would read a
 healthy machine and report that nothing is wrong.
 
-The model is given the alert's full label and annotation set. LabDog
+The model is given the alert's full label and annotation set. unbork
 reads three keys out of them itself, but an investigation is only as good
 as its context, and you chose what to label.
 
@@ -588,7 +588,7 @@ as its context, and you chose what to label.
 
 `ai.alert_mission_template` in [Settings](settings.md#the-investigation-prompt)
 is the wording the session begins with. It is editable because the
-built-in text has to work for an alert LabDog has never seen, so it asks a
+built-in text has to work for an alert unbork has never seen, so it asks a
 deliberately generic question — is this real, and what is causing it. You
 know things it cannot: which alerts on your estate are chronically noisy,
 that an exporter lies during backups, that an answer should always name
@@ -616,7 +616,7 @@ context, which is your call to make.
 
 **Nothing appears.** The page shows what arrived, not what fired. Check
 `alerts.intake_enabled`, then that the contact point's token matches —
-a wrong token is a 401 at LabDog and a delivery error in Grafana's own
+a wrong token is a 401 at unbork and a delivery error in Grafana's own
 logs.
 
 **Alerts appear but nothing is investigated.** Read the investigation tag. It names
@@ -629,15 +629,15 @@ cover that host, or ran on it too recently. The label's value must be the
 action's key exactly.
 
 **Every fix is marked "fix did not work", although the alerts cleared.**
-LabDog never heard that they resolved. Check that **Disable resolved
-message** is off on the Grafana contact point that points at LabDog.
+unbork never heard that they resolved. Check that **Disable resolved
+message** is off on the Grafana contact point that points at unbork.
 
 **A fix made the host worse but it was not rolled back.** Hover the
 **not rolled back** or **rollback failed** tag on the row: it says why —
 `ai.alert_auto_rollback` is off, the snapshot was not taken or has
-expired, LabDog's own work kept the host busy, or Proxmox refused. A
+expired, unbork's own work kept the host busy, or Proxmox refused. A
 rollback on ZFS storage also needs every newer snapshot of the VM gone.
-LabDog deletes the session's own, but not anyone else's: when a newer
+unbork deletes the session's own, but not anyone else's: when a newer
 snapshot belongs to an action run or someone else, it refuses before
 deleting anything, and names the snapshot in the way.
 

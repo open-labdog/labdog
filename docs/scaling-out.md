@@ -1,6 +1,6 @@
 # Scaling out
 
-A single LabDog container runs everything: the API, the scheduler and two
+A single unbork container runs everything: the API, the scheduler and two
 Celery workers. That is the default and needs no configuration. For a few
 hundred hosts, or a busy schedule, the same image can run as several
 containers, one per **role**, so worker capacity scales on its own.

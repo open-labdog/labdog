@@ -2,7 +2,7 @@ key: reboot
 name: Reboot host
 description: >-
   Reboots the target host and waits for SSH to come back. If the host
-  has a Proxmox VM mapping, LabDog takes a snapshot first and rolls
+  has a Proxmox VM mapping, unbork takes a snapshot first and rolls
   back on failure.
 icon: Zap
 playbook: playbook.yml
