@@ -203,7 +203,7 @@ decision from Dennis first.
 | C-001 | Verify and document the upgrade from LabDog 1.1.0 to unbork | P0 | 9.5 | 4/5/5/5 | M | B | 1 | PR-02 | Nothing can be released until an existing install is known to survive it; data loss on upgrade is the worst first impression. |
 | C-004 | Rollback policy: stateful flag and rollback_mode on hosts | P0 | 9.0 | 5/4/4/5 | M | B | 2 | none | Automatic rollback of a database host silently discards writes; data integrity comes first, and three later items build on the flag. |
 | S-002 | Extension hook: gate a run before it starts, and hear when it ends | P0 | 7.0 | 2/4/5/3 | M | B | 0 | none | Several planned extensions need to refuse or defer a sync, run, schedule or AI fix; one seam is safer than four. |
-| S-009 | Stop bundling the Claude Code binary in the Docker image | P0 | 6.5 | 2/4/2/5 | M | B | 1 | D-04 | A 131 MB third-party binary in a public image; install it on demand instead, before the next image is published. |
+| S-009 | Stop bundling the Claude Code binary in the Docker image | P0 | 6.5 | 2/4/2/5 | M | B | 1 | none | A 131 MB third-party binary in a public image; install it on demand instead, before the next image is published. |
 | C-012 | Notify on action-run failure | P1 | 15.0 | 5/3/3/4 | S | A | 2 | none | A scheduled patch run that fails silently defeats the product; the board names it a prerequisite for unattended work. |
 | C-023 | Password reset by email | P1 | 11.0 | 4/3/1/3 | S | B | 2 | none | Table stakes for local accounts now that roles shipped; account-recovery flow, so reviewed. |
 | S-006 | Frontend extension seam: navigation entries, pages, host and group panels | P1 | 11.0 | 2/4/4/1 | S | B | 3 | none | Extensions can add a Settings tab and nothing else; additive type change. |
@@ -356,7 +356,7 @@ visible.
 | Stage | Goal | Items |
 |---|---|---|
 | 0 | Foundations: audit and run-gate hooks, webhook hardening, CI, contributor terms | C-008, C-022, S-001, S-002, C-024, C-025, S-011, S-012, E-001, E-021, E-022 |
-| 1 | The first release as unbork | S-008, S-009, C-026, S-010, S-007, E-020, C-001, C-002, C-003 |
+| 1 | The first release as unbork | S-008, S-009, S-014, C-026, S-010, S-007, E-020, C-001, C-002, C-003 |
 | 2 | Rollback you can trust | C-004, S-003, C-005, C-006, C-007, C-016, C-012, C-023 |
 | 3 | Governance for larger organisations | S-006, E-002, E-003, E-004 |
 | 4 | Day-two operations | C-017, C-018, C-013, C-014, C-015, C-021 |

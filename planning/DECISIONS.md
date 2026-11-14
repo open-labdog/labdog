@@ -8,16 +8,6 @@ D-16) are in the Enterprise repository's `planning/DECISIONS.md`.
 
 ## Open
 
-### D-04 The Claude Code binary in the image
-Blocks: S-009, C-026. Details and the edition question are in the
-Enterprise repository.
-- A. Leave it out of the image and install it on first use when an admin
-  turns that provider on.
-- B. Publish two images, one with and one without.
-- C. Keep it.
-
-Recommendation: A.
-
 ## Assumptions made without asking
 
 - A-01. "Harden the webhook" (C-022) is taken from the board text as
@@ -34,6 +24,7 @@ Recommendation: A.
 
 | Date | Decision | By |
 |---|---|---|
+| 2026-11-14 | D-04: Claude Code is installed on first use and no longer ships in the image (S-009, C-026). Community keeps only the operator's own Claude Code sign-in: new item S-014 removes the subscription token field and corrects its help text (`frontend/app/(dashboard)/ai-providers/client-page.tsx`, `docs/ui/assistant.md`), stage 1, S, class B. | Dennis, as relayed by the coordinator |
 | 2026-11-14 | D-19: RAM in unbork, PBS in kennel. C-044 (memory in the rollback snapshot) goes ahead in stage 2. C-045 is recast as "PBS restore points through kennel" and parked with C-028. A Proxmox backup never holds RAM (checked in the qemu-server source; write-up https://claude.ai/artifact/MJo5wKpzFdKspSeMNDrL3S). S-003 carries: a per-VM capability check (snapshot, RAM, restore point, free space), which C-005 calls; `create(vm, label, include_ram)` returning an opaque handle; `rollback(handle, start)`; `delete`; asynchronous completion. | Dennis, on the card |
 | 2026-11-14 | D-01: Apache-style individual and corporate CLAs, granted to Dennis "and his successors and assigns", with an explicit transfer clause and a promise that contributions stay available under the AGPL. CLA Assistant Lite checks every PR on unbork and unbork-playbooks, with signatures stored in a private repository in the organisation. Write-up: https://claude.ai/artifact/T7vmNSbLCWN54EF9EWJXFn. S-011 (texts, workflow and required check, CONTRIBUTING licensing section) is stage 0, class B. | Dennis, as relayed by the coordinator |
 | 2026-11-14 | D-07: Dennis personally is the copyright holder. S-012 moves to stage 0, class A. | Dennis, as relayed by the coordinator |
