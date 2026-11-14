@@ -4,7 +4,7 @@ import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
-import { useAuth } from "@/lib/auth"
+import { can, useAuth } from "@/lib/auth"
 import { shortAgo } from "@/lib/fleet"
 import type { AIProvider, AIUsageSummary, AlertIntakeStatus, EmailSettings, GitRepository, GrafanaInstance, MetricsStatus, ProxmoxNode, SSHKey } from "@/lib/types"
 import { MetricsScrapeCard } from "@/components/metrics-scrape-card"
@@ -98,11 +98,14 @@ function Card({ name, state, status, detail, meta, href, action, more }: { name:
 }
 
 function Integrations() {
+  const { user } = useAuth()
   const q = { retry: false }
+  // AI providers need ai.use, which a viewer lacks.
+  const ai = { ...q, enabled: can(user, "ai.use") }
   const { data: nodes } = useQuery<ProxmoxNode[]>({ queryKey: ["proxmox-nodes"], queryFn: () => apiFetch<ProxmoxNode[]>("/api/proxmox/nodes"), ...q })
   const { data: grafana } = useQuery<GrafanaInstance[]>({ queryKey: ["grafana-instances"], queryFn: () => apiFetch<GrafanaInstance[]>("/api/grafana/instances"), ...q })
   const { data: repos } = useQuery<GitRepository[]>({ queryKey: ["git-repos"], queryFn: () => apiFetch<GitRepository[]>("/api/git-repos"), ...q })
-  const { data: providers } = useQuery<AIProvider[]>({ queryKey: ["ai-providers"], queryFn: () => apiFetch<AIProvider[]>("/api/ai/providers"), ...q })
+  const { data: providers } = useQuery<AIProvider[]>({ queryKey: ["ai-providers"], queryFn: () => apiFetch<AIProvider[]>("/api/ai/providers"), ...ai })
   const { data: metrics } = useQuery<MetricsStatus>({ queryKey: ["metrics-status"], queryFn: () => apiFetch<MetricsStatus>("/api/metrics/status"), ...q })
   const { data: email } = useQuery<EmailSettings>({ queryKey: ["notification-email"], queryFn: () => apiFetch<EmailSettings>("/api/notifications/email"), ...q })
   const { data: intake } = useQuery<AlertIntakeStatus>({ queryKey: ["alert-intake"], queryFn: () => apiFetch<AlertIntakeStatus>("/api/alerts/intake"), ...q })
@@ -202,8 +205,10 @@ function intakeCard(s: AlertIntakeStatus | undefined): { state: Tone; status?: s
 }
 
 function ProvidersRow() {
-  const { data: providers } = useQuery<AIProvider[]>({ queryKey: ["ai-providers"], queryFn: () => apiFetch<AIProvider[]>("/api/ai/providers"), retry: false })
-  const { data: usage } = useQuery<AIUsageSummary>({ queryKey: ["ai-usage"], queryFn: () => apiFetch<AIUsageSummary>("/api/ai/usage"), retry: false })
+  const { user } = useAuth()
+  const mayUseAi = can(user, "ai.use")
+  const { data: providers } = useQuery<AIProvider[]>({ queryKey: ["ai-providers"], queryFn: () => apiFetch<AIProvider[]>("/api/ai/providers"), retry: false, enabled: mayUseAi })
+  const { data: usage } = useQuery<AIUsageSummary>({ queryKey: ["ai-usage"], queryFn: () => apiFetch<AIUsageSummary>("/api/ai/usage"), retry: false, enabled: mayUseAi })
   const enabled = (providers ?? []).filter((p) => p.enabled)
   return (
     <div className="flex flex-wrap items-center gap-3 p-[11px]">
