@@ -25,6 +25,7 @@ import getpass
 import sys
 
 from fastapi_users.password import PasswordHelper
+from pydantic import EmailStr, TypeAdapter, ValidationError
 from sqlalchemy import func, select
 
 from app.audit.logger import log_action
@@ -55,7 +56,16 @@ async def _get(session, email: str) -> User:
     return user
 
 
+def _valid_email(email: str) -> str:
+    """The address as the API would accept it, which ``/me`` relies on."""
+    try:
+        return TypeAdapter(EmailStr).validate_python(email)
+    except ValidationError as e:
+        raise SystemExit(f"Not a valid email address: {email} ({e.errors()[0]['msg']})")
+
+
 async def create(email: str, role: str, from_stdin: bool, display_name: str | None) -> None:
+    email = _valid_email(email)
     password = _read_password(from_stdin, email)
     async with AsyncSessionLocal() as session:
         if (await session.execute(select(User.id).where(User.email == email))).first():

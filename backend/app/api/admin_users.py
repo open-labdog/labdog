@@ -21,7 +21,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi_users.password import PasswordHelper
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,7 +38,9 @@ RoleName = Literal["admin", "operator", "viewer"]
 
 
 class AdminUserCreate(BaseModel):
-    email: str
+    #: Validated like registration: ``UserRead`` serialises ``email`` as
+    #: ``EmailStr``, so an address it rejects would 500 on every ``/me``.
+    email: EmailStr
     password: str
     role: RoleName | None = None
     display_name: str | None = Field(default=None, max_length=255)
@@ -50,7 +52,7 @@ class AdminUserCreate(BaseModel):
 
 
 class AdminUserUpdate(BaseModel):
-    email: str | None = None
+    email: EmailStr | None = None
     is_active: bool | None = None
     role: RoleName | None = None
     display_name: str | None = Field(default=None, max_length=255)
