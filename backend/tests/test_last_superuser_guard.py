@@ -79,3 +79,52 @@ async def test_the_fastapi_users_id_routes_are_gone(superuser_client, db):
     assert (await superuser_client.delete(f"/api/users/{me}")).status_code in (404, 405)
     # /me still works.
     assert (await superuser_client.get("/api/users/me")).status_code == 200
+
+
+async def _admin(db, *, password: bool) -> User:
+    user = User(
+        email=f"adm_{uuid.uuid4().hex[:8]}@example.com",
+        hashed_password=PasswordHelper().hash("TestPass1!") if password else None,
+        is_active=True,
+        role="admin",
+        is_superuser=True,
+        is_verified=True,
+    )
+    db.add(user)
+    await db.flush()
+    return user
+
+
+class TestTheLastPasswordAdmin:
+    """Directory-only admins (Enterprise SSO) cannot sign in when the
+    identity provider is down, so one admin with a password must stay."""
+
+    async def test_cannot_be_demoted_disabled_or_deleted(self, superuser_client, db):
+        me = await _me(superuser_client)
+        # The caller is the other password admin; make them directory-only
+        # so the target is the last one with a password.
+        target = await _admin(db, password=True)
+        caller = await db.get(User, me)
+        caller.hashed_password = None
+        await db.flush()
+
+        for req in (
+            superuser_client.patch(f"/api/admin/users/{target.id}", json={"role": "operator"}),
+            superuser_client.patch(f"/api/admin/users/{target.id}", json={"is_active": False}),
+            superuser_client.delete(f"/api/admin/users/{target.id}"),
+        ):
+            resp = await req
+            assert resp.status_code == 400, resp.text
+            assert "password" in resp.json()["detail"]
+
+    async def test_a_directory_only_admin_can_go(self, superuser_client, db):
+        sso_admin = await _admin(db, password=False)
+        resp = await superuser_client.patch(
+            f"/api/admin/users/{sso_admin.id}", json={"role": "viewer"}
+        )
+        assert resp.status_code == 200, resp.text
+
+    async def test_with_another_password_admin_it_is_allowed(self, superuser_client, db):
+        target = await _admin(db, password=True)
+        resp = await superuser_client.delete(f"/api/admin/users/{target.id}")
+        assert resp.status_code == 204, resp.text
