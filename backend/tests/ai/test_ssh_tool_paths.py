@@ -129,7 +129,7 @@ async def test_a_write_in_a_read_only_session_is_refused_without_connecting(db, 
         )
 
     reason = (
-        "Refused: this session is read-only, and LabDog cannot tell that this command only "
+        "Refused: this session is read-only, and unbork cannot tell that this command only "
         "reads ('systemctl' is read-only only on its own, and 'restart' makes it something "
         "else, so it is treated as a write)"
     )
@@ -174,7 +174,7 @@ async def test_a_host_without_a_key_is_reported(db):
     host = await create_host(db, hostname="keyless.test")
     result = await _call(db, {"host_id": host.id, "command": "uptime"})
     assert result == ToolResult(
-        "Host keyless.test has no SSH key assigned in LabDog.",
+        "Host keyless.test has no SSH key assigned in unbork.",
         ok=False,
         target_host_id=host.id,
         classification="read_only",
@@ -290,7 +290,7 @@ async def test_output_is_redacted_then_truncated(db, monkeypatch):
     result = await _call(db, {"host_id": host.id, "command": "uptime"}, env=env)
 
     assert "hunter2" not in result.content
-    assert "characters omitted by LabDog" in result.content
+    assert "characters omitted by unbork" in result.content
     expected_body = ssh_tool.redact(f"exit status: 0\n\nstdout:\n{stdout.strip()}")
     assert result.content == ssh_tool._truncate(expected_body)
     assert result.content.startswith(expected_body[:100])

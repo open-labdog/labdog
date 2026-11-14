@@ -28,7 +28,7 @@ test.describe("Discover scan", () => {
     await scan(page, [])
     await expect(
       page.getByText(
-        "No new SSH hosts found on this network. 2 addresses are already in LabDog and were not scanned: tester (10.10.10.164), 10.10.10.200.",
+        "No new SSH hosts found on this network. 2 addresses are already in unbork and were not scanned: tester (10.10.10.164), 10.10.10.200.",
       ),
     ).toBeVisible()
   })
@@ -36,6 +36,6 @@ test.describe("Discover scan", () => {
   test("a result with new hosts counts the ones left out", async ({ page }) => {
     await scan(page, [{ ip: "10.10.10.50", hostname: null, ssh_status: "open" }])
     await expect(page.getByText("10.10.10.50")).toBeVisible()
-    await expect(page.getByText("2 already in LabDog, not scanned")).toBeVisible()
+    await expect(page.getByText("2 already in unbork, not scanned")).toBeVisible()
   })
 })

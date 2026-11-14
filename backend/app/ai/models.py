@@ -461,7 +461,7 @@ ROLLBACK_STATUSES = ("running", "succeeded", "failed", "refused")
 
 
 class AlertEvent(Base):
-    """One alert as LabDog received it, deduplicated by fingerprint.
+    """One alert as unbork received it, deduplicated by fingerprint.
 
     **Dedup is on ``(fingerprint, starts_at)``, not fingerprint alone.**
     Alertmanager's fingerprint is a hash of the alert's label set, so the
@@ -475,9 +475,9 @@ class AlertEvent(Base):
     other for free: whichever arrives second finds the row and increments
     ``dedup_count`` instead of creating a duplicate. They are deliberately
     both enabled — the webhook is immediate, the poller catches what a
-    LabDog that was down or unreachable would otherwise never hear about.
+    unbork that was down or unreachable would otherwise never hear about.
 
-    ``labels`` and ``annotations`` are stored whole. LabDog reads a few
+    ``labels`` and ``annotations`` are stored whole. unbork reads a few
     keys out of them (``alertname``, ``severity``, ``instance``), but an
     investigation is only as good as its context, and discarding the rest
     to fit a schema would throw away exactly the detail that makes one
@@ -579,7 +579,7 @@ class AIRollback(Base):
 
     ``hostname`` is copied in rather than read through ``host_id``: the
     record of having rolled a machine back should survive the host being
-    deleted from LabDog, the same reasoning as ``ActionHostRun.hostname``.
+    deleted from unbork, the same reasoning as ``ActionHostRun.hostname``.
     """
 
     __tablename__ = "ai_rollbacks"

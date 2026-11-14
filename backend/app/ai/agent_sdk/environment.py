@@ -9,7 +9,7 @@ The Agent SDK does not work that way. ``ClaudeAgentOptions.env`` is an
 **overlay**: the SDK composes the child environment as
 ``{**os.environ, **options.env}``. A variable removed from the overlay is
 therefore not removed at all — the inherited value survives, and it is
-precisely the value that outranks the token LabDog configured.
+precisely the value that outranks the token unbork configured.
 
 Deleting is not available, so the variables are set to empty instead.
 Verified against the real binary: with a bogus ``ANTHROPIC_API_KEY``
@@ -92,7 +92,7 @@ def build_sdk_env(
     shadow it from disk.
 
     Without one: return an empty overlay. That case is an operator who
-    authenticated Claude Code on the host and wants LabDog to use that
+    authenticated Claude Code on the host and wants unbork to use that
     login, so neither the credential variables nor the config directory may
     be disturbed — pinning the config directory here would break exactly
     the setup it is meant to serve.

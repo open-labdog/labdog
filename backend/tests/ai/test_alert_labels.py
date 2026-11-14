@@ -371,7 +371,7 @@ class TestHandleAlert:
         await _handle(event.id)
         tried = ai_policy.await_args.kwargs["already_tried"]
         assert tried.startswith(
-            "The alert's labdog_action label asked for the action linux-upgrade, but LabDog "
+            "The alert's labdog_action label asked for the action linux-upgrade, but unbork "
             "did not run it:"
         )
         sent.assert_not_called()
@@ -484,7 +484,7 @@ class TestTheAIWantsALabel:
 
         assert decided["outcome"] == "started"
         session = await db.get(AISession, decided["session_id"])
-        assert session.mission.endswith("## What LabDog already tried\n\nexample ran as run #7.")
+        assert session.mission.endswith("## What unbork already tried\n\nexample ran as run #7.")
 
 
 # ---------------------------------------------------------------------------

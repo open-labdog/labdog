@@ -6,7 +6,7 @@ A pack is a directory shaped like::
         pack.yml                    # optional — pack metadata
         actions/
             <key>/                  # one directory per action
-                manifest.yml        # LabDog action manifest
+                manifest.yml        # unbork action manifest
                 playbook.yml        # the Ansible playbook
                 roles/              # optional — action-private roles
                     <role-name>/
@@ -45,7 +45,7 @@ class Pack:
     ``action_registry_snapshot`` tables."""
 
     trusted: bool = False
-    """Whether this pack may ship content that runs on the LabDog host.
+    """Whether this pack may ship content that runs on the unbork host.
 
     Defaults false so a caller that forgets to pass it gets the safe
     answer."""
@@ -168,7 +168,7 @@ def _refuse_sibling_references(playbook: Path, manifest_path: Path, field: str) 
     if refs:
         raise PlaybookImportsSiblings(
             f"Manifest {manifest_path} references {field} {playbook.name!r}, which imports "
-            f"{', '.join(repr(r) for r in refs)} from its own directory. LabDog copies only "
+            f"{', '.join(repr(r) for r in refs)} from its own directory. unbork copies only "
             "the playbook file into a run, so those files would be missing. Move them into "
             "a role under actions/<key>/roles/ or the pack's roles/, and import the role."
         )

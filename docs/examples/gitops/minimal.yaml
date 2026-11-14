@@ -3,7 +3,7 @@
 # The smallest valid GitOps YAML. Useful as a starting template.
 #
 # What this does on import:
-#   * Declares the group name (must match the group in LabDog).
+#   * Declares the group name (must match the group in unbork).
 #   * Adds exactly one firewall rule: allow SSH from the internal network.
 #   * Because no other sections are present, every other module
 #     (services, packages, users, cron_jobs, hosts_entries) is WIPED

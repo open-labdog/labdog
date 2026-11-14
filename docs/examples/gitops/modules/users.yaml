@@ -11,7 +11,7 @@
 # YAML nor in the DB logs a WARNING but does not fail the import -- the
 # group may pre-exist on the host.
 #
-# LabDog never stores or manages user passwords.  Authentication for
+# unbork never stores or manages user passwords.  Authentication for
 # managed users happens exclusively via `authorized_keys` (SSH).
 #
 # Protected system users/groups are rejected at parse time.  For users:
@@ -140,7 +140,7 @@ users:
     priority: 100
 
   # -------------------------------------------------------------
-  # Remove a user (explicit `absent`).  LabDog will delete their
+  # Remove a user (explicit `absent`).  unbork will delete their
   # account + home directory on next sync.
   # -------------------------------------------------------------
   - username: carol

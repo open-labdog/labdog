@@ -21,14 +21,14 @@ Every connected repository — used for GitOps and for git-backed
 |--------|-------------|
 | name | Label for this repository |
 | url | Clone URL (SSH or HTTPS) |
-| branch | The branch LabDog tracks |
+| branch | The branch unbork tracks |
 | auth | `ssh`, `https` (token) or `public` |
 | groups | How many groups are bound to it |
 | last sync | *synced* or *never synced*, with how long ago. A repository with no recent pushes is not flagged. It counts the last GitOps import and the last successful sync of any action pack on the repository, whichever is newer |
 
 Each row has **webhooks**, **edit** and **delete**; the row itself opens the
 repository's page. **webhooks** shows the three push URLs —
-`/api/webhooks/github`, `/gitlab` and `/gitea` on your LabDog address — each
+`/api/webhooks/github`, `/gitlab` and `/gitea` on your unbork address — each
 with a copy button.
 
 ### Connecting a repository
@@ -36,11 +36,11 @@ with a copy button.
 **Add Repository** opens a three-step wizard at `/git-repos/new`:
 
 1. **Connect** — a name, the URL (SSH or HTTPS; the auth fields follow the
-   scheme), the branch, and credentials: the SSH key LabDog uses as a
+   scheme), the branch, and credentials: the SSH key unbork uses as a
    deploy key for an SSH URL, or a personal access token for HTTPS (blank
    for a public repository). An optional **webhook secret** lets a push be
    verified. Connecting clones the repository.
-2. **Scan** — LabDog looks through the clone for action packs and GitOps
+2. **Scan** — unbork looks through the clone for action packs and GitOps
    files. **Cancel & remove repo** backs out.
 3. **Review & activate** — two lists of checkbox rows:
    - **gitops files** — each file that declares a group (`group: web`), to
@@ -58,7 +58,7 @@ with a copy button.
 
 **Path:** `/git-repos/{id}`
 
-- **connection** — branch, auth, the last commit LabDog fetched and when
+- **connection** — branch, auth, the last commit unbork fetched and when
   (by a GitOps import or a pack sync, whichever is newer), and whether a
   webhook secret is set.
 - **gitops-bound groups** — each group, the file it imports from, and its
@@ -78,11 +78,11 @@ files.
 
 Set the payload URL to the matching URL from **webhooks**, the content type
 to `application/json`, and the secret to the repository's webhook secret.
-The secret is required: LabDog refuses a push to a repository that has
+The secret is required: unbork refuses a push to a repository that has
 none, and the Git remotes card under Settings › Integrations counts how
 many repositories have one. Only `push` events are needed.
 
-> **A webhook is required.** Imports run only when a push arrives — LabDog
+> **A webhook is required.** Imports run only when a push arrives — unbork
 > does not poll the repository, and there is no import button. A group
 > bound to a repository without a webhook keeps the state it had.
 

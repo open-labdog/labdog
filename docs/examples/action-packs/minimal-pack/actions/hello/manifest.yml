@@ -2,7 +2,7 @@ key: hello
 name: Say hello
 description: >-
   Prints a greeting on the target host. Useful as a smoke test that
-  LabDog can reach the host over SSH and that the pack is loaded
+  unbork can reach the host over SSH and that the pack is loaded
   correctly.
 icon: Zap
 playbook: playbook.yml

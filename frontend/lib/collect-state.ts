@@ -14,8 +14,8 @@ export interface CollectStateResult {
   /** The finished run, or null if it was still going when polling gave
    *  up. The work carries on either way. */
   run: ActionRun | null
-  /** Non-fatal notices the collection reported, e.g. a competing LabDog
-   *  ruleset left in the firewall backend LabDog is not managing. */
+  /** Non-fatal notices the collection reported, e.g. a competing unbork
+   *  ruleset left in the firewall backend unbork is not managing. */
   notices: string[]
 }
 

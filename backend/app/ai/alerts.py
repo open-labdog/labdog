@@ -1,7 +1,7 @@
 """Alert intake: one shape, two producers, one row per firing.
 
-A Grafana contact point can POST straight to LabDog, and LabDog can poll
-an Alertmanager API. The webhook is immediate but only works while LabDog
+A Grafana contact point can POST straight to unbork, and unbork can poll
+an Alertmanager API. The webhook is immediate but only works while unbork
 is reachable from Grafana; the poller is slower but catches what happened
 while it was not — a restart, a partition, a container down for an
 upgrade. Where both apply they are meant to run together, and alerts
@@ -65,7 +65,7 @@ HOST_LABELS = ("nodename", "hostname", "host", "node", "instance")
 
 @dataclass
 class NormalizedAlert:
-    """One alert, in the shape LabDog stores regardless of who sent it."""
+    """One alert, in the shape unbork stores regardless of who sent it."""
 
     fingerprint: str
     alertname: str
@@ -99,7 +99,7 @@ def compute_fingerprint(labels: dict[str, Any]) -> str:
 
     Only used when the sender did not supply one. Alertmanager's own
     fingerprint is computed this way — from the sorted label set — so a
-    LabDog-computed one is stable across restarts and identical for the
+    unbork-computed one is stable across restarts and identical for the
     same alert, which is all the dedup key needs. It will not *match*
     Alertmanager's, so a single alert arriving once with a fingerprint and
     once without would deduplicate as two; in practice both producers
@@ -203,10 +203,10 @@ def from_alertmanager_v2(alerts: list[Any]) -> list[NormalizedAlert]:
 
 
 async def resolve_host(db: AsyncSession, labels: dict[str, Any]) -> int | None:
-    """Best-effort match from alert labels to a LabDog host.
+    """Best-effort match from alert labels to an unbork host.
 
     Returns ``None`` freely. Plenty of alerts are about a service, a
-    cluster, or a job rather than a machine LabDog manages, and guessing
+    cluster, or a job rather than a machine unbork manages, and guessing
     would put an investigation on the wrong host — worse than putting it
     on none, because the session would then read a healthy host and
     report that nothing is wrong.

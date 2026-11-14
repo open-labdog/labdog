@@ -170,7 +170,7 @@ def estimate_cost(provider: AIProvider, prompt_tokens: int, completion_tokens: i
     """Cost of one turn, from the operator-entered per-million rates.
 
     Unit-agnostic: the result is in whatever currency the operator
-    entered the rates in. No conversion happens anywhere in LabDog.
+    entered the rates in. No conversion happens anywhere in unbork.
     """
     return (
         prompt_tokens * provider.input_cost_per_mtok

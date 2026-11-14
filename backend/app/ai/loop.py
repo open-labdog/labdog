@@ -51,7 +51,7 @@ from app.settings_service import get_setting_typed
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """\
-You are LabDog's system administration agent, operating on a personal \
+You are unbork's system administration agent, operating on a personal \
 homelab. You investigate and report on Linux hosts through the tools you \
 have been given.
 
@@ -106,7 +106,7 @@ _ROOT_CHANGES_NOTE = (
 
 AUTONOMY_NOTES = {
     "read_only": (
-        "You may only run commands that read state. LabDog checks each command "
+        "You may only run commands that read state. unbork checks each command "
         "against a list of commands and subcommands known to only read, and "
         "refuses anything it cannot confirm, saying which forms of that command "
         "it would accept. Command substitution ($(...) or backticks) is always "
@@ -114,7 +114,7 @@ AUTONOMY_NOTES = {
     ),
     "approval": (
         "Commands that read state run immediately. Commands that would modify "
-        "the host, and any command LabDog cannot confirm only reads, require "
+        "the host, and any command unbork cannot confirm only reads, require "
         "the operator's approval first. "
         f"{_ROOT_CHANGES_NOTE}"
     ),
@@ -160,7 +160,7 @@ ALERT_LEVEL_NOTES = {
         "instead.\n"
         "- After a change, check that the condition the alert describes has "
         "cleared.\n"
-        "- LabDog checks the host itself a few minutes after you finish. If it "
+        "- unbork checks the host itself a few minutes after you finish. If it "
         "can no longer reach the host, or a new critical alert has fired on it, "
         "it restores the snapshot taken before your first change, undoing "
         "everything you did.\n"
@@ -529,7 +529,7 @@ class AgentLoop:
 
         full_auto reaches here with a write the operator never sees, so
         the rollback point has to be taken now rather than asked for
-        afterwards — and an unattended one waits for no host LabDog is
+        afterwards — and an unattended one waits for no host unbork is
         itself changing, which is checked first so a refusal costs no
         snapshot.
         """

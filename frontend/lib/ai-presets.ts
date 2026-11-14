@@ -5,13 +5,13 @@ import type { AIProviderType } from "@/lib/types"
  *
  * These are starting points, not a closed list — the Model field stays free
  * text, because a self-hosted server can serve anything and new models ship
- * faster than LabDog releases.
+ * faster than unbork releases.
  *
  * Rates are per million tokens and are filled in only where they are a
  * published, knowable number. For a self-hosted model the honest rate is
  * zero; for anything behind someone else's billing the honest answer is "look
  * it up", so those presets leave the fields alone rather than writing a figure
- * that will quietly go stale and then be trusted as if LabDog had checked it.
+ * that will quietly go stale and then be trusted as if unbork had checked it.
  */
 export interface ModelPreset {
   /** The model identifier sent to the provider. */

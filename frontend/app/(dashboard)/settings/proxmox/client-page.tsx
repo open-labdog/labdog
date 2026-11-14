@@ -34,7 +34,7 @@ const emptyForm: NodeFormState = {
 }
 
 /**
- * Proxmox — the hypervisors LabDog snapshots guests on before a
+ * Proxmox — the hypervisors unbork snapshots guests on before a
  * destructive action, and rolls back to when verification fails. Served
  * at `/hypervisors`; `/settings/proxmox` redirects there.
  */
@@ -201,7 +201,7 @@ export default function ProxmoxSettingsPage() {
             Proxmox <span className="mono num text-[12.5px] font-normal text-text-faint">{all.length}</span>
           </>
         }
-        sub="A connected node lets LabDog snapshot a guest before a destructive action and roll it back if verification fails. Guests are matched to hosts by discovering VM mappings."
+        sub="A connected node lets unbork snapshot a guest before a destructive action and roll it back if verification fails. Guests are matched to hosts by discovering VM mappings."
         actions={
           <>
             <button type="button" className="btn btn-sm" onClick={() => void handleDiscoverAll()} disabled={discovering || all.length === 0}>

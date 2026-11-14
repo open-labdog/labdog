@@ -5,14 +5,14 @@ before it sends them to the target. Every module generator places operator
 strings — cron commands, firewall rule comments inside the rendered
 ruleset, ``/etc/hosts`` lines, unit-file content, user shells — into task
 arguments, so a value containing a Jinja delimiter used to be evaluated on
-the LabDog host, as the LabDog service user, on the next sync or plan.
+the unbork host, as the unbork service user, on the next sync or plan.
 
 The boundary is the YAML text itself: any string scalar that contains a
 template delimiter is written with the ``!unsafe`` tag, which ansible-core
-honours and passes to the module verbatim. Only strings LabDog authored as
+honours and passes to the module verbatim. Only strings unbork authored as
 templates are exempt, and those must be marked with :class:`Template`.
 Making "unsafe" the default means a new operator-supplied field is covered
-without anyone remembering to wrap it; forgetting to mark a LabDog template
+without anyone remembering to wrap it; forgetting to mark an unbork template
 fails loudly (the expression reaches the host as literal text) instead of
 silently opening a code-execution path.
 
@@ -34,7 +34,7 @@ UNSAFE_TAG = "!unsafe"
 
 
 class Template(str):
-    """A LabDog-authored Jinja string that Ansible should evaluate.
+    """An unbork-authored Jinja string that Ansible should evaluate.
 
     Never wrap operator input in this. Every other string containing a
     template delimiter is emitted as ``!unsafe``.

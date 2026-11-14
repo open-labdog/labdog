@@ -38,7 +38,7 @@ export function PackFormDialog({
       }}
       footer={
         <>
-          <span className="tt mr-auto">LabDog looks for actions/*.manifest.yml</span>
+          <span className="tt mr-auto">unbork looks for actions/*.manifest.yml</span>
           <button type="button" className="btn" onClick={onClose}>
             Cancel
           </button>
@@ -89,7 +89,7 @@ export function PackFormDialog({
       )}
 
       {form.source_type === "local" && (
-        <Field label="filesystem path" htmlFor="pack-local-path" hint="absolute, on the LabDog host — read in place, nothing is cloned">
+        <Field label="filesystem path" htmlFor="pack-local-path" hint="absolute, on the unbork host — read in place, nothing is cloned">
           <input id="pack-local-path" className="inp mono" placeholder="/var/lib/labdog/my-pack" value={form.local_path} onChange={(e) => setF("local_path", e.target.value)} />
         </Field>
       )}
@@ -101,9 +101,9 @@ export function PackFormDialog({
       <label className="flex items-start gap-2 text-xs text-text">
         <input id="pack-trusted" type="checkbox" className="mt-0.5" checked={form.trusted} onChange={(e) => setF("trusted", e.target.checked)} />
         <span>
-          allow content that runs on the LabDog host
+          allow content that runs on the unbork host
           <span className="mt-0.5 block text-[11px] text-text-3">
-            Ansible plugin directories, and plays targeting <span className="mono">localhost</span>, execute on the LabDog server itself rather than on a managed host. A pack containing either is refused unless this
+            Ansible plugin directories, and plays targeting <span className="mono">localhost</span>, execute on the unbork server itself rather than on a managed host. A pack containing either is refused unless this
             is set. Leave it off unless you have read the pack and intend it.
           </span>
         </span>

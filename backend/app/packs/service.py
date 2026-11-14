@@ -126,7 +126,7 @@ async def sync_pack(
 
     For ``local`` packs this is a no-op on disk — it just verifies the
     configured path looks like a pack (exists + has ``actions/``) and
-    records that outcome. LabDog does not own or modify the directory.
+    records that outcome. unbork does not own or modify the directory.
     """
     if pack.source_type == PackSourceType.LOCAL:
         return await _verify_local_pack(db, pack, commit=commit)
@@ -282,7 +282,7 @@ async def scan_db_packs(db: AsyncSession) -> tuple[list[Pack], dict[int, str]]:
 def delete_checkout(pack_id: int) -> None:
     """Remove a git pack's managed checkout. Silent on missing; logs on error.
 
-    Never called for local packs — LabDog doesn't own the directory.
+    Never called for local packs — unbork doesn't own the directory.
 
     Synchronous. Callers on an event loop want
     :func:`delete_checkout_async`.
@@ -300,7 +300,7 @@ async def delete_checkout_async(pack_id: int) -> None:
     """:func:`delete_checkout`, off the event loop (BUG-71).
 
     An unlinked-file-at-a-time walk of a whole git checkout is bounded
-    by the repository's size rather than by anything LabDog controls,
+    by the repository's size rather than by anything unbork controls,
     and both callers are HTTP handlers in a single-worker process.
     """
     await asyncio.to_thread(delete_checkout, pack_id)

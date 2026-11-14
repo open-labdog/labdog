@@ -25,7 +25,7 @@ export function classifyAuthError(status: number | null): AuthErrorInfo {
   if (status === null || status === 502 || status === 504) {
     return {
       kind: "network",
-      title: "Cannot reach the LabDog backend",
+      title: "Cannot reach the unbork backend",
       body: "Check your reverse proxy or server status. If you're using Tailscale or a VPN, confirm you're connected.",
       fieldLevel: false,
     }
@@ -33,7 +33,7 @@ export function classifyAuthError(status: number | null): AuthErrorInfo {
   if (status === 503) {
     return {
       kind: "unavailable",
-      title: "LabDog is starting up",
+      title: "unbork is starting up",
       body: "The server or database is currently unavailable. Wait a moment and try again.",
       fieldLevel: false,
     }
@@ -42,7 +42,7 @@ export function classifyAuthError(status: number | null): AuthErrorInfo {
     return {
       kind: "server",
       title: "Server error",
-      body: "A server error occurred. Check your LabDog logs for details.",
+      body: "A server error occurred. Check your unbork logs for details.",
       fieldLevel: false,
     }
   }

@@ -47,7 +47,7 @@ export function ApplyConfirm({
         </>
       }
     >
-      <div className="text-[12.5px] leading-[1.6]">LabDog will queue one coalesced Ansible playbook per selected host. Hosts with an operation already running wait their turn in the per-host queue.</div>
+      <div className="text-[12.5px] leading-[1.6]">unbork will queue one coalesced Ansible playbook per selected host. Hosts with an operation already running wait their turn in the per-host queue.</div>
       <div className="flex flex-col gap-[7px]">
         {(
           [

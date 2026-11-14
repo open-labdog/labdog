@@ -4,7 +4,7 @@ Two entry points, deliberately separate:
 
 * ``poll_alertmanager`` — the fallback producer. Asks the default Mimir
   instance's Alertmanager API what is currently firing and records it.
-  Catches what happened while LabDog was unreachable, which the webhook
+  Catches what happened while unbork was unreachable, which the webhook
   by definition cannot. Only meaningful when alert rules live in Mimir's
   ruler; Grafana-managed rules go to Grafana's own Alertmanager and are
   invisible here. Off by default for that reason — see
@@ -69,7 +69,7 @@ async def start_investigation(db, event, provider, *, user=None, already_tried=N
     if already_tried:
         # Appended rather than templated: it is LabDog's own account of
         # what it did, not part of the operator's prompt.
-        mission = f"{mission}\n\n## What LabDog already tried\n\n{already_tried}"
+        mission = f"{mission}\n\n## What unbork already tried\n\n{already_tried}"
     autonomy = await resolve(db, event)
     session = AISession(
         provider_id=provider.id,
@@ -216,7 +216,7 @@ async def _poll() -> dict:
 
     Reuses the registered Grafana instances' auth and TLS settings rather
     than asking the operator for a second endpoint: the Alertmanager API
-    lives under the same Mimir deployment LabDog already queries. That is
+    lives under the same Mimir deployment unbork already queries. That is
     the default instance plus any instance a host resolves to through its
     own or its groups' assignment, so alerts for hosts on a non-default
     destination are not missed.

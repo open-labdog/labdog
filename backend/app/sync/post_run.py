@@ -1,7 +1,7 @@
 """Post-run sync helpers for the action runtime.
 
 When an action manifest declares ``post_run_sync: [<modules>]``,
-LabDog queues a normal per-host sync against the same host after
+unbork queues a normal per-host sync against the same host after
 the action succeeds, so labdog's desired state for those modules is
 re-enforced. The action runtime calls
 ``queue_post_run_sync`` from the success branches of

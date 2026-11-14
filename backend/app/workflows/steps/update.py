@@ -1,4 +1,4 @@
-"""System update step for LabDog update workflows.
+"""System update step for unbork update workflows.
 
 Runs the action-registry playbook on a remote host via the shared run_ansible()
 helper.  Rebooting is handled by the separate reboot.py step, so auto_reboot is

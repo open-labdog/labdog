@@ -7,7 +7,7 @@ a subprocess — and the supported way to do that is Anthropic's Claude
 Agent SDK, which is exactly the bidirectional stream-json transport this
 project was otherwise going to hand-roll.
 
-The consequence for LabDog's architecture is that **the SDK owns the
+The consequence for unbork's architecture is that **the SDK owns the
 loop**. This backend therefore cannot be an
 :class:`~app.ai.providers.base.LLMProvider`: it is never asked for one
 turn at a time, so it has no ``stream_turn`` to implement. It enters one
@@ -18,7 +18,7 @@ redactor with :class:`~app.ai.loop.AgentLoop`.
 
 Safety does not depend on which runner drives the session, because it
 lives inside the tools: classification, redaction, the target-host
-allowlist, and the audit rows all execute in LabDog's own code either
+allowlist, and the audit rows all execute in unbork's own code either
 way. The model reaches a host only through a tool we wrote.
 
 The SDK is an optional dependency — its wheel carries a large

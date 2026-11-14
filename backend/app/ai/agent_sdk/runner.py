@@ -5,7 +5,7 @@ peer rather than its subclass: the two agree on what a session *is* — the
 same rows, the same SSE events, the same caps and the same tools — and
 disagree entirely on who runs the loop. ``AgentLoop`` calls a provider one
 turn at a time and decides what happens next. Here the SDK owns that, and
-LabDog supplies the tools, the permission decisions, and the bookkeeping.
+unbork supplies the tools, the permission decisions, and the bookkeeping.
 
 That inversion is what makes subscription billing possible, and it costs
 the loop's natural place to put things. Three consequences are worth
@@ -115,7 +115,7 @@ async def _uninterruptible(coro: Any) -> Any:
     """Await ``coro`` to completion even if the caller is cancelled.
 
     For database writes a tool callback makes. The SDK cancels the
-    callback's task when LabDog interrupts it, and a cancellation that
+    callback's task when unbork interrupts it, and a cancellation that
     lands mid-flush or mid-commit leaves the shared session unusable. The
     work runs as its own task, so the cancellation reaches only the
     caller, which waits for the task and then re-raises it.
@@ -1025,7 +1025,7 @@ class AgentSDKRunner:
 
         Tolerant of shape: the SDK exposes ``session_id`` as an attribute
         on some system messages and only inside ``data`` on the generic
-        ones, and an id LabDog fails to record is a session it cannot
+        ones, and an id unbork fails to record is a session it cannot
         resume.
         """
         data = getattr(message, "data", None)
@@ -1070,7 +1070,7 @@ class AgentSDKRunner:
         booked from :func:`service.estimate_cost`, an estimate of money
         nobody spends, flagged ``cost_unknown`` for exactly that reason.
         So the one limit that can really end a ``claude_agent`` run was
-        the one LabDog never mentioned.
+        the one unbork never mentioned.
 
         What an operator saw instead depended on where the CLI gave up.
         With a result message, ``_stop_reason`` reported "the backend

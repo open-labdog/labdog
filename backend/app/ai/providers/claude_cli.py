@@ -1,12 +1,12 @@
 """Claude Code CLI backend.
 
 Runs the locally installed ``claude`` binary. Useful when the operator
-already has the CLI authenticated on the LabDog host and would rather not
+already has the CLI authenticated on the unbork host and would rather not
 manage a second API key.
 
-**LabDog owns every tool.** The CLI is invoked with its own tools
+**unbork owns every tool.** The CLI is invoked with its own tools
 disabled, so it can reason and answer but cannot touch the host itself —
-all host access goes through LabDog's classified, allowlisted,
+all host access goes through unbork's classified, allowlisted,
 audit-logged tool layer. That is the whole point of the safety model, and
 handing a second unaudited execution path to the same model would defeat
 it.
@@ -14,7 +14,7 @@ it.
 Two modes, chosen by probing the installed CLI once:
 
 - **tool mode** — ``--output-format stream-json --input-format stream-json``
-  lets LabDog feed tool results back over stdin across turns.
+  lets unbork feed tool results back over stdin across turns.
 - **single-shot** — one prompt in, text out. Used when the installed CLI
   is too old to round-trip tool results. The factory marks the provider
   ``supports_tools = False`` and the loop restricts it to reports and
@@ -97,7 +97,7 @@ DEFAULT_CONFIG_DIR = "/var/lib/labdog/claude-cli"
 #: bundles it — so a container hitting this is on a custom image or one
 #: built before the CLI was added, which is a different fix.
 NOT_FOUND_MESSAGE = (
-    f"The {CLI_BINARY!r} CLI was not found on PATH for the LabDog service user. "
+    f"The {CLI_BINARY!r} CLI was not found on PATH for the unbork service user. "
     "On a package install, install it system-wide (a per-user install under a "
     "home directory is not visible to the service). In a container, the official "
     "image bundles it, so check whether you are on a custom image or one built "
@@ -118,7 +118,7 @@ def build_cli_env(
     login cannot do the same thing from disk.
 
     Without one: pass the environment through untouched. That case is an
-    operator who authenticated the CLI on the host and wants LabDog to use
+    operator who authenticated the CLI on the host and wants unbork to use
     it, so neither the credential variables nor the config directory may be
     disturbed — isolating the config directory here would break exactly the
     setup it is meant to serve.

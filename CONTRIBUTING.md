@@ -1,6 +1,6 @@
-# Contributing to LabDog
+# Contributing to unbork
 
-Thanks for the interest. LabDog is AGPL-3.0-or-later; contributions
+Thanks for the interest. unbork is AGPL-3.0-or-later; contributions
 land under the same license (inbound = outbound).
 
 ## Reporting issues
@@ -15,12 +15,12 @@ land under the same license (inbound = outbound).
   [roadmap board](https://github.com/orgs/open-unbork/projects/1) for what's already planned and
   [`BUGS.md`](BUGS.md) for the open bug registry.
 
-LabDog deliberately does not aim to replace Puppet, Chef or Salt, do
+unbork deliberately does not aim to replace Puppet, Chef or Salt, do
 container orchestration (Kubernetes, Nomad), deploy applications (use
 CI/CD), or do monitoring and alerting (use Prometheus, Grafana, Loki).
 Sysctl/kernel parameter management and arbitrary file management are
 out of scope too; write an action pack if you need them. Adjacent
-tools do these better, and LabDog would rather integrate than
+tools do these better, and unbork would rather integrate than
 replace.
 
 ## Dev setup

@@ -69,7 +69,7 @@ class BoundedConnection:
     all, silently, on every tick.
 
     A wrapper rather than a `run_checked(conn, cmd, timeout)` helper that
-    thirty call sites must remember to use. Every connection LabDog opens
+    thirty call sites must remember to use. Every connection unbork opens
     comes from this module, so binding the deadline here covers the call
     sites that exist and the ones written later, and there is no way to
     opt out by forgetting. A caller that genuinely needs longer passes its
@@ -491,7 +491,7 @@ async def get_source_ip(conn: "BoundedConnection | asyncssh.SSHClientConnection"
 
 
 async def load_host_key(db: "AsyncSession", host: "Host") -> asyncssh.SSHKey | None:
-    """The private key LabDog authenticates to ``host`` with, decrypted.
+    """The private key unbork authenticates to ``host`` with, decrypted.
 
     ``None`` when the host has no key assigned, the key row is gone, or it
     cannot be decrypted or parsed — every caller treats those alike: there

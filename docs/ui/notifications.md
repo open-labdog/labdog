@@ -3,16 +3,16 @@
 **Path:** `/notifications` — Settings · Integrations · **Email**, or
 **Email notifications…** in the account menu behind your avatar.
 
-LabDog can email you when an alert fires, when the assistant is waiting
+unbork can email you when an alert fires, when the assistant is waiting
 for you to approve a change, when that request is about to expire or has
 expired, and when a full-auto alert investigation has changed a host. Each
 is opt-in, per person.
 
 Without it, an alert at three in the morning or a change parked waiting
-for a decision reaches nobody unless they happen to have LabDog open — and
+for a decision reaches nobody unless they happen to have unbork open — and
 an approval request nobody sees simply expires.
 
-The page has four parts: the mail server, LabDog's own address, your
+The page has four parts: the mail server, unbork's own address, your
 subscriptions, and a log of what was sent. A banner at the top says why
 nothing is being sent, while anything is missing.
 
@@ -40,11 +40,11 @@ mean retyping it.
 Gmail and Microsoft 365 want an app password rather than your account
 password, and STARTTLS on 587.
 
-### 2. LabDog's address
+### 2. unbork's address
 
 `notifications.public_url` — for example `https://labdog.example.com`.
 Every notification links back to the page it is about, and **nothing is
-sent while this is empty**. LabDog does not guess its own address from a
+sent while this is empty**. unbork does not guess its own address from a
 web request's `Host` header: most notifications are not triggered by a
 browser at all, and where one is, that header is whatever the client sent
 — a link built from it is a phishing link waiting for someone to choose
@@ -63,11 +63,11 @@ you sign in with.
 | **Approval requested** | The [assistant](assistant.md#approving-a-change) wants to change a host and has paused for a decision: the host, the exact command, its stated reason, why the classifier calls it a change, and when the request expires. |
 | **Approval about to expire** | A request is still undecided `notifications.approval_expiry_warning_hours` (default 2) before it expires. Once per request; `0` turns it off. |
 | **Approval expired** | Nobody decided in time; the session continued without the change. |
-| **Actions run by alerts** | Once LabDog has [judged](alerts.md#afterwards) a run an alert's `labdog_action` label started: whether the action fixed the alert, did not, or failed, and whether the alert was handed to the AI. |
-| **Automatic fixes** | Two messages per fix. First, when a [full-auto alert investigation](alerts.md#full-auto-safeguards) changed its host: each command it ran and whether it succeeded, the snapshot taken before each, and the opening of its report. Sent however the session ended — a session that restarted a service and then hit its time limit still restarted the service — and not sent when it changed nothing. Then, once LabDog has [checked the fix](alerts.md#checking-the-fix-and-rolling-back): whether it worked, did not, or made the host worse, and whether the host was rolled back. |
+| **Actions run by alerts** | Once unbork has [judged](alerts.md#afterwards) a run an alert's `labdog_action` label started: whether the action fixed the alert, did not, or failed, and whether the alert was handed to the AI. |
+| **Automatic fixes** | Two messages per fix. First, when a [full-auto alert investigation](alerts.md#full-auto-safeguards) changed its host: each command it ran and whether it succeeded, the snapshot taken before each, and the opening of its report. Sent however the session ended — a session that restarted a service and then hit its time limit still restarted the service — and not sent when it changed nothing. Then, once unbork has [checked the fix](alerts.md#checking-the-fix-and-rolling-back): whether it worked, did not, or made the host worse, and whether the host was rolled back. |
 
 **Nothing in an email can approve anything.** Approving happens in
-LabDog, signed in. A link that ran a root command would make your inbox a
+unbork, signed in. A link that ran a root command would make your inbox a
 credential.
 
 ---
@@ -88,14 +88,14 @@ subject.
 attempt the message is given up on. A server that refuses one recipient
 does not stop the others.
 
-Delivery is at least once: if LabDog is stopped between the server
-accepting a message and LabDog recording that, the message is sent again
+Delivery is at least once: if unbork is stopped between the server
+accepting a message and unbork recording that, the message is sent again
 on the next run. A duplicate is the better failure than a lost one.
 
-Text that came from outside LabDog — alert labels and annotations,
+Text that came from outside unbork — alert labels and annotations,
 commands the model proposed, its reasons, report text — passes through
 the same credential redaction as the assistant's transcript before it is
-put in an email, because an email is stored in places LabDog does not
+put in an email, because an email is stored in places unbork does not
 control.
 
 ## The log
@@ -115,7 +115,7 @@ Sent and failed records are kept for `logging.run_retention_days`
 
 | Setting | Default | Effect |
 |---|---|---|
-| `notifications.public_url` | empty | LabDog's address, for links. Required — see above. |
+| `notifications.public_url` | empty | unbork's address, for links. Required — see above. |
 | `notifications.approval_expiry_warning_hours` | `2` | How long before an approval request expires to warn about it (0 = never). |
 
 Both are edited on this page. The mail server itself is not an

@@ -54,9 +54,9 @@ export function ageLabel(iso: string | null | undefined): string {
 export const STALE_DAYS = 30
 
 /**
- * Hosts LabDog has not verified in 30+ days (or ever), oldest first: no
+ * Hosts unbork has not verified in 30+ days (or ever), oldest first: no
  * successful state collection, drift check or sync. The failure mode
- * nobody notices is a host LabDog has lost track of.
+ * nobody notices is a host unbork has lost track of.
  *
  * Not "not synced": a host that never drifts never needs a sync, so
  * measuring that marked every healthy host as neglected (BUG-99).

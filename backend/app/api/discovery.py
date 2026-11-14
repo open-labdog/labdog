@@ -132,7 +132,7 @@ async def add_discovered_hosts(
     _: User = Depends(require("discovery.run")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Bulk-add discovered hosts to LabDog."""
+    """Bulk-add discovered hosts to unbork."""
     # Validate request size
     if len(body.ips) > settings.discovery.max_bulk_add:
         raise HTTPException(

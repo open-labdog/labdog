@@ -27,7 +27,7 @@ interface Props {
  * friendlier summary; here there is no second form to disclose, so the
  * exact command stays the headline.)
  *
- * **The classifier's reason outranks the model's.** `reason` is why LabDog
+ * **The classifier's reason outranks the model's.** `reason` is why unbork
  * called this a write and is shown as the primary justification; `summary`
  * is the model's own stated purpose, shown after and labelled as its
  * claim. The model is the thing being authorised, so its account of its
@@ -125,7 +125,7 @@ export function ApprovalCard({ approval, hostName, onDecide, pending }: Props) {
 }
 
 const DECIDED_LABEL: Record<string, string> = {
-  approved: "Approved — LabDog ran this",
+  approved: "Approved — unbork ran this",
   rejected: "Rejected — not run",
   expired: "Expired — nobody decided, so it was not run",
 }

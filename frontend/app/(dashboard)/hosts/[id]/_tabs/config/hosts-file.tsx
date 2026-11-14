@@ -171,7 +171,7 @@ export function HostsFileTab({
         rows={rows}
         keyOf={(e) => `${e.source}-${e.source_id}-${e.ip_address}-${e.hostname}`}
         loading={isLoading}
-        empty="No hosts file entries, so LabDog leaves this host's /etc/hosts as it is. Add a host override or assign entries to a group."
+        empty="No hosts file entries, so unbork leaves this host's /etc/hosts as it is. Add a host override or assign entries to a group."
       />
 
       {dialogOpen && (

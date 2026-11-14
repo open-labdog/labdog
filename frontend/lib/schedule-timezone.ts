@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
 
 /**
- * The `scheduling.timezone` setting: the zone LabDog reads every schedule's
+ * The `scheduling.timezone` setting: the zone unbork reads every schedule's
  * cron expression in. Shares the settings page's query, so a change saved
  * there shows up here without a reload.
  */

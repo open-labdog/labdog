@@ -209,7 +209,7 @@ export function FirewallEditor({ groupId }: { groupId: number }) {
         keyOf={(r) => r.id}
         onRowClick={gitops ? undefined : openEdit}
         loading={isLoading}
-        empty="Nothing declared. Add rule declares this module for the group; LabDog always injects its own SSH allow so a plan cannot lock you out."
+        empty="Nothing declared. Add rule declares this module for the group; unbork always injects its own SSH allow so a plan cannot lock you out."
         footer={`evaluated top to bottom · ${allRules.filter((r) => r.action === "allow").length} allow · ${allRules.filter((r) => r.action !== "allow").length} deny/reject`}
       />
 

@@ -87,7 +87,7 @@ export default function NewHostPage() {
               <span className="text-xs text-text">
                 <span className="font-medium">Check this host for drift</span>
                 <span className="mt-0.5 block text-[11px] text-text-3">
-                  LabDog connects over SSH on a timer and reports where the host has diverged from its desired configuration. Read-only — it never changes the host. Turn this off per module later.
+                  unbork connects over SSH on a timer and reports where the host has diverged from its desired configuration. Read-only — it never changes the host. Turn this off per module later.
                 </span>
               </span>
             </label>

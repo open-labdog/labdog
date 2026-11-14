@@ -5,10 +5,10 @@ caller's transaction — inside a savepoint, so a failure here can never
 roll back the alert or approval that caused it — and returns. Sending is
 ``app.tasks.notifications``' job.
 
-Every value that came from outside LabDog's own code — alert labels and
+Every value that came from outside unbork's own code — alert labels and
 annotations, commands the model proposed, its stated reasons, report text
 — goes through :func:`clean` before it lands in a message. An email is
-stored in places LabDog does not control, so it gets the same credential
+stored in places unbork does not control, so it gets the same credential
 redaction the AI transcript does, and none of it can carry a control
 character into a mail client.
 """
@@ -36,7 +36,7 @@ from app.notifications.models import (
 
 logger = logging.getLogger(__name__)
 
-SUBJECT_PREFIX = "[LabDog]"
+SUBJECT_PREFIX = "[unbork]"
 
 # C0 control characters except tab and newline, and DEL.
 _CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
@@ -118,7 +118,7 @@ async def notify(
     of them should fail because a notification could not be queued — the
     savepoint keeps a failure here out of their transaction, and the log
     says what went wrong. An unknown ``event_type`` does raise: that is a
-    typo in LabDog's code, and a test should catch it, not a log line.
+    typo in unbork's code, and a test should catch it, not a log line.
     """
     if event_type not in EVENT_KEYS:
         raise ValueError(f"unknown notification event {event_type!r}")
@@ -211,7 +211,7 @@ async def notify_alert_fired(db: AsyncSession, event: Any) -> int:
         "",
         f"Alert:     {one_line(event.alertname)}",
         f"Severity:  {severity}",
-        f"Host:      {host or 'not a host LabDog manages'}",
+        f"Host:      {host or 'not a host unbork manages'}",
         f"Started:   {_when(event.starts_at)}",
     ]
     for key in ("summary", "description"):
@@ -220,7 +220,7 @@ async def notify_alert_fired(db: AsyncSession, event: Any) -> int:
     lines += ["", "Labels:", _pairs(event.labels, skip=("alertname",))]
     lines += [
         "",
-        "The labels and annotations above come from the monitoring system, not from LabDog.",
+        "The labels and annotations above come from the monitoring system, not from unbork.",
     ]
     return await notify(
         db,
@@ -253,7 +253,7 @@ async def _approval_lines(db: AsyncSession, approval: Any) -> tuple[list[str], s
 
 
 _DECIDE_IN_UI = (
-    "Approve or reject it in LabDog, signed in. Nothing in this email can approve it: "
+    "Approve or reject it in unbork, signed in. Nothing in this email can approve it: "
     "a link that ran a root command would make this inbox a credential."
 )
 
@@ -434,10 +434,10 @@ _REMEDIATION_LABEL = {
 async def notify_remediation_checked(
     db: AsyncSession, event: Any, session: Any | None, rollback: Any | None = None
 ) -> int:
-    """What LabDog found when it checked an automatic fix afterwards.
+    """What unbork found when it checked an automatic fix afterwards.
 
     The second message about one fix: :func:`notify_remediation` said what
-    ran, this says whether it worked and what LabDog did about it if not.
+    ran, this says whether it worked and what unbork did about it if not.
     Sent for every outcome — "it worked" is the message that lets someone
     stop wondering — under the same subscription, since anyone who wants
     to know a host was changed unattended wants to know how that went.
@@ -459,7 +459,7 @@ async def notify_remediation_checked(
         subject = f"Automatic fix on {host} was not checked: {alertname}"
 
     lines = [
-        f"LabDog checked the automatic fix for {alertname} on {host}.",
+        f"unbork checked the automatic fix for {alertname} on {host}.",
         "",
         f"Outcome:   {_REMEDIATION_LABEL.get(outcome, outcome)}",
     ]
@@ -511,7 +511,7 @@ async def notify_alert_action(
     host: str,
     handed_to_ai: bool,
 ) -> int:
-    """How an action an alert set off went, once LabDog has judged it.
+    """How an action an alert set off went, once unbork has judged it.
 
     One message per run, sent for every outcome: "it worked" is what lets
     someone stop wondering whether the 3 a.m. alert needs them.
@@ -531,7 +531,7 @@ async def notify_alert_action(
         subject = f"{name} failed on {host} for {alertname}"
 
     lines = [
-        f"{alertname} fired on {host}, and LabDog ran {name}, as its labdog_action label asked.",
+        f"{alertname} fired on {host}, and unbork ran {name}, as its labdog_action label asked.",
         "",
         f"Action:    {one_line(dispatch.action_key, 64)}",
         f"Run:       #{run.id}, {run.status}" if run is not None else "Run:       deleted",

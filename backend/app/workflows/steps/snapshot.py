@@ -106,9 +106,9 @@ async def create_snapshot(
     )
 
     description = (
-        f"LabDog pre-run snapshot for action '{action_key}' (run {run_id})"
+        f"unbork pre-run snapshot for action '{action_key}' (run {run_id})"
         if action_key
-        else f"LabDog pre-run snapshot (run {run_id})"
+        else f"unbork pre-run snapshot (run {run_id})"
     )
 
     def _notify(msg: str) -> None:

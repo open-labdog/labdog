@@ -1,7 +1,7 @@
 """The actions alerts may run, and what each alert did with one.
 
 An alert asks for an action with the Grafana label ``labdog_action``
-(:mod:`app.alerts.labels`). :class:`AlertAction` is LabDog's side of that
+(:mod:`app.alerts.labels`). :class:`AlertAction` is unbork's side of that
 decision: the list of actions an alert is allowed to start, each with the
 hosts it may run on and the parameters it runs with. The list starts
 empty, so a label does nothing until someone here says it may.

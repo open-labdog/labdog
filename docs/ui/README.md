@@ -1,6 +1,6 @@
-# LabDog UI Guide
+# unbork UI Guide
 
-A walkthrough of every page in the LabDog web interface.
+A walkthrough of every page in the unbork web interface.
 
 ## Navigation
 
@@ -21,7 +21,7 @@ host's page.
 
 **Settings** sits at the foot of the rail, with the theme toggle (dark is
 the default; `t` switches), the palette button and your account — the avatar
-opens a menu with your email, **Change password…**, **About LabDog** and
+opens a menu with your email, **Change password…**, **About unbork** and
 **Log out**. `[` collapses and reopens the pane. The `»` button at the
 very foot of the rail (or `]`) expands it to show each zone's name next to
 its icon; `«` (or `]` again) collapses it back to icons. Your browser
@@ -47,7 +47,7 @@ rest redirect to their new homes.
 | [Firewall Rules](groups.md#firewall-rules) | Inbound/outbound TCP/UDP/ICMP rules per group |
 | [Services](groups.md#services) | Systemd service desired state (running/stopped, enabled/disabled) |
 | [Packages](groups.md#packages) | System package install/remove/pin and custom repositories |
-| [Hosts File](groups.md#hosts-file) | /etc/hosts entries managed by LabDog |
+| [Hosts File](groups.md#hosts-file) | /etc/hosts entries managed by unbork |
 | [Cron Jobs](groups.md#cron-jobs) | Scheduled tasks deployed via Ansible |
 | [Linux Users](groups.md#linux-users) | User accounts, SSH keys, sudo rules |
 | [DNS Resolver](groups.md#dns-resolver) | Nameservers and search domains (resolv.conf / systemd-resolved / NetworkManager) |
@@ -56,7 +56,7 @@ rest redirect to their new homes.
 | [Schedules](scheduled-actions.md) | Cron-driven runs of any action — pack-supplied or built-in — against hosts, groups, or the entire fleet, with snapshot/rollback for destructive actions (a tab of Operations · Actions) |
 | [Alerts](alerts.md) | Alerts received from Grafana and Alertmanager, what their labels set off — an action, an AI investigation — and the actions alerts may run (Operations · Alerts) |
 | [Email](notifications.md) | `/notifications` — the mail server, and which alerts, approvals and automatic fixes each person is emailed about (Settings · Integrations) |
-| [Assistant](assistant.md) | Hand an investigation to a connected LLM; it works through LabDog's tools with every command classified, bounded, and audited |
+| [Assistant](assistant.md) | Hand an investigation to a connected LLM; it works through unbork's tools with every command classified, bounded, and audited |
 | [Actions](actions.md) | Ad-hoc playbook runs on hosts or groups; includes snapshot-wrapped destructive actions |
 | [Action Packs](actions.md#action-packs) | Configure the pack sources that supply actions (git, local) — a tab of Operations · Actions |
 | [SSH Keys](admin.md#ssh-keys) | Manage SSH private keys used to connect to hosts |

@@ -1,6 +1,6 @@
 """SEC-26: give the Ansible path the same host-key pinning as asyncssh.
 
-LabDog already does real TOFU-with-pinning on its asyncssh connections:
+unbork already does real TOFU-with-pinning on its asyncssh connections:
 the first successful connect records the server's public key on
 ``Host.ssh_host_key_entry`` and every later connect verifies against it
 (``app/ssh_utils.py``). The Ansible path did none of that. It set

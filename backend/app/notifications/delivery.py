@@ -44,7 +44,7 @@ _LABEL = {e.key: e.label.lower() for e in EVENT_TYPES}
 
 NO_URL_ERROR = (
     "notifications.public_url is not set, so this message's link cannot be built. "
-    "LabDog will not guess its own address from a request; set it on the Email page."
+    "unbork will not guess its own address from a request; set it on the Email page."
 )
 
 
@@ -60,26 +60,26 @@ def _link(base: str, path: str | None) -> str:
 def compose(rows: list[Notification], base_url: str) -> smtp.OutgoingEmail:
     """One email for everything due to one recipient."""
     recipient = rows[0].recipient
-    footer = "\n\n--\nYou get these because you subscribed to them in LabDog." + (
+    footer = "\n\n--\nYou get these because you subscribed to them in unbork." + (
         f"\nChange that at {base_url}/notifications" if base_url else ""
     )
 
     if len(rows) == 1:
         row = rows[0]
         link = _link(base_url, row.link_path)
-        body = row.body + (f"\n\nOpen in LabDog: {link}" if link else "") + footer
+        body = row.body + (f"\n\nOpen in unbork: {link}" if link else "") + footer
         return smtp.OutgoingEmail(to=recipient, subject=row.subject, body=body)
 
     counts = Counter(_LABEL.get(r.event_type, r.event_type) for r in rows)
     summary = ", ".join(f"{n} × {label}" for label, n in counts.most_common())
-    parts = [f"LabDog has {len(rows)} notifications for you: {summary}."]
+    parts = [f"unbork has {len(rows)} notifications for you: {summary}."]
     for index, row in enumerate(rows):
         title = row.subject.removeprefix(SUBJECT_PREFIX).strip()
         link = _link(base_url, row.link_path)
         if index < FULL_ITEMS:
             parts.append(f"{'=' * 60}\n{title}\n{'=' * 60}\n{row.body}")
             if link:
-                parts.append(f"Open in LabDog: {link}")
+                parts.append(f"Open in unbork: {link}")
         else:
             if index == FULL_ITEMS:
                 parts.append(f"{'=' * 60}\nAnd {len(rows) - FULL_ITEMS} more:")

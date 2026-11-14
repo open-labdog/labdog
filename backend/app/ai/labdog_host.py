@@ -1,38 +1,38 @@
-"""Which managed host LabDog itself runs on.
+"""Which managed host unbork itself runs on.
 
-An automatic fix on that host could take LabDog down with it, and rolling
+An automatic fix on that host could take unbork down with it, and rolling
 it back would be worse than the problem: Proxmox stops the VM to restore
-it, LabDog stops with it, nothing is left to start the VM again, and
-LabDog's own database goes back to the moment of the snapshot. So full
+it, unbork stops with it, nothing is left to start the VM again, and
+unbork's own database goes back to the moment of the snapshot. So full
 auto is refused there, and so is a rollback.
 
-LabDog cannot see its own address — inside a container it does not even
+unbork cannot see its own address — inside a container it does not even
 have the host's — but the hosts it manages can. Every probe records the
-address a host saw LabDog connect from (``Host.labdog_source_ip``), and
+address a host saw unbork connect from (``Host.labdog_source_ip``), and
 that gives the machine away in one of two ways — besides the plainest,
-the server address in LabDog's own configuration
+the server address in unbork's own configuration
 (``[security] labdog_server_ip``), when it has been set:
 
-* **Other hosts see LabDog coming from this host's address.** A container
+* **Other hosts see unbork coming from this host's address.** A container
   on a bridge network reaches other machines through its host's NAT, so
   they record the host's own IP. A typical Docker install is caught here,
   from the database alone.
-* **This host sees LabDog coming from one of its own addresses, or from
+* **This host sees unbork coming from one of its own addresses, or from
   inside a container bridge it hosts.** A native install, or a container
   with host networking, connects from the host's own IP; a bridged
   container connects from the bridge's subnet. Telling those apart from a
-  remote LabDog on the same LAN needs the host's interface list, so this
+  remote unbork on the same LAN needs the host's interface list, so this
   is read live, over SSH, and only when the first test found nothing.
 
 Neither catches a container on a macvlan network, which has an address of
 its own on the LAN: such an install looks like any other machine. The
-live test also cannot run against a host LabDog cannot reach — but then
+live test also cannot run against a host unbork cannot reach — but then
 the assistant cannot change that host either.
 
 **The live test's answer is kept for a while, per host and address.**
 Every full-auto decision asks it, and the alerts marked for full auto are
 often fired by hosts that are down, so an uncached test would make each
-decision wait out a connect timeout. Where LabDog runs changes with a
+decision wait out a connect timeout. Where unbork runs changes with a
 redeploy, not between two alerts; "could not ask" is kept for less, as
 the host may be back in minutes. The cache is per process, which is
 enough to spare a burst of alerts.
@@ -90,11 +90,11 @@ Address = tuple[str, ipaddress.IPv4Interface | ipaddress.IPv6Interface]
 
 
 async def seen_from(db: AsyncSession, host: Any) -> bool:
-    """The database test: does any host record LabDog as this host?
+    """The database test: does any host record unbork as this host?
 
     The configured ``[security] labdog_server_ip`` counts first. It is the
     address the firewall rules keep SSH open for, so an operator who set
-    it has already said which machine LabDog is on.
+    it has already said which machine unbork is on.
     """
     from app.config import settings
     from app.models.host import Host
@@ -157,7 +157,7 @@ async def ask_the_host(db: AsyncSession, host: Any) -> bool | None:
                 conn.run(PROBE_COMMAND, check=False), timeout=PROBE_TIMEOUT_SECONDS
             )
     except Exception as exc:
-        logger.info("labdog_host: could not ask %s where LabDog runs: %s", host.hostname, exc)
+        logger.info("labdog_host: could not ask %s where unbork runs: %s", host.hostname, exc)
         return None
     client, addresses = parse_probe(str(result.stdout or ""))
     if not client:
@@ -184,7 +184,7 @@ def forget() -> None:
 
 
 async def labdog_runs_on(db: AsyncSession, host: Any, *, ask: bool = True) -> bool:
-    """Whether LabDog runs on ``host``.
+    """Whether unbork runs on ``host``.
 
     ``ask=False`` skips the live test, for callers that cannot afford a
     connection — a page load — and accept the database's answer.

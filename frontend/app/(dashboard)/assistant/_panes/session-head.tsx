@@ -64,7 +64,7 @@ export function SessionHead({
             </span>
           </div>
         ) : selectedId === null ? (
-          "Ask the assistant to investigate your hosts. It works through LabDog's own tools, so every command it runs is classified and audited."
+          "Ask the assistant to investigate your hosts. It works through unbork's own tools, so every command it runs is classified and audited."
         ) : undefined
       }
       actions={

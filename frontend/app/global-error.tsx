@@ -5,7 +5,7 @@
  * globals.css nor the fonts can be relied on. Everything is inline, in
  * the dark theme's token values (globals.css `--bg`, `--surface`,
  * `--border-strong`, `--text`, `--text-2`, `--danger`, `--danger-soft`,
- * `--accent-fill`) so it still looks like LabDog.
+ * `--accent-fill`) so it still looks like unbork.
  */
 export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
@@ -53,7 +53,7 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
           >
             {error.message || "A critical error occurred."}
           </p>
-          <p style={{ margin: 0, color: "oklch(0.78 0.02 82)", fontSize: 12 }}>LabDog could not render at all. Reloading usually brings it back.</p>
+          <p style={{ margin: 0, color: "oklch(0.78 0.02 82)", fontSize: 12 }}>unbork could not render at all. Reloading usually brings it back.</p>
           <div>
             <button
               type="button"

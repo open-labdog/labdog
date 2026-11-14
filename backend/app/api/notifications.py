@@ -171,14 +171,14 @@ async def send_test_email(
     to = body.to or user.email
     message = smtp.OutgoingEmail(
         to=to,
-        subject="[LabDog] Test email",
+        subject="[unbork] Test email",
         body=(
-            f"This is a test from LabDog, sent by {user.email}.\n\n"
+            f"This is a test from unbork, sent by {user.email}.\n\n"
             + (
                 f"Links in notifications will point at {url}"
                 if url
                 else "notifications.public_url is not set, so real notifications will not "
-                "be sent yet: every one links back to LabDog."
+                "be sent yet: every one links back to unbork."
             )
         ),
     )
@@ -188,7 +188,7 @@ async def send_test_email(
         return EmailTestResponse(success=False, message=str(exc))
     if error:
         return EmailTestResponse(success=False, message=error)
-    note = "" if url else " Set LabDog's address below before relying on it."
+    note = "" if url else " Set unbork's address below before relying on it."
     return EmailTestResponse(success=True, message=f"Sent to {to}.{note}")
 
 

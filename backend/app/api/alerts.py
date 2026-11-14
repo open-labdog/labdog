@@ -5,7 +5,7 @@ session. The list and the manual investigate button were under
 ``/api/ai/alerts`` before 1.0.0; those paths still answer, deprecated, for
 the life of 1.x (:mod:`app.api.ai`).
 
-The list of actions alerts may run (``/api/alerts/actions``) is LabDog's
+The list of actions alerts may run (``/api/alerts/actions``) is unbork's
 half of the ``labdog_action`` label (:mod:`app.alerts.labels`): Grafana
 says which action an alert asks for, and only an action on this list, on
 a host inside its scope, is started. The list starts empty.
@@ -175,7 +175,7 @@ async def list_alerts(
     """Recent alerts, newest first.
 
     Ordered by ``created_at`` rather than ``starts_at``: an alert that
-    fired an hour ago but only reached LabDog now is new information to
+    fired an hour ago but only reached unbork now is new information to
     the operator reading this list, and burying it an hour down would
     hide exactly the case the poller exists to catch.
     """
@@ -199,7 +199,7 @@ async def investigate_alert_now(
     The manual path deliberately skips the labels — an operator asking
     for this has already made the judgement labdog_ai exists to automate —
     but not the kill switch, the provider check, or
-    the budget. Those are about whether LabDog *may* spend, which a
+    the budget. Those are about whether unbork *may* spend, which a
     button press does not change. Nor does it change the autonomy level,
     which comes from the same remediation policy as an automatic start.
     """
@@ -251,7 +251,7 @@ async def alert_intake_status(
     _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Whether alerts can reach LabDog, what they can set off, and when the
+    """Whether alerts can reach unbork, what they can set off, and when the
     last one arrived.
 
     The intake switch and the poll interval are settings; the webhook token

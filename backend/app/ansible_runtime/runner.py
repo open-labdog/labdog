@@ -102,7 +102,7 @@ def run_ansible(
             default ``ANSIBLE_ROLES_PATH`` env var and forwarded to
             ``ansible_runner.run()``.
         roles_paths: Optional list of additional roles directories (e.g. from
-            user packs) joined into ``ANSIBLE_ROLES_PATH``. LabDog's own
+            user packs) joined into ``ANSIBLE_ROLES_PATH``. unbork's own
             ``roles/`` dir next to this module is always included as a
             fallback.
         event_handler: Optional callback invoked by ansible-runner for every
@@ -208,7 +208,7 @@ _INHERITED_ENV_PREFIXES = ("ANSIBLE_", "LC_")
 
 
 def scrub_child_env(env: dict[str, str], inherited: dict[str, str] | None = None) -> dict[str, str]:
-    """The environment for an ansible-playbook child, minus LabDog's secrets.
+    """The environment for an ansible-playbook child, minus unbork's secrets.
 
     SEC-46: ansible-runner seeds the child from ``os.environ.copy()``, so
     every playbook process saw ``LABDOG_SECURITY__SECRET_KEY``,
@@ -216,7 +216,7 @@ def scrub_child_env(env: dict[str, str], inherited: dict[str, str] | None = None
     controller-side evaluation (SEC-39, SEC-40) could read them. The runner
     also writes the environment into the run's ``artifacts/…/command`` file.
 
-    Kept: whatever ansible-runner or LabDog set for this run (a value that
+    Kept: whatever ansible-runner or unbork set for this run (a value that
     differs from the inherited one), and inherited variables on an
     allowlist. ``LABDOG_*`` is always dropped, even if set for the run.
     """

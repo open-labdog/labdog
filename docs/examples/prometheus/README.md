@@ -1,15 +1,15 @@
-# Prometheus + Grafana examples for LabDog
+# Prometheus + Grafana examples for unbork
 
-Everything needed to scrape LabDog with an existing Prometheus stack and get
+Everything needed to scrape unbork with an existing Prometheus stack and get
 useful dashboards and alerts out of it.
 
 | File | What it is |
 |------|------------|
-| [`labdog.alloy`](labdog.alloy) | Grafana Alloy `prometheus.scrape` block for LabDog (plus commented `remote_write` and basic-auth variants) |
+| [`labdog.alloy`](labdog.alloy) | Grafana Alloy `prometheus.scrape` block for unbork (plus commented `remote_write` and basic-auth variants) |
 | [`labdog-alerts.yml`](labdog-alerts.yml) | 14 alerting rules — availability, fleet state, sync health, scheduling, certificate expiry |
 | [`labdog-overview.json`](labdog-overview.json) | Grafana dashboard — fleet, sync, drift, actions, certificates, exporter health |
 
-Scraping is shown with **Alloy**, since LabDog already deploys it to managed
+Scraping is shown with **Alloy**, since unbork already deploys it to managed
 hosts via the `alloy-install` action from `labdog-playbooks`. The endpoint serves standard
 Prometheus text exposition, so any compatible scraper works — point it at the
 same URL. The alert rules and dashboard are ordinary Prometheus/Grafana
@@ -18,8 +18,8 @@ artifacts and apply either way.
 Full reference: [`docs/metrics-export.md`](../../metrics-export.md).
 
 > **Not to be confused with** [`docs/ui/host-metrics.md`](../../ui/host-metrics.md), which
-> is the *opposite* direction — LabDog **reading** host CPU/memory/disk from a
-> Grafana Mimir backend. This directory is about Prometheus **reading LabDog**.
+> is the *opposite* direction — unbork **reading** host CPU/memory/disk from a
+> Grafana Mimir backend. This directory is about Prometheus **reading unbork**.
 
 ## 60-second quickstart
 
@@ -31,18 +31,18 @@ Full reference: [`docs/metrics-export.md`](../../metrics-export.md).
 enabled = true
 ```
 
-Restart LabDog, then verify:
+Restart unbork, then verify:
 
 ```bash
 curl -s http://labdog.example.com:8000/metrics | head -20
 ```
 
 You should get `text/plain` starting with `# HELP labdog_build_info ...`. If you
-get HTML back, the endpoint is disabled (LabDog returns 404, and your browser or
+get HTML back, the endpoint is disabled (unbork returns 404, and your browser or
 proxy may be serving the SPA fallback page instead).
 
 > ⚠️ **The endpoint is unauthenticated.** Restrict it at your reverse proxy
-> before exposing LabDog to an untrusted network — see
+> before exposing unbork to an untrusted network — see
 > [`docs/security-hardening.md`](../../security-hardening.md).
 
 **2. Point Alloy at it.** Copy the `prometheus.scrape` block from
@@ -68,17 +68,17 @@ your Prometheus datasource when prompted.
   re-export via **Share → Export → "Export for sharing externally"** and commit
   that — a real export is more faithful than hand-edited JSON.
 - The `Module` template variable is populated from
-  `label_values(labdog_host_modules, module)`, so it shows LabDog's **database**
+  `label_values(labdog_host_modules, module)`, so it shows unbork's **database**
   module vocabulary (`linux_user`, `hosts_file`) rather than the playbook
   spelling (`linux-users`, `hosts-file`). That is intentional — the metrics
   expose the column values verbatim.
-- **"Drift check ERRORS by module"** has no equivalent in the LabDog UI. A drift
+- **"Drift check ERRORS by module"** has no equivalent in the unbork UI. A drift
   check that *errors* is not the same as one that *finds drift* — the host's
   real state is unknown. The in-app drift trend counts only confirmed drift, so
   a check failing 100% of the time looks identical to a healthy one there. This
   panel is the reason to wire up alerting.
 - Percentile panels use `histogram_quantile(...rate(..._bucket[$__rate_interval]))`.
-  LabDog's histogram buckets are cumulative all-time counters sourced from
+  unbork's histogram buckets are cumulative all-time counters sourced from
   PostgreSQL; differentiating them with `rate()` is what turns them into a
   recent-window latency view.
 

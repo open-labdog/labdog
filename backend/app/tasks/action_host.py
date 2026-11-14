@@ -82,7 +82,7 @@ def run_action_host(self, action_run_id: int, host_run_id: int) -> dict:
 
 
 async def _stored_host_key_entry(host_id: int) -> str | None:
-    """The SSH host key LabDog has recorded for *host_id*, if any.
+    """The SSH host key unbork has recorded for *host_id*, if any.
 
     Read in its own session immediately before the inventory is built:
     preflight connects over asyncssh and records the key on first

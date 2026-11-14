@@ -1,6 +1,6 @@
 # Upgrade and Rollback
 
-How to move a running LabDog install from one release to the next,
+How to move a running unbork install from one release to the next,
 and how to back out cleanly when something goes wrong.
 
 > **Read this first:** an upgrade is a destructive operation on the
@@ -41,7 +41,7 @@ migrations. Read that section before upgrading.
 
 ### Versioning
 
-From 1.0.0, LabDog follows [Semantic Versioning](https://semver.org/).
+From 1.0.0, unbork follows [Semantic Versioning](https://semver.org/).
 A change that breaks existing use of anything below comes only in a new
 major version (2.0.0). A minor release (1.1.0) only adds to them, and a
 patch release (1.0.1) only fixes bugs.
@@ -54,7 +54,7 @@ patch release (1.0.1) only fixes bugs.
 - **The GitOps file format** (see [the GitOps guide](examples/gitops/README.md)).
 - **The webhook endpoints** under `/api/webhooks/` (`github`, `gitlab`,
   `gitea`, `grafana-alerts`) and the payloads they accept, including the
-  alert labels LabDog reads: `labdog_action`, `labdog_ai`,
+  alert labels unbork reads: `labdog_action`, `labdog_ai`,
   `labdog_ai_automate`, `labdog_host_id` and `labdog_hostname` (see
   [Alerts](ui/alerts.md#labels)).
 - **The Prometheus metrics**: names and labels in
@@ -75,7 +75,7 @@ that used to work, in any release. Its upgrade notes say so.
 ### Upgrading to 1.0.0
 
 Nothing is required unless you deleted the seeded `labdog-playbooks`
-pack or LabDog cannot reach GitHub (see 1), or alerts are investigated
+pack or unbork cannot reach GitHub (see 1), or alerts are investigated
 automatically today (see 6). Every new thing that can change a host or
 send mail is off until you turn it on: alert investigations stay
 read-only, no alert runs at full auto unless its Grafana rule is labelled
@@ -95,7 +95,7 @@ come only from the packs under **Operations → Actions → Packs**, so:
 - A pin that chose **bundled** is deleted by the upgrade. If another pack
   declares that key, it now wins on its own; if two or more do, the key
   needs a winner again and its actions can't run until you pick one.
-- If you deleted `labdog-playbooks`, or LabDog cannot reach GitHub, its
+- If you deleted `labdog-playbooks`, or unbork cannot reach GitHub, its
   actions disappear until a pack provides them. Re-add it (repository
   `https://github.com/open-unbork/unbork-playbooks`, branch `main`, then a
   pack on that repository), point the repository at a mirror, or add a
@@ -150,7 +150,7 @@ An alert labelled `labdog_ai_automate=true` runs at full auto, behind the
 safeguards in [Alerts](ui/alerts.md#full-auto-safeguards). Nobody adds
 that label by accident. But anyone who can post to the alert webhook with
 its token could send an alert carrying it, and the webhook token of at
-least 32 characters is the only lock. To keep that decision in LabDog,
+least 32 characters is the only lock. To keep that decision in unbork,
 turn on `ai.alert_full_auto_rules_enabled` and list in
 `ai.alert_full_auto_rules` what may act. An empty list allows nothing.
 
@@ -165,7 +165,7 @@ Smaller things to know:
   the 0.10.0 notes can go: the terminal accepts its own origin again. Keep
   the setting only for a frontend served from another host.
 - **Email** needs `notifications.public_url` set before it sends anything
-  with a link; LabDog will not build links from a request's `Host`
+  with a link; unbork will not build links from a request's `Host`
   header. See [Notifications](ui/notifications.md).
 - **Alerts moved** from the Assistant to **Operations → Alerts**, and
   their API from `/api/ai/alerts` to `/api/alerts`. The old paths still
@@ -174,7 +174,7 @@ Smaller things to know:
   `labdog_ai_automate=true`, or, with `ai.alert_full_auto_rules_enabled` on,
   those matching `ai.alert_full_auto_rules`. It needs Grafana's contact
   point to send resolved notifications, or every fix is judged as not
-  working, and it is refused on the machine LabDog itself runs on. See
+  working, and it is refused on the machine unbork itself runs on. See
   [Alerts](ui/alerts.md#which-alerts-may-run-at-full-auto).
 - **Setting `scheduling.timezone`** keeps every schedule's clock time and
   moves it to the new zone: `0 3 * * *` then runs at 03:00 there. Check
@@ -197,7 +197,7 @@ This release is mostly the fixes from a full security and correctness
 audit. Three things can bite an existing install; check them **before**
 restarting, not after.
 
-**1. LabDog now refuses to start on a weak `security.secret_key`.** It
+**1. unbork now refuses to start on a weak `security.secret_key`.** It
 must be at least 32 characters. `openssl rand -base64 32` — what the
 install docs already told you to run — gives 44. If your key is shorter,
 or is still the `CHANGE_ME` placeholder from the packaged
@@ -253,7 +253,7 @@ Smaller things to know:
 - **`/docs`, `/redoc` and `/openapi.json` are no longer served** unless
   `server.expose_docs = true`.
 - **Ansible runs and git syncs now verify SSH host keys** against the key
-  LabDog recorded on first contact. A host or git server that is
+  unbork recorded on first contact. A host or git server that is
   legitimately re-keyed will start failing with a mismatch; clear it with
   `POST /api/hosts/{id}/trust-host-key` or
   `POST /api/git-repos/{id}/trust-host-key`.
@@ -303,7 +303,7 @@ a container restart has nothing left to resume — and approvals can wait
 up to `ai.approval_expiry_hours` (default 24). See
 [production-deploy.md](production-deploy.md).
 
-**If LabDog connects to your hosts as a non-root user**, check that user
+**If unbork connects to your hosts as a non-root user**, check that user
 has passwordless sudo, or the verify step cannot read the system journal.
 It will report the reading as `UNAVAILABLE` rather than pretending the
 host was quiet, so nothing breaks silently — but you lose a signal.
@@ -366,11 +366,11 @@ mention:
 
 | `labdog.toml` key | Variable | What to check |
 |---|---|---|
-| `[security] secret_key` | `LABDOG_SECURITY__SECRET_KEY` | At least 32 characters, and not `CHANGE_ME`, `change-me-in-production` or `change-me-32-bytes-base64-encoded`. Otherwise LabDog does not start (0.10.0). |
+| `[security] secret_key` | `LABDOG_SECURITY__SECRET_KEY` | At least 32 characters, and not `CHANGE_ME`, `change-me-in-production` or `change-me-32-bytes-base64-encoded`. Otherwise unbork does not start (0.10.0). |
 | `[security] encryption_key` | `LABDOG_SECURITY__ENCRYPTION_KEY` | Set, not a placeholder, and the same key as before. A different key cannot decrypt the stored SSH keys. |
 | `[security] allowed_origins` | `LABDOG_SECURITY__ALLOWED_ORIGINS` | A JSON list of your real origins, without `"*"`, which is refused (0.10.0). From 1.0.0 it is only needed for a frontend served from another host. |
-| `[security] cookie_secure` | `LABDOG_SECURITY__COOKIE_SECURE` | `true` once LabDog is behind TLS. With `true`, a `localhost` origin in the list is refused. |
-| `[security] labdog_server_ip` | `LABDOG_SECURITY__LABDOG_SERVER_IP` | The address your hosts see LabDog connect from. The SSH lockout rule allows SSH from it when LabDog has not recorded a host's own view of that address. Unset, it is `127.0.0.1`, which no remote host's firewall will match. |
+| `[security] cookie_secure` | `LABDOG_SECURITY__COOKIE_SECURE` | `true` once unbork is behind TLS. With `true`, a `localhost` origin in the list is refused. |
+| `[security] labdog_server_ip` | `LABDOG_SECURITY__LABDOG_SERVER_IP` | The address your hosts see unbork connect from. The SSH lockout rule allows SSH from it when unbork has not recorded a host's own view of that address. Unset, it is `127.0.0.1`, which no remote host's firewall will match. |
 | `[logging] audit_retention_days`, `run_retention_days`, `drift_retention_days` | `LABDOG_LOGGING__AUDIT_RETENTION_DAYS` and so on | Never had an effect, and log a warning from 1.0.0. Set retention under **Settings › System** and delete the variables. |
 
 To list which `LABDOG_` variables the running container has, without
@@ -403,7 +403,7 @@ It gets the same variables as the real container and touches neither
 the database nor the running container. When the configuration is
 accepted it exits 0, printing at most a warning (such as the one about
 `cookie_secure` on plain HTTP). When it is not, it exits 1 with
-`FATAL: LabDog cannot start:` and one line per problem, the same
+`FATAL: unbork cannot start:` and one line per problem, the same
 message the real container would log in a restart loop. Fix those, run
 it again, and then go on with `up -d`.
 

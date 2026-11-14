@@ -89,7 +89,7 @@ async def _client_for(
 @tool(
     name="query_loki",
     description=(
-        "Run a LogQL query against the Loki instance registered in LabDog. "
+        "Run a LogQL query against the Loki instance registered in unbork. "
         "Prefer an aggregate first — for example "
         'sum by (level) (count_over_time({job="nginx"} [1h])) — to find out '
         "which service or level is interesting, then drill into raw lines "
@@ -120,7 +120,7 @@ async def _client_for(
             "host_id": {
                 "type": "integer",
                 "description": (
-                    "LabDog host id whose log destination to query. Hosts can "
+                    "unbork host id whose log destination to query. Hosts can "
                     "ship to different backends; omit it to use the session's "
                     "only target host, or else the default instance."
                 ),
@@ -158,7 +158,7 @@ async def _query_loki(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     client = await _client_for(ctx, "loki", _query_host(ctx, args))
     if client is None:
         return ToolResult(
-            "No Loki instance is registered for this host in LabDog, so logs are "
+            "No Loki instance is registered for this host in unbork, so logs are "
             "unavailable through this tool. Read them on the host instead, "
             "with a bounded journalctl command.",
             ok=False,

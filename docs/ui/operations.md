@@ -97,7 +97,7 @@ nothing. The Handling tab holds the actions alerts may run. See
 
 **Path:** `/audit`
 
-An append-only record of every change made through LabDog. Events come
+An append-only record of every change made through unbork. Events come
 from API writes (hosts, groups and every module's items, Git repositories,
 action packs, SSH keys, settings…), sync and action runs (ad-hoc and
 scheduled), discovery, assistant commands, and terminal sessions.

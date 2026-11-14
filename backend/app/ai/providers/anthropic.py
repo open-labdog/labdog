@@ -1,7 +1,7 @@
 """Anthropic Messages API backend.
 
 Speaks the Messages API over httpx rather than the ``anthropic`` SDK:
-LabDog supports three backends behind one streaming interface, and a
+unbork supports three backends behind one streaming interface, and a
 vendor SDK would only serve one of them while adding a dependency to a
 project whose CI gates on ``pip-audit``.
 

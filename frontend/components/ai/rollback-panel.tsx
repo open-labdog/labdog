@@ -19,7 +19,7 @@ const note = "text-[11px] leading-[1.5] text-text-3"
  * session's first change there. Restoring a later one would leave the
  * earlier changes in place and call them undone. Below the buttons, every
  * rollback of this session, including the automatic one after a fix made
- * its host worse, and the ones LabDog refused, with why.
+ * its host worse, and the ones unbork refused, with why.
  */
 export function RollbackPanel({ session }: { session: AISessionDetail }) {
   const queryClient = useQueryClient()
@@ -32,7 +32,7 @@ export function RollbackPanel({ session }: { session: AISessionDetail }) {
       toast.success(`Rolling ${rollback.hostname} back to ${rollback.snapshot_name}. It restarts, which takes a few minutes.`)
     },
     onError: (err: unknown) => {
-      // A refusal says exactly why — LabDog runs there, a sync is working
+      // A refusal says exactly why — unbork runs there, a sync is working
       // on it, the snapshot has expired — so it is passed on verbatim.
       toast.error(err instanceof ApiError || err instanceof Error ? err.message : "Could not roll back")
     },
@@ -92,7 +92,7 @@ export function RollbackPanel({ session }: { session: AISessionDetail }) {
           asking
             ? `Proxmox restores ${asking.snapshot_name}, taken ${asking.snapshot_taken_at ? formatTimestamp(asking.snapshot_taken_at) : "before the first change"}. ` +
               "The machine restarts, and everything written on it since then is lost — not only this session's changes. " +
-              "LabDog then marks the host out of sync."
+              "unbork then marks the host out of sync."
             : ""
         }
         confirmLabel="Roll back"

@@ -1,6 +1,6 @@
 """SEC-30: a session generation, so that logging out means something.
 
-LabDog's auth cookie is a stateless JWT. Logging out cleared the cookie
+unbork's auth cookie is a stateless JWT. Logging out cleared the cookie
 in the browser and did nothing else, so a cookie somebody had already
 copied — from a shared machine, a proxy log, an XSS payload — stayed
 valid for the rest of ``session_lifetime_seconds``, 24 hours by default.

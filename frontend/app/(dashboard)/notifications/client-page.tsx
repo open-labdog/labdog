@@ -64,7 +64,7 @@ function payload(f: FormState) {
 }
 
 /**
- * Email — the mail server, LabDog's own address for links, what the
+ * Email — the mail server, unbork's own address for links, what the
  * signed-in user wants to hear about, and what was actually sent. One
  * page, because "why didn't I get an email?" can be answered by any of
  * the four and nobody should have to visit four places to find out which.
@@ -83,7 +83,7 @@ export default function NotificationsPage() {
   const missing: string[] = []
   if (email && !email.enabled) missing.push("email is switched off")
   if (email && (!email.host || !email.from_address)) missing.push("no mail server is set")
-  if (!publicUrl) missing.push("LabDog's address (notifications.public_url) is not set, and every notification links back to it")
+  if (!publicUrl) missing.push("unbork's address (notifications.public_url) is not set, and every notification links back to it")
 
   return (
     <>

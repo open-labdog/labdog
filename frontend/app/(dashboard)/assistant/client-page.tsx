@@ -329,7 +329,7 @@ export default function AssistantPage() {
         open={list.confirmBulkDelete}
         onOpenChange={list.setConfirmBulkDelete}
         title={`Delete ${plural(picked.size, "session")}`}
-        description="Delete these sessions and their transcripts? Recorded spend is kept in the usage totals. Any that LabDog still needs are kept and named: one still running, a full-auto alert fix the remediation safeguards still count, or one whose snapshot is still on the hypervisor."
+        description="Delete these sessions and their transcripts? Recorded spend is kept in the usage totals. Any that unbork still needs are kept and named: one still running, a full-auto alert fix the remediation safeguards still count, or one whose snapshot is still on the hypervisor."
         confirmLabel="Delete"
         variant="destructive"
         loading={bulk.isPending}

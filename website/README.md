@@ -1,4 +1,4 @@
-# LabDog docs site
+# unbork docs site
 
 Docusaurus wrapper around the [`docs/`](../docs) tree. The docs content
 lives at the repo root — this directory only holds the tooling (config,

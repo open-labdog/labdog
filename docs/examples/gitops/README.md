@@ -1,13 +1,13 @@
-# LabDog GitOps — Complete Guide
+# unbork GitOps — Complete Guide
 
-LabDog can pull a Linux host group's entire configuration from a git
-repository. On every push to the repo (via webhook), LabDog clones the
+unbork can pull a Linux host group's entire configuration from a git
+repository. On every push to the repo (via webhook), unbork clones the
 repo, reads the YAML file associated with each gitops-enabled group, imports
 the changes into its database under an advisory lock, and triggers the
 downstream Ansible sync to the hosts. The UI refuses mutations on
 gitops-managed groups so git remains the single source of truth.
 
-Every configuration module LabDog supports can be declared in one YAML
+Every configuration module unbork supports can be declared in one YAML
 file per group:
 
 | Module | YAML section | Shape |
@@ -40,13 +40,13 @@ This directory contains:
 
 ## Quick start
 
-1. Create a git repository. Any LabDog-reachable provider works (GitHub,
+1. Create a git repository. Any unbork-reachable provider works (GitHub,
    GitLab, Gitea, a bare repo over SSH).
-2. In that repo, create a YAML file per group you want LabDog to manage.
+2. In that repo, create a YAML file per group you want unbork to manage.
    File layout is arbitrary — `groups/web-servers.yaml`, `prod.yaml`,
    whatever fits your conventions. The file path is configured per group in
-   LabDog.
-3. In LabDog:
+   unbork.
+3. In unbork:
    a. Go to **Settings › Integrations → Git remotes** and **Add
    Repository**: URL, branch, SSH key or HTTPS token auth, and a webhook
    secret. The wizard scans the repository and offers each file that
@@ -63,7 +63,7 @@ This directory contains:
       - Secret: the repository's webhook secret
       - Events: `push` only
 
-4. Push a commit. LabDog imports, diffs, and syncs.
+4. Push a commit. unbork imports, diffs, and syncs.
 
 There is no manual import: a bound group's file is read only when a push
 arrives, so the webhook is required. During setup, push an empty commit
@@ -106,12 +106,12 @@ optional:
 ```yaml
 group: web-servers          # required; the group's display name
 priority: 100               # optional; informational only — real priority
-                            # is set in LabDog's UI
+                            # is set in unbork's UI
 ```
 
 Unknown top-level keys are **silently ignored** (`extra="allow"` in the
 Pydantic model), so you can safely add new keys for upcoming modules without
-breaking older LabDog versions.
+breaking older unbork versions.
 
 ### Missing-section semantics
 
@@ -131,7 +131,7 @@ breaking older LabDog versions.
 | `discovery` *(global)* | wipe | wipe |
 
 Rule of thumb: omitting a list-shaped section means "I have no opinion and I
-want LabDog to have none either" — so it empties the group's rows. The
+want unbork to have none either" — so it empties the group's rows. The
 resolver section is the singleton exception: omitting it leaves the current
 DB state untouched, because a partially-populated resolver silently blanked
 on every YAML push is almost never what you want.
@@ -151,7 +151,7 @@ inline comments.
 ### System-owned rows
 
 Two modules (`firewall`, `hosts_entries`) have a concept of "system" rows
-— entries LabDog injects automatically (e.g. the SSH-lockout-prevention
+— entries unbork injects automatically (e.g. the SSH-lockout-prevention
 firewall rule, or `127.0.0.1 localhost`). GitOps imports **never touch
 system rows**. They are filtered out before the diff and preserved across
 every import.
@@ -225,7 +225,7 @@ message appears on the group's overview page. Common causes:
 | Unknown enum value | `YAML validation failed: …` | See the per-module examples |
 | Protected name | `'root' is a protected system user …` | Remove the entry |
 | Invalid cron schedule | `Invalid cron schedule for job '<name>': …` | `crontab -l` on any Linux box to sanity-check the expression |
-| Missing host ref | `Referenced host id 42 does not exist` | The host was deleted in LabDog; update the YAML |
+| Missing host ref | `Referenced host id 42 does not exist` | The host was deleted in unbork; update the YAML |
 | SSH key prefix unknown | `Invalid SSH key: must start with ssh-rsa \| ssh-ed25519 \| …` | Only public-key formats are accepted |
 | Too many nameservers | `Maximum 3 nameservers allowed …` | Resolver's `/etc/resolv.conf` limit |
 | Unknown `action_key` in `scheduled_actions:` | `Unknown action_key: '<value>'` | The action isn't in the registry — fix the typo, or add the pack supplying it |
@@ -274,7 +274,7 @@ a no-op. Two important normalisations:
 Conversely, these must round-trip **byte-identically** to stay stable:
 
 - **Cron `schedule` strings** are never normalised. `*/5` and `0/5` are
-  semantically equivalent but textually different — LabDog treats
+  semantically equivalent but textually different — unbork treats
   them as different schedules to avoid silent behaviour changes on
   re-import.
 - **Resolver `nameservers` and `search_domains` list order** is
@@ -299,9 +299,9 @@ my-infra-repo/
 └── README.md
 ```
 
-In LabDog, each group's **GitOps file path** points at its file
+In unbork, each group's **GitOps file path** points at its file
 (`groups/web-servers.yaml`, etc.). A push that touches any file triggers
-the webhook once; LabDog re-reads the file for every group linked to
+the webhook once; unbork re-reads the file for every group linked to
 the repo and only imports the ones whose file actually changed.
 
 ### Single repo, single group

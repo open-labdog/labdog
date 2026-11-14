@@ -102,7 +102,7 @@ export function AccountMenu({ compact }: { compact?: boolean }) {
             onClick={() => setOpen(false)}
             className="rounded-r px-2.5 py-1.5 text-left text-xs text-text-2 hover:bg-surface-2 hover:text-text hover:no-underline"
           >
-            About LabDog
+            About unbork
           </Link>
           <div className="mx-1 border-t border-line-faint" />
           <button

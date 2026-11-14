@@ -1,6 +1,6 @@
 """Manifest schema for action playbooks.
 
-An action manifest is a YAML file that declares how LabDog should present
+An action manifest is a YAML file that declares how unbork should present
 and invoke a playbook: display name, version, parameters, and safety flags.
 Manifests are the data-driven replacement for the hardcoded ``register()``
 calls that used to live in ``registry.py``.
@@ -38,9 +38,9 @@ class MetricsBackendMapping(BaseModel):
     from the Mimir and Loki instances that host resolves to (its own
     assignment, else its highest-priority group's, else the default; see
     ``app.grafana.service.resolve_host_instance``), so e.g.
-    labdog-playbooks' alloy-install action ships to the same backend LabDog
+    labdog-playbooks' alloy-install action ships to the same backend unbork
     queries for that host, without the operator re-typing URLs. Keeping the
-    var *names* in the manifest means LabDog core never hardcodes
+    var *names* in the manifest means unbork core never hardcodes
     ``alloy_*``.
     """
 
@@ -103,7 +103,7 @@ class ActionManifest(BaseModel):
         default=None,
         description=(
             "Optional filename (relative to the manifest's directory) of a "
-            "second playbook that decides post-run success. When set, LabDog "
+            "second playbook that decides post-run success. When set, unbork "
             "runs it after the main playbook against the same host with the "
             "same extra_vars and pack roles; the Ansible exit status becomes "
             "the verification result. Only fires for destructive actions on "
@@ -124,7 +124,7 @@ class ActionManifest(BaseModel):
         description=(
             "What the AI verify step should confirm after this action, in "
             "plain language -- e.g. 'Confirm the kernel booted the new "
-            "version and no service failed to start.' LabDog collects the "
+            "version and no service failed to start.' unbork collects the "
             "evidence (services, packages, load, disk, recent errors) and "
             "asks the configured AI provider to answer PASS, FAIL, or "
             "INCONCLUSIVE about it. Only fires for destructive actions on "
@@ -151,10 +151,10 @@ class ActionManifest(BaseModel):
     metrics_backend: MetricsBackendMapping | None = Field(
         default=None,
         description=(
-            "Opt-in mapping that lets LabDog inject each host's Grafana "
+            "Opt-in mapping that lets unbork inject each host's Grafana "
             "destinations (URLs, tenants, TLS verification) into this action's "
             "playbook vars at dispatch (e.g. labdog-playbooks' alloy-install "
-            "action). LabDog also "
+            "action). unbork also "
             "always injects labdog_host_id / labdog_hostname for per-host "
             "runs so shipped metrics are queryable back."
         ),

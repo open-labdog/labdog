@@ -2,7 +2,7 @@
 
 This document explains when and how to rotate `security.encryption_key` —
 the AES-256-GCM master key that protects every encrypted credential stored in
-LabDog's database (`ssh_keys.encrypted_private_key`,
+unbork's database (`ssh_keys.encrypted_private_key`,
 `proxmox_nodes.encrypted_token_secret`,
 `git_repositories.encrypted_https_token`,
 `git_repositories.encrypted_webhook_secret`,
@@ -124,7 +124,7 @@ encryption_key = "<new-base64-key>"
 docker compose up -d api celery
 ```
 
-Do **not** restart LabDog before updating the key — it will fail to decrypt
+Do **not** restart unbork before updating the key — it will fail to decrypt
 the credentials it just had re-encrypted.
 
 ### 5. Restart the API and Celery workers
@@ -139,7 +139,7 @@ systemctl start labdog labdog-celery
 
 ### 6. Verify correct operation
 
-- Log in to the LabDog web interface.
+- Log in to the unbork web interface.
 - Navigate to **Admin → SSH Keys** and confirm the list loads without error.
 - Trigger a sync against a known-reachable host and confirm it completes
   successfully.

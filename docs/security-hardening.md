@@ -1,6 +1,6 @@
 # Security Hardening
 
-Production checklist for a LabDog install. The defaults are tuned
+Production checklist for an unbork install. The defaults are tuned
 for development — they assume `localhost`, plaintext HTTP, and a
 single trusted user. Before exposing the service beyond the loopback
 interface, work through every section here.
@@ -19,7 +19,7 @@ interface, work through every section here.
 
 ## HTTPS termination
 
-LabDog does not terminate TLS itself in the default deployment.
+unbork does not terminate TLS itself in the default deployment.
 Bind the backend to `127.0.0.1:8000` and put a reverse proxy in
 front of it. **Do not expose `0.0.0.0:8000` directly on a public
 interface** — it has no TLS, no rate limiting at the network
@@ -73,7 +73,7 @@ server {
 }
 ```
 
-Tell LabDog to trust the proxy's `X-Forwarded-*` headers:
+Tell unbork to trust the proxy's `X-Forwarded-*` headers:
 
 ```toml
 [server]
@@ -113,7 +113,7 @@ labdog.example.com {
 
 ## Cookie and HTTPS settings
 
-Once HTTPS is in place, flip the two settings that opt LabDog into
+Once HTTPS is in place, flip the two settings that opt unbork into
 secure-cookie mode and HTTP→HTTPS redirects. Both are disabled by
 default (development uses plain HTTP).
 
@@ -132,7 +132,7 @@ LABDOG_SECURITY__COOKIE_SECURE=true
 LABDOG_TLS__FORCE_HTTPS=true
 ```
 
-When either flag is true, LabDog also emits an HSTS header
+When either flag is true, unbork also emits an HSTS header
 (`Strict-Transport-Security: max-age=63072000; includeSubDomains`).
 Don't enable it before the certificate works — HSTS pinning a
 broken setup locks browsers out for the max-age window.
@@ -144,7 +144,7 @@ high-sensitivity environments; users will re-login more often.
 
 ## Security headers and CSP
 
-LabDog's `SecurityHeadersMiddleware` (in `backend/app/main.py`)
+unbork's `SecurityHeadersMiddleware` (in `backend/app/main.py`)
 already emits a baseline:
 
 - `X-Content-Type-Options: nosniff`
@@ -185,7 +185,7 @@ the in-browser SSH terminal will fail to connect.
 
 ## Rate limiting
 
-LabDog applies application-level rate limits when `[rate_limit]
+unbork applies application-level rate limits when `[rate_limit]
 enabled = true` (the default in production configs). The limits are
 configurable:
 
@@ -234,7 +234,7 @@ was busiest. If you want a cap on it, apply one at the proxy.
 
 The Prometheus metrics endpoint is **disabled by default**. When you
 enable it with `[metrics] enabled = true`, it is served
-**unauthenticated** — Prometheus cannot use LabDog's cookie session
+**unauthenticated** — Prometheus cannot use unbork's cookie session
 auth, so the endpoint is deliberately open-and-opt-in rather than
 half-gated. See [Metrics export](metrics-export.md) for what it does
 and does not disclose (aggregate counts only: no hostnames, no IPs,
@@ -266,7 +266,7 @@ handle @metrics {
 
 If your scraper cannot be constrained by source address, put HTTP
 basic auth on that location at the proxy and configure `basic_auth`
-in the Prometheus scrape job — LabDog itself does not implement a
+in the Prometheus scrape job — unbork itself does not implement a
 scrape credential.
 
 Leaving the endpoint enabled but unrestricted on an untrusted network
@@ -336,7 +336,7 @@ one feature that runs commands nobody wrote in advance.
   transcript or reaches the provider.
 - **Two records, with different scopes.** Every SSH command that reaches
   execution writes an `AuditLog` row against the target host, alongside
-  every other change LabDog makes to it. Every *attempt* — including
+  every other change unbork makes to it. Every *attempt* — including
   calls blocked by the allowlist, refused by the classifier, parked for
   approval, or stopped by a failed snapshot — writes an `AIToolCall` row,
   visible in the session transcript. So the transcript shows what the
@@ -368,13 +368,13 @@ through the transcript's credential redaction first. See
 
 **Alert intake** adds one unauthenticated-by-default surface and closes
 it deliberately. `POST /api/webhooks/grafana-alerts` is reachable without
-a LabDog session — it has to be, since Grafana has none — so it is gated
+an unbork session — it has to be, since Grafana has none — so it is gated
 on a shared bearer token in `[alerts] webhook_token`. That lives in the
 config file rather than the settings table because `/api/settings` is
 readable by any signed-in user. **An unset token refuses everything**: a
 receiver that accepted anonymous POSTs would let anyone on the network
-write rows LabDog might then spend money investigating. Restrict the path
-at the reverse proxy as well if Grafana reaches LabDog over an untrusted
+write rows unbork might then spend money investigating. Restrict the path
+at the reverse proxy as well if Grafana reaches unbork over an untrusted
 network.
 
 An alert asks for what it wants with Grafana labels: `labdog_action`
@@ -393,9 +393,9 @@ on, one matching a rule in `ai.alert_full_auto_rules`. There is no
 instance-wide full auto for alerts. Under the label default, that label
 is all an alert needs. Whoever can edit alert rules in Grafana, or post
 to the webhook with its token, can mark any alert, on any host, for full
-auto. To keep that decision in LabDog, turn the rules on and list what
+auto. To keep that decision in unbork, turn the rules on and list what
 may act; an empty list allows nothing. Once any alert can reach full
-auto, the webhook is a way to make LabDog run commands as root, so the
+auto, the webhook is a way to make unbork run commands as root, so the
 safeguards matter:
 
 - **The webhook token is the trigger's only lock.** A webhook-delivered
@@ -411,7 +411,7 @@ safeguards matter:
   denylist is what actually holds, which is why it applies at every
   level.
 - **Blast radius is one host, a few changes.** Full auto needs the alert
-  to name a LabDog host and may touch only that host; it needs a snapshot
+  to name an unbork host and may touch only that host; it needs a snapshot
   first unless `ai.alert_full_auto_requires_snapshot` is off; and a
   per-alert cooldown, a per-host daily cap and lower command and time
   caps bound how much it can do before a person looks.
@@ -430,7 +430,7 @@ that before you decide.
 
 ## Database connection security
 
-If Postgres runs on a separate host from the LabDog backend,
+If Postgres runs on a separate host from the unbork backend,
 require TLS on the connection:
 
 ```toml
@@ -439,7 +439,7 @@ url = "postgresql+asyncpg://labdog:<password>@db.example.com:5432/labdog?ssl=req
 ```
 
 (asyncpg accepts `ssl=require` / `ssl=verify-full` as URL params.
-For `verify-full`, also configure a CA bundle on the LabDog host.)
+For `verify-full`, also configure a CA bundle on the unbork host.)
 
 Restrict the `labdog` DB role to the `labdog` schema and database;
 do not give it `SUPERUSER` or `CREATEDB`. A representative grant
@@ -469,7 +469,7 @@ guidance still applies.
 
 ## Encryption-key handling
 
-`security.encryption_key` decrypts every credential LabDog stores
+`security.encryption_key` decrypts every credential unbork stores
 (SSH private keys, Proxmox API tokens, git HTTPS PATs, Grafana bearer
 tokens). It is the single most sensitive piece of state in the system.
 

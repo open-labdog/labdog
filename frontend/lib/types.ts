@@ -112,7 +112,7 @@ export interface Host {
   labdog_source_ip: string | null
   drift_check_enabled: boolean; last_sync_at: string | null
   last_drift_check_at: string | null; ssh_key_id: number | null
-  /** When LabDog last confirmed the host's state: a successful collection,
+  /** When unbork last confirmed the host's state: a successful collection,
    *  drift check or sync. What "stale" is measured against. */
   last_verified_at: string | null
   group_ids: number[]
@@ -231,7 +231,7 @@ export interface GrafanaInstance {
   kind: GrafanaKind
   /** The ingest/remote-write URL the operator enters (handed to Alloy). */
   url: string
-  /** Derived, read-only: the base LabDog queries (host + kind prefix). */
+  /** Derived, read-only: the base unbork queries (host + kind prefix). */
   query_url: string
   org_id: string | null
   auth_type: GrafanaAuthType
@@ -294,7 +294,7 @@ export interface ActionPack {
   local_path: string | null
   enabled: boolean
   /**
-   * Whether this pack may ship content that runs on the LabDog host —
+   * Whether this pack may ship content that runs on the unbork host —
    * ansible plugin directories, or plays targeting localhost. An untrusted
    * pack containing either is refused by the loader and contributes no
    * actions. Not a privilege boundary: the model is flat and any user can
@@ -958,7 +958,7 @@ export interface HostRunEntry {
   error_message: string | null
   /** The first failed task's message from this host's log. */
   reason: string | null
-  /** Failed here, and LabDog restored the pre-run snapshot. */
+  /** Failed here, and unbork restored the pre-run snapshot. */
   rolled_back: boolean
 }
 
@@ -1361,14 +1361,14 @@ export interface AIUsageSummary {
   reason: string
   /**
    * ISO currency code for every amount above (the `ai.currency` setting).
-   * A display unit only — LabDog stores rates exactly as entered and never
+   * A display unit only — unbork stores rates exactly as entered and never
    * converts, so changing it relabels figures rather than recalculating them.
    */
   currency: string
   days: AIUsageDay[]
 }
 
-/** GET /api/alerts/intake — whether alerts can reach LabDog and what they
+/** GET /api/alerts/intake — whether alerts can reach unbork and what they
  *  can set off. The token itself is never returned, only whether it is
  *  set and long enough. */
 export interface AlertIntakeStatus {
@@ -1448,7 +1448,7 @@ export interface AlertDispatch {
   checked_at: string | null
 }
 
-/** One alert as LabDog received it, deduplicated by fingerprint. */
+/** One alert as unbork received it, deduplicated by fingerprint. */
 export interface AlertEvent {
   id: number
   source: "grafana_webhook" | "alertmanager_poll"
@@ -1460,7 +1460,7 @@ export interface AlertEvent {
   annotations: Record<string, unknown> | null
   starts_at: string
   ends_at: string | null
-  /** How many times LabDog has been told about this same firing. */
+  /** How many times unbork has been told about this same firing. */
   dedup_count: number
   host_id: number | null
   investigation_session_id: number | null
@@ -1506,7 +1506,7 @@ export interface AlertEvent {
   investigation_autonomy: AIAutonomyLevel | null
   investigation_autonomy_note: string | null
   /**
-   * Whether a full-auto fix worked, as LabDog checked it afterwards. Null
+   * Whether a full-auto fix worked, as unbork checked it afterwards. Null
    * when there was nothing to check — the session could not change the
    * host, or did not.
    */

@@ -1,6 +1,6 @@
 """Outbound notifications — starting with email.
 
-LabDog used to send nothing. An alert that fired at three in the morning,
+unbork used to send nothing. An alert that fired at three in the morning,
 or a change parked waiting for someone's approval, reached nobody unless
 they happened to have the UI open; a parked request then expired unseen.
 

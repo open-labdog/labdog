@@ -1,4 +1,4 @@
-"""Manages the Celery subprocesses of the main LabDog process.
+"""Manages the Celery subprocesses of the main unbork process.
 
 Three of them: two workers and the beat scheduler. Beat is separate for
 the reason given at :data:`BEAT`. The workers are two for the reason

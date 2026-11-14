@@ -19,9 +19,9 @@ can override another. Conditions:
 * ``NginxDown`` — the alert's name. Names may contain spaces.
 * ``key=value``, ``key!=value`` — a label of the alert (``!=`` also holds
   when the label is missing). Quote a value that contains a comma.
-* ``host:web-1``, ``host:web-1|web-2`` — the LabDog host the alert
+* ``host:web-1``, ``host:web-1|web-2`` — the unbork host the alert
   resolved to, by hostname.
-* ``group:web`` — a LabDog group that host is a member of.
+* ``group:web`` — an unbork group that host is a member of.
 * ``!host:…``, ``!group:…`` — the host is not one of these, or in none of
   these groups.
 
@@ -192,7 +192,7 @@ def validate_rules(raw: str) -> str:
 
 
 async def unknown_names(db: AsyncSession, rules: list[Rule]) -> list[str]:
-    """Hosts and groups the rules name that LabDog does not have.
+    """Hosts and groups the rules name that unbork does not have.
 
     Checked when the list is saved, and shown beside it afterwards: a
     rule naming a host that was renamed or deleted silently matches
@@ -218,7 +218,7 @@ async def unknown_names(db: AsyncSession, rules: list[Rule]) -> list[str]:
 
 
 async def check_rules(raw: str, db: AsyncSession) -> None:
-    """Refuse a list that names a host or group LabDog does not have."""
+    """Refuse a list that names a host or group unbork does not have."""
     problems = await unknown_names(db, parse_rules(raw))
     if problems:
         raise ValueError("; ".join(problems))

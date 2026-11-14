@@ -306,7 +306,7 @@ async def test_provider(
         logger.warning("ai: provider test failed for %s", provider_id, exc_info=True)
         return AIProviderTestResponse(
             ok=False,
-            message="The provider test failed unexpectedly. See the LabDog logs for details.",
+            message="The provider test failed unexpectedly. See the unbork logs for details.",
         )
     return AIProviderTestResponse(ok=True, message=message)
 
@@ -520,7 +520,7 @@ async def investigate_subject(
 ):
     """Start a read-only assistant session about a subject, or reopen one.
 
-    The subject names ids only; the mission is written here from LabDog's
+    The subject names ids only; the mission is written here from unbork's
     own rows. A second press reopens the earlier session (200) unless it
     failed, was stopped or archived, or is about a condition and more than
     a day old; a new one is 201. The gates are the run page's: the kill
@@ -763,7 +763,7 @@ async def roll_back_session(
     """Restore a host to the snapshot taken before this session changed it.
 
     Accepted, then carried out by a worker: Proxmox restores the disk, the
-    machine restarts, and LabDog waits for SSH to answer, which takes
+    machine restarts, and unbork waits for SSH to answer, which takes
     minutes. Everything that would refuse it is checked here first, so a
     refusal comes back at once rather than as a failed row later.
 
@@ -978,7 +978,7 @@ async def _with_snapshot_expectation(
     The operator is authorising a change to a host, and whether a rollback
     point will exist is part of what they are deciding — a host with no VM
     mapping gets no snapshot, and saying nothing would let them approve
-    under an assumption LabDog knows to be false.
+    under an assumption unbork knows to be false.
 
     Resolved in two queries rather than per row: the queue endpoint can
     return up to 200.

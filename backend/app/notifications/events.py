@@ -51,7 +51,7 @@ EVENT_TYPES: tuple[EventType, ...] = (
         "alert_remediation",
         "Automatic fixes",
         "A full-auto alert investigation changed a host — what ran, and the snapshot taken — "
-        "and, once LabDog has checked, whether it worked or was rolled back.",
+        "and, once unbork has checked, whether it worked or was rolled back.",
     ),
 )
 

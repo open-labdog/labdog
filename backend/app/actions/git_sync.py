@@ -1,12 +1,12 @@
 """Git-backed pack synchronisation.
 
-LabDog materialises configured action packs on disk by cloning or
+unbork materialises configured action packs on disk by cloning or
 pulling from a git remote. Works with public repos (no auth) as well
 as private repos via an optional ``GitAuthContext`` from
 ``app.packs.git_auth``.
 
 The contract is intentionally narrow: a given ``path`` is a checkout of a
-given ``repo`` at a given ``ref``. LabDog owns the directory — on mismatch
+given ``repo`` at a given ``ref``. unbork owns the directory — on mismatch
 it wipes and re-clones rather than trying to merge divergent state.
 """
 
@@ -93,7 +93,7 @@ def sync_remote_pack(
         ``git fetch`` + ``git reset --hard FETCH_HEAD`` (atomic enough —
         we don't expect local edits in this directory).
       * If *path* exists with a different origin (or isn't a repo) →
-        remove it and re-clone. LabDog owns the directory.
+        remove it and re-clone. unbork owns the directory.
     """
     path = path.resolve()
     path.parent.mkdir(parents=True, exist_ok=True)

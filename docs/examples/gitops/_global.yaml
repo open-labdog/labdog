@@ -8,7 +8,7 @@
 #
 # The file is OPTIONAL. If it doesn't exist, only per-group YAML files
 # are imported and global state is left alone -- exactly the behaviour
-# Phase 1 of LabDog GitOps had before this file existed.
+# Phase 1 of unbork GitOps had before this file existed.
 #
 # Per-group YAML files (e.g. `groups/web-servers.yaml`) and this file
 # import in the same webhook delivery, in their own transactions.

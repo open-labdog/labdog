@@ -9,7 +9,7 @@ the Operations zone.
 
 **Path:** `/ssh-keys` (Settings › Access)
 
-The credentials LabDog connects to managed hosts with. Each key carries the
+The credentials unbork connects to managed hosts with. Each key carries the
 user it logs in as. Private keys are encrypted at rest with AES-256-GCM
 using `LABDOG_SECURITY__ENCRYPTION_KEY`, and never shown again after upload.
 
@@ -17,7 +17,7 @@ using `LABDOG_SECURITY__ENCRYPTION_KEY`, and never shown again after upload.
 
 **Upload key…** asks for a name, the SSH user (default `root`), and the
 private key in PEM or OpenSSH format. Passphrase-protected keys are not
-supported — LabDog uses keys from background workers with nobody there to
+supported — unbork uses keys from background workers with nobody there to
 type a passphrase. Tick **set as the default key** to make it the one new
 hosts get.
 

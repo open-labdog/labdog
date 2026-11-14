@@ -1,4 +1,4 @@
-"""Orphaned snapshot detection and cleanup for LabDog update workflows.
+"""Orphaned snapshot detection and cleanup for unbork update workflows.
 
 Snapshots created by the workflow follow the naming convention::
 

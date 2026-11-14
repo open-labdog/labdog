@@ -34,7 +34,7 @@ _KNOWN_CAUSES: tuple[tuple[str, str], ...] = (
     ),
     (
         "No route to host",
-        "No route to target host — check network/firewall between LabDog and the host.",
+        "No route to target host — check network/firewall between unbork and the host.",
     ),
     (
         "Host key verification failed",

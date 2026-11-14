@@ -120,7 +120,7 @@ class ActionPackCreate(BaseModel):
 
     Git packs reference a configured ``GitRepository`` via
     ``git_repository_id`` and name a subpath via ``path``. Local packs
-    supply ``local_path`` — the absolute filesystem path on the LabDog
+    supply ``local_path`` — the absolute filesystem path on the unbork
     host. Credentials never appear here; they live on the
     ``GitRepository`` row managed on the Git Repos page.
     """
@@ -134,7 +134,7 @@ class ActionPackCreate(BaseModel):
     local_path: str | None = Field(default=None, max_length=512)
     enabled: bool = True
     trusted: bool = False
-    """Permit content that runs on the LabDog host rather than on a target.
+    """Permit content that runs on the unbork host rather than on a target.
 
     Defaults false: a pack added today is refused if it ships ansible
     plugin directories or plays aimed at localhost, and the refusal names
@@ -224,7 +224,7 @@ def _enforce_source_fields(model, *, creating: bool) -> None:
         if creating and not model.local_path:
             raise ValueError(
                 "source_type=local requires local_path (absolute filesystem "
-                "path on the LabDog host)"
+                "path on the unbork host)"
             )
         if model.git_repository_id is not None:
             raise ValueError("source_type=local does not accept git_repository_id")

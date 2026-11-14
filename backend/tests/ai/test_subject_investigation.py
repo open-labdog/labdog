@@ -2,7 +2,7 @@
 
 ``POST /api/ai/investigations`` takes a subject (a resource, a failed
 sync, a stuck operation, drift, a whole host), writes the mission from
-LabDog's own rows, and starts a read-only session, or reopens the one
+unbork's own rows, and starts a read-only session, or reopens the one
 already started about the same subject.
 """
 
@@ -257,7 +257,7 @@ class TestStuck:
         assert session.subject_key == f"stuck:sync:{job.id}"
         assert session.target_host_ids == [host.id]
         assert f"sync job #{job.id} of packages" in session.mission
-        assert "LabDog has no output from it yet." in session.mission
+        assert "unbork has no output from it yet." in session.mission
 
     async def test_a_stuck_action(self, db, ai_on, superuser_client, sent):
         hosts = [await create_host(db), await create_host(db)]

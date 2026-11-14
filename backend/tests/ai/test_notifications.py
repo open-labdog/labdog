@@ -2,7 +2,7 @@
 
 Nothing here talks to a mail server. Delivery is tested through
 ``drain``'s injectable ``send``, and the transport through a stand-in for
-``smtplib.SMTP`` — what matters is what LabDog asks the server to do and
+``smtplib.SMTP`` — what matters is what unbork asks the server to do and
 what it records when the server says no.
 """
 
@@ -152,7 +152,7 @@ class TestAddresses:
         body = EmailSettingsUpdate(enabled=True, host="mail", from_address="labdog@home.arpa")
         assert body.from_address == "labdog@home.arpa"
 
-    @pytest.mark.parametrize("bad", ["LabDog <labdog@x.org>", "labdog", "@x.org", "a b@x.org"])
+    @pytest.mark.parametrize("bad", ["unbork <labdog@x.org>", "labdog", "@x.org", "a b@x.org"])
     def test_anything_but_a_bare_address_is_refused(self, bad: str) -> None:
         with pytest.raises(ValueError):
             EmailSettingsUpdate(from_address=bad)
@@ -176,7 +176,7 @@ class TestNotify:
         assert await notify(db, "alert_fired", subject="s", body="b", link_path="/alerts") == 2
         rows = await _queued(db)
         assert {r.user_id for r in rows} == {a.id, b.id}
-        assert rows[0].subject == "[LabDog] s"
+        assert rows[0].subject == "[unbork] s"
         assert rows[0].status == "pending"
 
     async def test_nothing_is_queued_while_email_is_off(self, db) -> None:
@@ -228,7 +228,7 @@ class TestAlertFired:
 
         await notify_alert_fired(db, event)
         [row] = await _queued(db, "alert_fired")
-        assert row.subject == "[LabDog] Firing: NginxDown (critical) on web1.home.arpa"
+        assert row.subject == "[unbork] Firing: NginxDown (critical) on web1.home.arpa"
         assert "nginx is not answering" in row.body
         assert "instance: web1:9100" in row.body
         assert row.link_path == "/alerts"
@@ -294,7 +294,7 @@ class TestApprovals:
 
         [row] = await _queued(db, "approval_requested")
         assert row.subject == (
-            "[LabDog] Approval needed on web1.home.arpa: systemctl restart nginx"
+            "[unbork] Approval needed on web1.home.arpa: systemctl restart nginx"
         )
         assert "nginx is down" in row.body
         assert "Nothing in this email can approve it" in row.body
@@ -385,7 +385,7 @@ class TestRemediation:
 
         assert await notify_remediation(db, session) == 1
         [row] = await _queued(db, "alert_remediation")
-        assert row.subject == "[LabDog] Automatic fix on web1.home.arpa: NginxDown"
+        assert row.subject == "[unbork] Automatic fix on web1.home.arpa: NginxDown"
         assert "systemctl restart nginx" in row.body
         assert "labdog-ai-7-0001" in row.body
         assert "restarting it brought it back" in row.body
@@ -564,7 +564,7 @@ class TestDrain:
         assert stats == {"sent": 6, "failed": 0, "retrying": 0, "emails": 2}
         [batch] = server.batches
         mine = next(e for e in batch if e.to == a.email)
-        assert mine.subject == "[LabDog] 3 notifications: 3 × alert fired"
+        assert mine.subject == "[unbork] 3 notifications: 3 × alert fired"
         assert "body 0" in mine.body and "body 2" in mine.body
         assert f"{URL}/alerts" in mine.body
         assert all(r.status == "sent" and r.sent_at for r in await _queued(db))
@@ -574,7 +574,7 @@ class TestDrain:
         await notify(db, "alert_fired", subject="Firing: X", body="b", link_path="/alerts")
         server = FakeServer()
         await drain(db, send=server)
-        assert server.batches[0][0].subject == "[LabDog] Firing: X"
+        assert server.batches[0][0].subject == "[unbork] Firing: X"
 
     async def test_a_refusal_is_recorded_and_retried_later(self, db, smtp_on) -> None:
         await _user(db, events=("alert_fired",))
@@ -642,7 +642,7 @@ class TestDrain:
             Notification(
                 event_type="alert_fired",
                 recipient="a@x",
-                subject=f"[LabDog] Firing: A{n}",
+                subject=f"[unbork] Firing: A{n}",
                 body=f"body-{n}",
                 link_path="/alerts",
             )

@@ -34,7 +34,7 @@ def build_ssh_common_args(known_hosts_path: str | None = None) -> str:
 
     ``GlobalKnownHostsFile=/dev/null`` is set alongside the pinned file
     so the controller's system-wide known-hosts cannot vouch for a host
-    LabDog has its own opinion about.
+    unbork has its own opinion about.
 
     Failure-safe: any error reading the setting (no DB, tests) falls
     back to Ansible-compatible defaults — inventory generation must

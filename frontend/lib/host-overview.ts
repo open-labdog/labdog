@@ -171,7 +171,7 @@ export function useHostFeed(hostId: number, hostname: string, runs: HostRunEntry
   return { items, isLoading: jobs.isLoading }
 }
 
-/** Alerts LabDog tied to this host, newest first. */
+/** Alerts unbork tied to this host, newest first. */
 export function useHostAlerts(hostId: number) {
   return useQuery<AlertEvent[]>({
     queryKey: ["alerts", "host", hostId],

@@ -1,13 +1,13 @@
 # Metrics export (Prometheus)
 
-LabDog can expose its own fleet state and internal health in the Prometheus
+unbork can expose its own fleet state and internal health in the Prometheus
 text exposition format, so an existing Prometheus + Grafana stack can scrape it
 directly — no extra agent, no extra database.
 
 > **Two different features share the word "metrics".**
-> This page is about LabDog **exposing** metrics *outward* (Prometheus scrapes
-> LabDog).
-> For LabDog **reading** per-host CPU / memory / disk *inward* from a Grafana
+> This page is about unbork **exposing** metrics *outward* (Prometheus scrapes
+> unbork).
+> For unbork **reading** per-host CPU / memory / disk *inward* from a Grafana
 > Mimir backend, see [Live host metrics](ui/host-metrics.md).
 > They are independent — you can use either, both, or neither.
 
@@ -35,7 +35,7 @@ or via environment variable:
 LABDOG_METRICS__ENABLED=true
 ```
 
-Restart LabDog, then verify:
+Restart unbork, then verify:
 
 ```bash
 curl -i http://labdog.example.com:8000/metrics
@@ -51,7 +51,7 @@ panel (Settings › Integrations lists it too).
 ### Why this is a config-file setting and not a UI toggle
 
 Enabling the endpoint publishes fleet-wide information to the network without
-authentication. LabDog's in-app settings API is available to *any* signed-in
+authentication. unbork's in-app settings API is available to *any* signed-in
 user, not just superusers — so a UI toggle would let any authenticated session
 (or a hijacked one) expose that data with a single request. Requiring a config
 file edit and a restart keeps that decision at the same trust level as the
@@ -62,7 +62,7 @@ reverse-proxy configuration that protects it.
 ## Security
 
 **When enabled, `/metrics` is unauthenticated**, exactly like `GET /api/version`.
-Prometheus cannot use LabDog's cookie session auth, and shipping a
+Prometheus cannot use unbork's cookie session auth, and shipping a
 half-authenticated scrape path invites misconfiguration, so the endpoint is
 deliberately open-and-opt-in rather than gated.
 
@@ -88,8 +88,8 @@ your fleet.
 
 ## Scraping
 
-Examples use **Grafana Alloy**, since LabDog already deploys it to managed hosts
-via the `alloy-install` action from `labdog-playbooks` — scraping LabDog itself is usually one
+Examples use **Grafana Alloy**, since unbork already deploys it to managed hosts
+via the `alloy-install` action from `labdog-playbooks` — scraping unbork itself is usually one
 extra block. The endpoint serves standard Prometheus text exposition, so any
 compatible scraper works; point it at the same URL.
 
@@ -109,11 +109,11 @@ prometheus.scrape "labdog" {
 }
 ```
 
-LabDog aggregates from PostgreSQL on each scrape and caches the result for
+unbork aggregates from PostgreSQL on each scrape and caches the result for
 `cache_ttl_seconds` (default 15s). Scraping faster than the TTL is harmless but
 pointless; multiple scrapers hitting the same instance share the cache.
 
-`/metrics` is exempt from LabDog's global API rate limit. Without that
+`/metrics` is exempt from unbork's global API rate limit. Without that
 exemption a scraper arriving through the same reverse proxy as user traffic
 would share one rate-limit bucket with every logged-in operator, and monitoring
 would break exactly when the UI was busiest.
@@ -126,7 +126,7 @@ All metric names are prefixed `labdog_`. Counters carry `_total`, durations are
 in seconds, and absolute times are Unix timestamps in seconds.
 
 Label values for `module`, `action_key` and module-level `sync_status` are
-emitted **verbatim from the database**. Note LabDog carries two module
+emitted **verbatim from the database**. Note unbork carries two module
 spellings: the database uses `firewall`, `package`, `service`, `cron`,
 `linux_user`, `hosts_file`, `resolver` (and `bulk` for coalesced syncs), whereas
 playbooks use `packages`, `hosts-file`, `linux-users`. Metrics always use the
@@ -304,7 +304,7 @@ under-reports):
 
 `labdog_metrics_scrape_errors_total` is the deliberate exception: it counts
 failures inside the exporter itself, lives in process memory, and resets when
-LabDog restarts.
+unbork restarts.
 
 ### Why all-time counters still give you recent dashboards
 
@@ -375,9 +375,9 @@ action_key_label = false
 
 ## Troubleshooting
 
-**`/metrics` returns HTML.** The endpoint is disabled, so LabDog returns 404 and
+**`/metrics` returns HTML.** The endpoint is disabled, so unbork returns 404 and
 something upstream (or your browser) is showing the SPA fallback. Check
-`[metrics] enabled` and that LabDog was restarted after the change.
+`[metrics] enabled` and that unbork was restarted after the change.
 
 **`/metrics` returns `{"detail":"Metrics exporter is disabled"}`.** The endpoint
 is present and reachable; the feature is simply off. That JSON body (rather than
@@ -415,7 +415,7 @@ check, in this order:
    automatically — add it by hand. For Docker, put the variable in the
    container's `environment:` / `env_file:`, not the host shell.
 
-2. **Restart LabDog.** Settings are read once at process start, so changing the
+2. **Restart unbork.** Settings are read once at process start, so changing the
    environment or the config file has no effect on a running instance.
 
 ```bash
@@ -424,7 +424,7 @@ curl -i http://localhost:8000/metrics | head -3
 ```
 
 **Target is `DOWN` with a 429.** Rate limiting shouldn't apply to `/metrics`, so
-this usually means a proxy in front of LabDog is doing its own limiting.
+this usually means a proxy in front of unbork is doing its own limiting.
 
 **Collection is slow** (`labdog_metrics_scrape_duration_seconds` climbing).
 Collection runs roughly a dozen aggregate queries. Sustained slowness normally
@@ -455,15 +455,15 @@ means a large history table would benefit from pruning or an index; raising
   `_total` is invalid as an OpenMetrics counter, so the mapping has to be
   deliberate rather than a suffix swap.
 - **No `prometheus_client` dependency.** That library's value is its in-process
-  registry, which doesn't fit here: LabDog derives every value from SQL at
+  registry, which doesn't fit here: unbork derives every value from SQL at
   scrape time, and in-process counters would be *wrong* under multiple uvicorn
   workers (each worker would hold its own partial counts). The renderer is a
   small dependency-free module; the library is used in the test suite only, to
-  validate that LabDog's output parses correctly.
+  validate that unbork's output parses correctly.
 - **The snapshot cache is per-process, and that is correct** rather than merely
   tolerable — since every value is read from the database, all workers produce
   identical output regardless of which one serves a given scrape.
 - **Celery worker internals are not exported.** Inspecting live workers requires
   a broadcast RPC with a multi-second timeout, which has no place in a scrape
   path. Use [`celery-exporter`](https://github.com/danihodovic/celery-exporter)
-  alongside LabDog if you need queue and worker telemetry.
+  alongside unbork if you need queue and worker telemetry.

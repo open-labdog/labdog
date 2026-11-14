@@ -3,7 +3,7 @@
  * log can be coloured. Ansible runs with ANSIBLE_NOCOLOR=1 and older rows
  * have their ANSI stripped, so the colour has to come from the words: the
  * `ok:` / `changed:` / `fatal:` that open a line, the `TASK [...]` headers,
- * `PLAY RECAP`, and LabDog's own `[preflight]` / `[cleanup]` lines.
+ * `PLAY RECAP`, and unbork's own `[preflight]` / `[cleanup]` lines.
  *
  * Every line keeps its exact text. Joining `text` with "\n" gives back the
  * input, which is what lets the log colour the text without changing what
@@ -50,7 +50,7 @@ const RECAP = /^PLAY RECAP\b/
 const RECAP_ROW = /^\S.*\s:\s+ok=\d+/
 const ERROR = /^\[ERROR\]:/
 const WARNING = /^\[(DEPRECATION )?WARNING\]:/
-// LabDog's own step lines: "[preflight] host reachable", "[cleanup] …".
+// unbork's own step lines: "[preflight] host reachable", "[cleanup] …".
 const LABDOG = /^\[[a-z][a-z-]*\] /
 const LABDOG_FAILED = /\b(status=failed|passed=False|success=False|failed|unreachable)\b/
 // "=== Ansible output ===", and the per-host header the combined view adds.

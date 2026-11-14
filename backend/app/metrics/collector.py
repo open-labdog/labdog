@@ -304,7 +304,7 @@ def _ca_cert_families(ca_cert_expiries: list[tuple[str, str, datetime]]) -> list
 
     SEC-34: labelled by name only. The endpoint is unauthenticated, and
     everything else it emits is an aggregate count — a per-certificate
-    SHA-256 fingerprint is an inventory of the trust LabDog manages,
+    SHA-256 fingerprint is an inventory of the trust unbork manages,
     handed to anyone who can reach the scrape URL. The name is what an
     alert needs to say which certificate is expiring.
     """

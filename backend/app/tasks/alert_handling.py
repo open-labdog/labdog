@@ -75,7 +75,7 @@ async def _handle(alert_event_id: int) -> dict:
         elif dispatch is not None:
             already_tried = (
                 f"The alert's labdog_action label asked for the action {dispatch.action_key}, "
-                f"but LabDog did not run it: {_why_not(dispatch)}."
+                f"but unbork did not run it: {_why_not(dispatch)}."
             )
         await db.commit()
         summary = (
@@ -125,14 +125,14 @@ async def _tried(db, dispatch, run, event, verdict: str, host: str) -> str:  # n
     action = ACTION_REGISTRY.get(dispatch.action_key)
     name = f"{action.name} ({dispatch.action_key})" if action else dispatch.action_key
     if run is None:
-        return f"LabDog ran the action {name} on {host} for this alert, but its run is gone."
+        return f"unbork ran the action {name} on {host} for this alert, but its run is gone."
     if verdict == "not_effective":
         ending = "The run succeeded, but the alert is still firing."
     else:
         why = f": {run.error_message}" if run.error_message else ""
         ending = f"The run {run.status}{why}."
     text = [
-        f"When this alert fired, LabDog ran the action {name} on {host} as run #{run.id}, "
+        f"When this alert fired, unbork ran the action {name} on {host} as run #{run.id}, "
         f"as the alert's labdog_action label asked. {ending}"
     ]
     tail = await _output_tail(db, run.id)

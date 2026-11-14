@@ -27,7 +27,7 @@ const TYPE_HELP: Record<AIProviderType, string> = {
     "Any server speaking the OpenAI chat-completions API — Ollama, vLLM, LM Studio, OpenRouter, or OpenAI itself.",
   anthropic: "The Anthropic Messages API. Leave the base URL blank for the public API.",
   claude_agent:
-    "Claude Code driven through the Claude Agent SDK. Runs tools, so it can drive assistant sessions and scheduled checks — billed against your Claude subscription rather than per token. Bundled in the LabDog container image.",
+    "Claude Code driven through the Claude Agent SDK. Runs tools, so it can drive assistant sessions and scheduled checks — billed against your Claude subscription rather than per token. Bundled in the unbork container image.",
   claude_cli:
     "Claude Code called once per prompt. Cannot run tools. Kept for AI verify steps and written reports; for anything that has to look something up, pick the agentic option above.",
 }
@@ -81,7 +81,7 @@ const ALWAYS_SENDS_OFFSITE = new Set<AIProviderType>([
  *
  * Zero rates used to render as "free", which was wrong in two different
  * directions. A subscription-billed CLI provider is not free — it is
- * simply not metered per token, and LabDog cannot see the cost. A hosted
+ * simply not metered per token, and unbork cannot see the cost. A hosted
  * provider left at zero is not free either; nobody entered its rates, and
  * the consequence is that the money budgets silently do nothing.
  *
@@ -116,7 +116,7 @@ function isCredentialUrgent(provider: AIProvider): boolean {
  *
  * `claude setup-token` mints a one-year token, and Anthropic's own docs
  * warn that an unattended session "stops making progress once the
- * credential expires and can't recover". LabDog's scheduled checks are
+ * credential expires and can't recover". unbork's scheduled checks are
  * exactly that, so the first sign of an expired token would otherwise be
  * nightly runs quietly failing. API-key providers get nothing here —
  * their keys do not expire on a schedule.
@@ -556,13 +556,13 @@ export default function AIProvidersPage() {
               <Help summary="how to get one, and what it authenticates as">
                 Run <span className="mono">claude setup-token</span> on your own machine, not the server. It shows three strings in turn, and only the last belongs here: an <strong>authorize URL</strong> to open in a
                 browser, an <strong>authorization code</strong> to paste back at the terminal, then the <strong>token</strong> starting <span className="mono">sk-ant-oat01-</span> — that is this field. It is stored
-                encrypted, like every other LabDog credential, and injected only into the CLI process; leave it blank to use whatever the host is already logged in as. The token lasts a year, and sessions count against
+                encrypted, like every other unbork credential, and injected only into the CLI process; leave it blank to use whatever the host is already logged in as. The token lasts a year, and sessions count against
                 your plan&apos;s usage limits — the same ones the Claude apps use. Anthropic&apos;s terms allow this for your own use but not for routing other people&apos;s requests through your plan, so use your own
-                token on your own instance and pick an API-key provider if you run LabDog for someone else.
+                token on your own instance and pick an API-key provider if you run unbork for someone else.
                 <br />
                 <br />
                 Two things outrank this token in Claude Code&apos;s own credential order, and both would quietly authenticate as a different account: the <span className="mono">ANTHROPIC_API_KEY</span> and{" "}
-                <span className="mono">ANTHROPIC_AUTH_TOKEN</span> environment variables, and a login left on disk by <span className="mono">claude login</span>. When a token is set LabDog neutralises both variables and
+                <span className="mono">ANTHROPIC_AUTH_TOKEN</span> environment variables, and a login left on disk by <span className="mono">claude login</span>. When a token is set unbork neutralises both variables and
                 points Claude Code at its own config directory, so neither can shadow what you enter here.
               </Help>
             )}
@@ -605,7 +605,7 @@ export default function AIProvidersPage() {
                 </Field>
               </div>
               <div className="text-[11.5px] text-text-3">
-                Rates are entered by hand — an OpenAI-compatible endpoint cannot report its own pricing. Enter them in {currency}; LabDog never converts between currencies. Leave both at 0 for a self-hosted model,
+                Rates are entered by hand — an OpenAI-compatible endpoint cannot report its own pricing. Enter them in {currency}; unbork never converts between currencies. Leave both at 0 for a self-hosted model,
                 which makes the money budgets a no-op for it.
               </div>
               <div className="grid gap-[11px]" style={{ gridTemplateColumns: "1fr 1fr" }}>

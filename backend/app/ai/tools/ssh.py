@@ -56,7 +56,7 @@ def _truncate(text: str) -> str:
     omitted = len(text) - (half * 2)
     return (
         f"{text[:half]}\n\n"
-        f"... [{omitted} characters omitted by LabDog; narrow the command "
+        f"... [{omitted} characters omitted by unbork; narrow the command "
         f"with grep, head, or --since to see the rest] ...\n\n"
         f"{text[-half:]}"
     )
@@ -67,7 +67,7 @@ def _truncate(text: str) -> str:
     description=(
         "Run a shell command on a managed host over SSH and return its output. "
         "Read-only commands (status, logs, package queries, network state) run "
-        "immediately. A command LabDog cannot confirm only reads is treated as "
+        "immediately. A command unbork cannot confirm only reads is treated as "
         "a change, and refused unless this session's autonomy level permits "
         "changes; the refusal names the read-only forms of that command. A small "
         "set of destructive commands is always blocked. Prefer specific, bounded "
@@ -194,7 +194,7 @@ async def _host_and_client_key(
         return ToolResult(f"No host with id {host_id}.", ok=False, classification="read_only")
     if not host.ssh_key_id:
         return ToolResult(
-            f"Host {host.hostname} has no SSH key assigned in LabDog.",
+            f"Host {host.hostname} has no SSH key assigned in unbork.",
             ok=False,
             target_host_id=host_id,
             classification="read_only",

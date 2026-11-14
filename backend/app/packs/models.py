@@ -13,9 +13,9 @@ from app.models.base import Base
 class PackSourceType(enum.StrEnum):
     """Where the pack's manifests live.
 
-    ``git`` — the pack references a configured ``GitRepository``. LabDog
+    ``git`` — the pack references a configured ``GitRepository``. unbork
     clones that repo and reads the pack from a subpath within it.
-    ``local`` — the pack is a pre-existing directory on the LabDog host;
+    ``local`` — the pack is a pre-existing directory on the unbork host;
     nothing is cloned. Useful for BYO playbooks you maintain outside a
     git workflow, or for local dev against a working copy.
     """
@@ -25,7 +25,7 @@ class PackSourceType(enum.StrEnum):
 
 
 class ActionPack(Base):
-    """A pack of playbooks LabDog treats as a source of action
+    """A pack of playbooks unbork treats as a source of action
     definitions.
 
     For git packs: ``git_repository_id`` references a configured
@@ -35,7 +35,7 @@ class ActionPack(Base):
     here.
 
     For local packs: ``local_path`` is the absolute filesystem path on
-    the LabDog host where the pack directory lives. No clone, no auth.
+    the unbork host where the pack directory lives. No clone, no auth.
 
     Packs have **no inherent precedence**. When multiple packs declare
     the same action key, the operator pins the winner via an

@@ -527,7 +527,7 @@ class TestTheResumePrompt:
         text = approvals.resume_prompt(
             self._approval("approved"), ToolResult("exit status: 0", ok=True)
         )
-        assert "LabDog ran it" in text
+        assert "unbork ran it" in text
         assert "exit status: 0" in text
 
     def test_rejected_carries_the_reason(self) -> None:

@@ -274,7 +274,7 @@ export default function SSHKeysPage() {
         selected={sel}
         onSelect={setSel}
         loading={isLoading}
-        empty={all.length === 0 ? "No SSH keys yet. Upload one before adding hosts — it is how LabDog reaches them." : "No key matches."}
+        empty={all.length === 0 ? "No SSH keys yet. Upload one before adding hosts — it is how unbork reaches them." : "No key matches."}
       />
 
       <BulkBar n={sel.size} onClear={() => setSel(new Set())} status={bulkProgress ? `Deleting ${bulkProgress.done}/${bulkProgress.total}…` : undefined}>
@@ -376,7 +376,7 @@ export default function SSHKeysPage() {
         open={bulkConfirmOpen}
         onOpenChange={setBulkConfirmOpen}
         title={`Delete ${plural(sel.size, "key")}?`}
-        description="Hosts that use these keys will need another one before LabDog can reach them again. This cannot be undone."
+        description="Hosts that use these keys will need another one before unbork can reach them again. This cannot be undone."
         confirmLabel="Delete All"
         variant="destructive"
         loading={bulkDeleting}

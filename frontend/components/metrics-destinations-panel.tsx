@@ -23,7 +23,7 @@ function describe(eff: EffectiveDestination | undefined): string {
 /**
  * Where a host's or a group's Alloy ships metrics and logs. A host's own
  * choice wins, then its highest-priority group's, then the default
- * instance. Saving changes what LabDog queries at once; the host itself
+ * instance. Saving changes what unbork queries at once; the host itself
  * picks the change up the next time the metrics agent action runs on it.
  */
 export function MetricsDestinationsPanel({ scope, id }: { scope: "host" | "group"; id: number }) {

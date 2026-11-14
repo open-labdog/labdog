@@ -48,7 +48,7 @@ def _reject_template_syntax(value: str) -> str:
     if _TEMPLATE_DELIMITERS.search(value):
         raise ValueError(
             "template delimiters ({{, }}, {%, %}, {#, #}) are not allowed in "
-            "action parameters — the value is evaluated on the LabDog host, "
+            "action parameters — the value is evaluated on the unbork host, "
             "not on the target"
         )
     return value
