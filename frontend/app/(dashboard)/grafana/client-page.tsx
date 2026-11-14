@@ -50,9 +50,9 @@ const URL_PLACEHOLDER: Record<GrafanaKind, string> = {
 type TestResult = { success: boolean; message: string }
 
 /**
- * Grafana — the Mimir (metrics) and Loki (logs) endpoints LabDog reads
+ * Grafana — the Mimir (metrics) and Loki (logs) endpoints unbork reads
  * host state from and hands to the Alloy install action, plus the
- * scrape endpoint LabDog itself exposes.
+ * scrape endpoint unbork itself exposes.
  */
 export default function GrafanaPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -227,7 +227,7 @@ export default function GrafanaPage() {
             Grafana <span className="mono num text-[12.5px] font-normal text-text-faint">{all.length}</span>
           </>
         }
-        sub="Register Mimir (metrics) and Loki (logs) endpoints separately: one ingest URL each. LabDog hands it to the Alloy install action and derives the query URL from it."
+        sub="Register Mimir (metrics) and Loki (logs) endpoints separately: one ingest URL each. unbork hands it to the Alloy install action and derives the query URL from it."
         actions={
           <button type="button" className="btn btn-sm btn-primary" onClick={openCreate}>
             Add instance…
@@ -290,7 +290,7 @@ export default function GrafanaPage() {
           />
         </Panel>
 
-        <Panel title="metrics out" meta="scrape endpoint · LabDog's own fleet state and health">
+        <Panel title="metrics out" meta="scrape endpoint · unbork's own fleet state and health">
           <div className="p-[11px]">
             <MetricsScrapeCard />
           </div>
@@ -332,7 +332,7 @@ export default function GrafanaPage() {
               </select>
             </Field>
           </div>
-          <Field label="ingest url" htmlFor="g-url" hint={`the remote-write / push URL — LabDog strips the path and queries the ${form.kind === "loki" ? "Loki" : "Mimir"} API from it`}>
+          <Field label="ingest url" htmlFor="g-url" hint={`the remote-write / push URL — unbork strips the path and queries the ${form.kind === "loki" ? "Loki" : "Mimir"} API from it`}>
             <input id="g-url" className="inp mono" placeholder={URL_PLACEHOLDER[form.kind]} value={form.url} onChange={(e) => set("url", e.target.value)} />
           </Field>
           <div className="grid gap-[11px]" style={{ gridTemplateColumns: "1fr 1fr" }}>

@@ -1,6 +1,6 @@
-# LabDog Frontend — Design & Pattern Reference
+# unbork Frontend — Design & Pattern Reference
 
-This document defines the frontend conventions for LabDog. All new pages, components, and modifications must follow these patterns.
+This document defines the frontend conventions for unbork. All new pages, components, and modifications must follow these patterns.
 
 ---
 
@@ -9,8 +9,8 @@ This document defines the frontend conventions for LabDog. All new pages, compon
 | Layer | Technology |
 |-------|-----------|
 | Framework | Next.js 16 (App Router), built as a static export served by the backend |
-| UI | The LabDog kit in `components/ld` — the only component layer. Dialogs are built on `@base-ui/react`'s dialog; the command palette on `cmdk`. |
-| Styling | Tailwind CSS v4 over the LabDog design tokens in `app/globals.css` — dark is primary, light is a real second theme |
+| UI | The unbork kit in `components/ld` — the only component layer. Dialogs are built on `@base-ui/react`'s dialog; the command palette on `cmdk`. |
+| Styling | Tailwind CSS v4 over the unbork design tokens in `app/globals.css` — dark is primary, light is a real second theme |
 | Data Fetching | TanStack Query (`@tanstack/react-query`) |
 | API Client | `apiFetch()` from `lib/api.ts` |
 | Auth | `useAuth()` context from `lib/auth.ts` |
@@ -180,7 +180,7 @@ actions, alert status and severity, assistant sessions), read with
 app/layout.tsx              — Fonts, Providers (theme, query client, auth, toaster), AppShell
 ├── components/app-shell.tsx    — Rail + pane + content column; mobile header + bottom rail; palette; shortcuts
 ├── components/shell/*          — zones registry, Rail, Pane, Palette, AccountMenu, glyphs, redirect helper
-├── components/ld/*             — the LabDog UI kit (see below)
+├── components/ld/*             — the unbork UI kit (see below)
 └── app/(dashboard)/...         — every screen (inside the shell)
     app/(auth)/...              — login/register (no shell, centred card)
 ```
@@ -189,7 +189,7 @@ app/layout.tsx              — Fonts, Providers (theme, query client, auth, toa
 
 `components/app-shell.tsx` checks the current pathname. Auth routes (`/login`, `/register`) render children bare. Everything else renders the rail, the current zone's pane and a content column. Account things — email, change password, About, log out — live behind the avatar at the foot of the rail (`components/shell/account-menu.tsx`), where they cannot be mistaken for navigation.
 
-### The LabDog kit (`components/ld`)
+### The unbork kit (`components/ld`)
 
 Dense, token-driven primitives ported from the design prototype, all
 exported from `@/components/ld`:
@@ -428,7 +428,7 @@ if (!user?.is_superuser) {
 |------|---------|
 | `app/(dashboard)/*/page.tsx` | Screens (inside the shell); a server `page.tsx` wrapping a `client-page.tsx` where the screen reads search params |
 | `app/(auth)/*/page.tsx` | Auth pages (no shell, centred card) |
-| `components/ld/*` | The LabDog kit |
+| `components/ld/*` | The unbork kit |
 | `components/shell/*` | The rail, pane, palette, account menu and zone registry |
 | `components/config/*-editor.tsx` | The eight group module editors |
 | `components/ai/*` | The assistant's pieces — transcript, tool call, approval gate, session list and aside, usage panel, markdown renderer |
@@ -636,4 +636,4 @@ Optimistic updates available via `optimisticUpdate` option (for simple delete/to
 | System theme following | Dark is the default and light is an explicit choice (`t` or the rail toggle); `next-themes` runs with `enableSystem={false}`. |
 | Framer Motion | No animation library. CSS transitions only. |
 | Separate `/profile` page | Password change lives in the account menu at the foot of the rail. |
-| Pagination | Tables show all data. LabDog manages tens/hundreds of items, not thousands. The audit log is the exception — it loads 100 entries at a time. |
+| Pagination | Tables show all data. unbork manages tens/hundreds of items, not thousands. The audit log is the exception — it loads 100 entries at a time. |

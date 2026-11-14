@@ -1,12 +1,12 @@
-# LabDog Frontend
+# unbork Frontend
 
-Next.js 16 web UI for LabDog — centralized Linux configuration management.
+Next.js 16 web UI for unbork — centralized Linux configuration management.
 
 ## Stack
 
 - Next.js 16 (App Router), built as a static export the backend serves
 - React 19
-- The LabDog kit (`components/ld`) + Tailwind CSS v4 over the design tokens in `app/globals.css`
+- The unbork kit (`components/ld`) + Tailwind CSS v4 over the design tokens in `app/globals.css`
 - TanStack Query (data fetching)
 - React Hook Form + Zod (form validation)
 - Playwright (E2E testing)

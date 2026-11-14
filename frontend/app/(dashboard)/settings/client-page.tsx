@@ -62,7 +62,7 @@ export default function SettingsPage() {
         {section === "system" && (
           <div className="flex flex-col gap-3">
             <SettingsEditor categories={["logging"]} />
-            <Panel title="prometheus export" meta="scrape LabDog itself">
+            <Panel title="prometheus export" meta="scrape unbork itself">
               <div className="p-3">
                 <MetricsScrapeCard />
               </div>
@@ -168,7 +168,7 @@ function Integrations() {
         name="Prometheus export"
         state={metrics?.enabled ? "ok" : "idle"}
         detail={metrics?.enabled ? metrics.scrape_url : "disabled"}
-        meta={metrics?.enabled ? `cached ${metrics.cache_ttl_seconds}s · unauthenticated by design` : "opt-in; LabDog's own health as a scrape target"}
+        meta={metrics?.enabled ? `cached ${metrics.cache_ttl_seconds}s · unauthenticated by design` : "opt-in; unbork's own health as a scrape target"}
         href="/settings?section=system"
         action="Details"
       />
@@ -260,7 +260,7 @@ function Access({ user }: { user: User | null }) {
         <div className="flex flex-col gap-2 p-[11px] text-[11.5px] text-text-3">
           <span>Changing your password and signing out live behind the avatar at the foot of the rail, where they cannot be mistaken for navigation.</span>
           <span>
-            What LabDog emails you is under{" "}
+            What unbork emails you is under{" "}
             <Link href="/notifications#yours" className="underline">
               Email
             </Link>

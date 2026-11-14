@@ -14,7 +14,7 @@ import { AlertHandling } from "@/components/alerts/alert-handling"
 import type { AlertDispatch, AlertEvent, AlertIntakeStatus } from "@/lib/types"
 
 /** Why no investigation ran, in words. Every one of these is a decision
- *  LabDog made on the operator's behalf, and each has a different fix —
+ *  unbork made on the operator's behalf, and each has a different fix —
  *  a setting to flip, a label to add, a budget to raise. */
 const OUTCOME_LABEL: Record<string, string> = {
   started: "investigating",
@@ -53,7 +53,7 @@ function AutonomyTag({ alert }: { alert: AlertEvent }) {
   return <Tag tone={tone} title={alert.investigation_autonomy_note ?? undefined}>{label}</Tag>
 }
 
-/** What LabDog found when it checked a full-auto fix afterwards, and any
+/** What unbork found when it checked a full-auto fix afterwards, and any
  *  rollback that followed. The evidence — which alert fired, what the SSH
  *  probe said, what Proxmox answered — is on hover. */
 function RemediationTags({ alert }: { alert: AlertEvent }) {
@@ -79,7 +79,7 @@ const ACTION_SKIP: Record<string, string> = {
   failed: "could not run",
 }
 
-/** What LabDog found when it judged the run afterwards. */
+/** What unbork found when it judged the run afterwards. */
 const ACTION_CHECK: Record<string, { label: string; tone: Tone }> = {
   fixed: { label: "fixed", tone: "ok" },
   not_effective: { label: "did not fix it", tone: "warn" },
@@ -204,7 +204,7 @@ function Received({ focus }: { focus: number | null }) {
             cell: (a) => (
               <span className="flex items-center gap-1.5" ref={a.id === focus ? scrollTo : undefined}>
                 <span className="mono font-medium text-text">{a.alertname}</span>
-                {a.dedup_count > 1 && <span className="text-[10.5px] text-text-faint" title="How many times LabDog has been told about this same firing">×{a.dedup_count}</span>}
+                {a.dedup_count > 1 && <span className="text-[10.5px] text-text-faint" title="How many times unbork has been told about this same firing">×{a.dedup_count}</span>}
               </span>
             ),
           },
@@ -251,7 +251,7 @@ function Received({ focus }: { focus: number | null }) {
         loading={isLoading}
         empty={
           <span>
-            No alerts recorded. LabDog accepts alerts once <span className="mono">alerts.intake_enabled</span> is on and a Grafana contact point points at <span className="mono">/api/webhooks/grafana-alerts</span> with the configured token. Nothing here means nothing has arrived — not that nothing is wrong.
+            No alerts recorded. unbork accepts alerts once <span className="mono">alerts.intake_enabled</span> is on and a Grafana contact point points at <span className="mono">/api/webhooks/grafana-alerts</span> with the configured token. Nothing here means nothing has arrived — not that nothing is wrong.
           </span>
         }
       />

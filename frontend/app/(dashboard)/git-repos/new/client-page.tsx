@@ -53,7 +53,7 @@ function reducer(state: State, action: Action): State {
 /**
  * Connecting a repository is three steps that each leave the system in
  * a known state: connect (the repository row exists), scan (what it
- * holds), review & activate (which packs and GitOps files LabDog takes).
+ * holds), review & activate (which packs and GitOps files unbork takes).
  */
 export default function RepoOnboardingWizard() {
   const [state, dispatch] = useReducer(reducer, initialState)
@@ -68,7 +68,7 @@ export default function RepoOnboardingWizard() {
           { label: "git repositories", href: "/git-repos" },
         ]}
         title="Connect a git repository"
-        sub="Add a repository, scan it for action packs and GitOps files, and activate the ones LabDog should manage."
+        sub="Add a repository, scan it for action packs and GitOps files, and activate the ones unbork should manage."
         actions={
           <Link href="/git-repos" className="btn btn-sm hover:no-underline">
             Cancel

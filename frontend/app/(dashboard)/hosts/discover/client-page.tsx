@@ -57,7 +57,7 @@ function knownList(hosts: KnownHost[], max = 6): string {
 /** The scan leaves out addresses that are already hosts; say so, or an empty result reads as a miss. */
 function skippedSentence(hosts: KnownHost[]): string {
   const n = hosts.length
-  return `${n} address${n === 1 ? " is" : "es are"} already in LabDog and ${n === 1 ? "was" : "were"} not scanned: ${knownList(hosts)}.`
+  return `${n} address${n === 1 ? " is" : "es are"} already in unbork and ${n === 1 ? "was" : "were"} not scanned: ${knownList(hosts)}.`
 }
 
 /** The manual scan-now form, embedded in the Discovery screen's Scan now
@@ -173,7 +173,7 @@ export default function DiscoverHostsPage() {
       {hostsFound.length > 0 && (phase === "done" || phase === "adding") && (
         <Panel
           title="discovered hosts"
-          meta={skippedKnown.length > 0 && <span title={skippedSentence(skippedKnown)}>{skippedKnown.length} already in LabDog, not scanned</span>}
+          meta={skippedKnown.length > 0 && <span title={skippedSentence(skippedKnown)}>{skippedKnown.length} already in unbork, not scanned</span>}
           pad={0}
         >
           <Table<DiscoveredHost>

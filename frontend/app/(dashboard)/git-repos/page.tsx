@@ -319,7 +319,7 @@ export default function GitReposPage() {
             <input id="repo-url" className="inp mono" placeholder="git@github.com:org/repo.git" {...form.register("url")} />
           </Field>
           {detectedAuth === "ssh_key" && (
-            <Field label="ssh key" htmlFor="ssh-key-select" hint="SSH URL — pick the deploy key LabDog uses" error={form.formState.errors.ssh_key_id?.message}>
+            <Field label="ssh key" htmlFor="ssh-key-select" hint="SSH URL — pick the deploy key unbork uses" error={form.formState.errors.ssh_key_id?.message}>
               <select id="ssh-key-select" className="inp mono" {...form.register("ssh_key_id")}>
                 <option value="">— pick an SSH key —</option>
                 {sshKeys?.map((key) => (

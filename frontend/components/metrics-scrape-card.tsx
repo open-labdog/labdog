@@ -11,7 +11,7 @@ const PROMETHEUS_EXAMPLES_URL =
   "https://github.com/open-unbork/unbork/tree/main/docs/examples/prometheus"
 
 /** Builds a copy-paste Grafana Alloy `prometheus.scrape` block from the
- *  resolved scrape URL. Alloy is LabDog's house agent — the bundled
+ *  resolved scrape URL. Alloy is unbork's house agent — the bundled
  *  alloy-install action already deploys it to managed hosts. The
  *  exposition format is standard Prometheus text, so any compatible
  *  scraper works — point it at the same URL.
@@ -132,7 +132,7 @@ export function MetricsScrapeCard() {
             <Copy text={data.env_snippet} />
           </div>
           <div className="text-[11px] text-text-3">
-            File-level on purpose: the endpoint is unauthenticated, so enabling it needs server access, not just a LabDog login.
+            File-level on purpose: the endpoint is unauthenticated, so enabling it needs server access, not just a unbork login.
           </div>
         </div>
       )}

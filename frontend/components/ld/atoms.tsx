@@ -110,7 +110,7 @@ export function Provenance({
       ? `declared by group ${label}, priority ${priority}`
       : origin === "host"
         ? "declared on this host, wins over every group"
-        : "LabDog control-plane rule, cannot be removed"
+        : "unbork control-plane rule, cannot be removed"
   return (
     <span className="inline-flex items-center gap-1.5" style={{ opacity: shadowed ? 0.45 : 1 }}>
       <Tag tone={tone} title={title} mono>

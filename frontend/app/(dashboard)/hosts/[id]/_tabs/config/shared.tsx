@@ -26,7 +26,7 @@ export function FirewallBackendTag({ backend }: { backend: string | null | undef
 /**
  * What the host actually reported for one module, last time it was
  * collected — shaped however that collector's JSON comes back, not a
- * LabDog resource, so it is read-only and has no source/priority column.
+ * unbork resource, so it is read-only and has no source/priority column.
  */
 function ModuleStateView({
   moduleType,
@@ -158,7 +158,7 @@ function ModuleStateView({
         {(systemUsers.length > 0 || systemGroups.length > 0) && (
           <div className="border-t border-line pt-2">
             <h4 className="tt text-text-faint">system (read-only)</h4>
-            <p className="mb-1.5 text-[11px] text-text-faint">Managed by the OS — not editable via LabDog.</p>
+            <p className="mb-1.5 text-[11px] text-text-faint">Managed by the OS — not editable via unbork.</p>
             {systemUsers.length > 0 && (
               <div className="mono flex flex-col gap-0.5 text-[11px] text-text-faint">
                 {systemUsers.map((u, i) => <div key={`u-${i}`}>{String(u.username ?? u.name)} (uid={String(u.uid ?? "?")})</div>)}
@@ -354,7 +354,7 @@ export function InstallFirewallSection({ hostId, queryClient }: { hostId: number
     try {
       await apiFetch(`/api/hosts/${hostId}/packages`, {
         method: "POST",
-        body: JSON.stringify({ package_name: "nftables", state: "present", package_manager: "auto", comment: "Installed by LabDog for firewall management" }),
+        body: JSON.stringify({ package_name: "nftables", state: "present", package_manager: "auto", comment: "Installed by unbork for firewall management" }),
       })
     } catch (e: unknown) {
       if (!(e && typeof e === "object" && "status" in e && (e as { status: number }).status === 409)) {

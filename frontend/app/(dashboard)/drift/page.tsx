@@ -228,7 +228,7 @@ export default function DriftPage() {
                       label={f.sev === "high" ? "Ask AI why it could not be checked" : "Explain this drift with AI"}
                       subject={{ kind: "drift", host_id: f.host.id, module: f.moduleType === "host" ? null : f.moduleType }}
                       about={`${f.mod?.label.toLowerCase() ?? "the"} drift on ${f.host.hostname}`}
-                      sends={`what LabDog's last check found on ${f.host.hostname}${f.sev === "high" ? "" : " and what a sync would change"}`}
+                      sends={`what unbork's last check found on ${f.host.hostname}${f.sev === "high" ? "" : " and what a sync would change"}`}
                     />
                   </div>
                 </div>

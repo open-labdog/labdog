@@ -239,7 +239,7 @@ export function PlanSidebar({
         {(
           [
             modules.includes("firewall")
-              ? { label: "SSH lockout prevention", state: "pass", note: "LabDog injects its control-plane SSH rule into every firewall apply; it cannot be removed by a group or a host." }
+              ? { label: "SSH lockout prevention", state: "pass", note: "unbork injects its control-plane SSH rule into every firewall apply; it cannot be removed by a group or a host." }
               : null,
             skipped.length || errored.length
               ? {

@@ -557,7 +557,7 @@ function GitOpsPanel({ group, onChanged }: { group: HostGroup; onChanged: () => 
           <Field label="file path">
             <input className="inp mono" value={filePath} placeholder="groups/my-group.yaml" onChange={(e) => setFilePath(e.target.value)} />
           </Field>
-          <span className="text-[11px] text-text-3">The file replaces what is declared here; edits made in LabDog are overwritten on the next import.</span>
+          <span className="text-[11px] text-text-3">The file replaces what is declared here; edits made in unbork are overwritten on the next import.</span>
         </Modal>
       )}
     </Panel>

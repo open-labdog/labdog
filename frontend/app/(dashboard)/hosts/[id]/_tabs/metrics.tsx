@@ -41,7 +41,7 @@ export function MetricsTab({ hostId, host }: { hostId: number; host?: Host }) {
     body = (
       <Empty
         title="No default Mimir instance"
-        note="Several Mimir instances are registered and none is marked as the default, so LabDog doesn't know which one to ask. Edit one and tick default."
+        note="Several Mimir instances are registered and none is marked as the default, so unbork doesn't know which one to ask. Edit one and tick default."
         action={<Link href="/grafana" className="btn btn-sm btn-primary hover:no-underline">Grafana instances →</Link>}
       />
     )

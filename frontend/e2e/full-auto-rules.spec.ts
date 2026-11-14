@@ -4,7 +4,7 @@ import type { APIRequestContext } from "@playwright/test"
 // Which alerts may change a host without asking: the labdog_ai_automate label
 // by default, or rules naming alerts, labels, hosts and groups. The host
 // page shows the host's side; the settings page refuses a rule naming a
-// host LabDog does not have, and flags one whose host has since gone.
+// host unbork does not have, and flags one whose host has since gone.
 
 const RULES = "ai.alert_full_auto_rules"
 
@@ -62,7 +62,7 @@ test.describe("Full-auto rules", () => {
     )
   })
 
-  test("saving a rule for a host LabDog does not have is refused", async ({ request, page }) => {
+  test("saving a rule for a host unbork does not have is refused", async ({ request, page }) => {
     await set(request, "ai.alert_full_auto_rules_enabled", "1")
     await page.goto("/settings?section=ai")
     const box = page.getByTestId(`setting-${RULES}`)

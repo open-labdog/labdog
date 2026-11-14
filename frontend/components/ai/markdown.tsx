@@ -36,7 +36,7 @@ interface Props {
  * query string. A health report has no need to show a picture.
  *
  * Styling is explicit per element rather than via a typography plugin:
- * LabDog does not carry one. Everything reads the theme tokens, so a
+ * unbork does not carry one. Everything reads the theme tokens, so a
  * report is legible in both themes.
  */
 export function Markdown({ children, className }: Props) {

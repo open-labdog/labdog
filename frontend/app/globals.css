@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /* ---------------------------------------------------------------------------
-   Tailwind theme mapping: the LabDog design tokens below, exposed as
+   Tailwind theme mapping: the unbork design tokens below, exposed as
    Tailwind colours (`bg-surface-2`, `text-text-3`, `border-line` …) so a
    class and a `var(--…)` in an inline style always mean the same thing.
 
@@ -65,7 +65,7 @@
 }
 
 /* ---------------------------------------------------------------------------
-   LabDog theme tokens. Dark is primary; light is a real second theme, not
+   unbork theme tokens. Dark is primary; light is a real second theme, not
    an inversion. Both are built from the brand's three colours: the navy
    of the mark's tile (hue 247) tints every dark surface and is the ink in
    light; its cream (hue 82) is the ink in dark and tints every light
@@ -207,7 +207,7 @@ html[data-theme="light"] {
 }
 
 /* ---------------------------------------------------------------------------
-   LabDog utility vocabulary — the small set of classes the design reads
+   unbork utility vocabulary — the small set of classes the design reads
    with. `.tt` is the uppercase section label; `.mono`/`.num` mark
    copyable values; `.btn` is the dense button; `.inp` is every text
    control — input, select and textarea alike — inside a `Field`.

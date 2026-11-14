@@ -1,5 +1,5 @@
 /**
- * LabDog UI kit for screens on the rail-and-pane shell.
+ * unbork UI kit for screens on the rail-and-pane shell.
  *
  * Dense, token-driven primitives ported from the design prototype. They
  * read the theme tokens in globals.css directly, so they render in both

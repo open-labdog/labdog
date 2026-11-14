@@ -316,7 +316,7 @@ export function PendRow({ p, go, onDismiss }: { p: PendingItem; go: (href: strin
             label="Explain drift"
             subject={{ kind: "drift", host_id: p.driftHost.id }}
             about={`the drift on ${p.driftHost.hostname}`}
-            sends={`what LabDog's last checks found on ${p.driftHost.hostname} and what a sync would change`}
+            sends={`what unbork's last checks found on ${p.driftHost.hostname} and what a sync would change`}
           />
         )}
         {p.stuck?.kind === "action" && <CancelRun id={p.stuck.id} label={p.stuck.label} />}

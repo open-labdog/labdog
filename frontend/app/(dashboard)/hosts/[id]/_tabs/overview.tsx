@@ -199,7 +199,7 @@ function ConfigLine({ host, modules, onConfig }: { host: Host; modules: ModuleCu
         <Link href={`/plans?hosts=${host.id}${sync.length ? `&modules=${sync.join(",")}` : ""}`} className={link}>
           plan sync →
         </Link>
-        <InvestigateButton icon ghost label="Explain drift with AI" subject={{ kind: "drift", host_id: host.id }} about={`the drift on ${host.hostname}`} sends={`what LabDog's last checks found on ${host.hostname} and what a sync would change`} />
+        <InvestigateButton icon ghost label="Explain drift with AI" subject={{ kind: "drift", host_id: host.id }} about={`the drift on ${host.hostname}`} sends={`what unbork's last checks found on ${host.hostname} and what a sync would change`} />
       </span>
     )
   }
@@ -213,7 +213,7 @@ function ConfigLine({ host, modules, onConfig }: { host: Host; modules: ModuleCu
         <button type="button" className={`border-0 bg-transparent p-0 ${link}`} onClick={onConfig}>
           config →
         </button>
-        <InvestigateButton icon ghost label="Ask AI why modules could not be checked" subject={{ kind: "drift", host_id: host.id }} about={`why ${host.hostname}'s modules could not be checked`} sends={`the errors from LabDog's last checks on ${host.hostname}`} />
+        <InvestigateButton icon ghost label="Ask AI why modules could not be checked" subject={{ kind: "drift", host_id: host.id }} about={`why ${host.hostname}'s modules could not be checked`} sends={`the errors from unbork's last checks on ${host.hostname}`} />
       </span>
     )
   }

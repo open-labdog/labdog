@@ -21,7 +21,7 @@ function formatBuildDate(iso: string | null): string {
 function buildSupportLine(info: VersionInfo): string {
   const sha = info.commit_sha_short ?? "dev"
   const date = info.build_date ? info.build_date.slice(0, 10) : "dev"
-  return `LabDog ${info.version} (${sha}, ${date})`
+  return `unbork ${info.version} (${sha}, ${date})`
 }
 
 /**
