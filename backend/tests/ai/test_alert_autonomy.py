@@ -677,7 +677,7 @@ class TestBusyGuard:
             await db.execute(select(AIToolCall).where(AIToolCall.session_id == session.id))
         ).scalar_one()
         assert record.status == "blocked"
-        assert "LabDog's sync" in (record.result_summary or "")
+        assert "unbork's sync" in (record.result_summary or "")
         tool_turn = fake.calls[1][0][-1]
         assert tool_turn.role == "tool"
         assert "Report the change you would make instead" in tool_turn.content

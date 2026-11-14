@@ -5,8 +5,8 @@ The rules pinned here pull against each other. A host the fix broke must
 be put back without anyone asking, because nobody is watching. A host the
 fix merely failed to mend must not be, because a rollback restarts the
 machine and throws away everything written since the snapshot. And the
-one machine LabDog runs on must never be rolled back at all, by anyone,
-because the rollback would take LabDog down with nothing left to bring
+one machine unbork runs on must never be rolled back at all, by anyone,
+because the rollback would take unbork down with nothing left to bring
 the machine back.
 
 Nothing here touches a real host or hypervisor: SSH and Proxmox are
@@ -86,7 +86,7 @@ class FakeSSH:
     """Stands in for ``ssh_connect_host``: answers, refuses, or has a new key.
 
     ``client_ip`` and ``interfaces`` are what the host reports for the
-    LabDog-host probe: where the connection came from, and ``ip -o addr``.
+    unbork-host probe: where the connection came from, and ``ip -o addr``.
     """
 
     def __init__(self) -> None:
@@ -228,7 +228,7 @@ def tasks_use_test_db(db):
 
 
 async def _mapped_host(db, *, ip: str = "10.0.0.21"):
-    """A host LabDog can reach, snapshot and roll back."""
+    """A host unbork can reach, snapshot and roll back."""
     from app.crypto.encryption import encrypt_ssh_key
     from app.crypto.key_management import get_master_key
     from app.proxmox.models import ProxmoxNode
@@ -523,7 +523,7 @@ class TestJudgingTheFix:
     async def test_an_outage_on_labdogs_side_is_not_held_against_the_host(
         self, db, ai_provider, ssh, proxmox
     ) -> None:
-        """LabDog's own route or DNS gone: neither the host nor Proxmox
+        """unbork's own route or DNS gone: neither the host nor Proxmox
         answers, and that says nothing about the fix."""
         host = await _mapped_host(db)
         event, session, _ = await _fix(db, ai_provider, host, alert_status="resolved")
@@ -531,7 +531,7 @@ class TestJudgingTheFix:
         proxmox.api_down = True
         verdict = await remediation.assess(db, event, session)
         assert verdict.outcome == "unchecked"
-        assert "LabDog's side" in verdict.detail
+        assert "unbork's side" in verdict.detail
         assert "All connection attempts failed" in verdict.detail
 
     async def test_a_host_without_a_vm_is_compared_against_any_proxmox_node(
@@ -573,7 +573,7 @@ class TestJudgingTheFix:
         verdict = await remediation.assess(db, event, session)
         assert verdict.outcome == "made_worse"
         assert "PostgresDown" in verdict.detail
-        assert "LabDog's side" in verdict.detail
+        assert "unbork's side" in verdict.detail
 
     async def test_one_answer_in_three_is_enough(self, db, ai_provider, ssh) -> None:
         """A host mid-restart fails one probe and answers the next."""
@@ -710,7 +710,7 @@ class TestWhereLabDogRuns:
         assert labdog_host.runs_here(client, addresses) is expected
 
     def test_a_lan_bridge_is_not_a_container_bridge(self) -> None:
-        """A hypervisor's ``vmbr0`` carries its LAN address; a LabDog
+        """A hypervisor's ``vmbr0`` carries its LAN address; a unbork
         elsewhere on that LAN is inside its subnet and is still elsewhere."""
         _, addresses = labdog_host.parse_probe(
             "x 1 22\n2: vmbr0    inet 10.10.10.2/24 brd 10.10.10.255 scope global vmbr0"
@@ -718,7 +718,7 @@ class TestWhereLabDogRuns:
         assert not labdog_host.runs_here("10.10.10.9", addresses)
 
     async def test_other_hosts_seeing_labdog_from_its_address(self, db) -> None:
-        """lin-manager: every other host records LabDog as 10.10.101.5."""
+        """lin-manager: every other host records unbork as 10.10.101.5."""
         here = await create_host(db, ip="10.10.101.5")
         await create_host(db, ip="10.10.10.51")
         other = await create_host(db, ip="10.10.10.52")
@@ -742,7 +742,7 @@ class TestWhereLabDogRuns:
         assert await labdog_host.labdog_runs_on(db, here, ask=False)
 
     async def test_the_host_is_asked_when_the_database_cannot_tell(self, db, ssh) -> None:
-        """The only host LabDog manages, in a container on it: nothing in
+        """The only host unbork manages, in a container on it: nothing in
         the database gives it away, the host's own interfaces do."""
         here = await _mapped_host(db, ip="10.10.101.5")
         ssh.client_ip = "172.18.0.4"
@@ -937,7 +937,7 @@ class TestRollingBack:
         neighbour = await create_host(db, ip="10.10.10.51")
         neighbour.labdog_source_ip = "10.10.101.5"
         _, session, _ = await _fix(db, ai_provider, host)
-        with pytest.raises(remediation.RollbackRefused, match="LabDog runs on"):
+        with pytest.raises(remediation.RollbackRefused, match="unbork runs on"):
             await remediation.prepare_rollback(
                 db, session=session, host_id=host.id, trigger="manual"
             )
@@ -1038,7 +1038,7 @@ class TestTheHostQueue:
         assert (blocker.kind, blocker.id) == ("ai_rollback", rollback.id)
         assert (await check_hosts_busy(db, [host.id])).kind == "ai_rollback"
         assert await remediation.host_busy(db, host.id) == (
-            f"LabDog's rollback {rollback.id} is working on this host"
+            f"unbork's rollback {rollback.id} is working on this host"
         )
 
     async def test_one_rollback_per_host_across_sessions(
@@ -1132,7 +1132,7 @@ class TestRollingBackAutomatically:
         async def busy_once(db_, host_id):  # noqa: ARG001
             looks.append(host_id)
             if len(looks) == 1:
-                return "LabDog's sync 7 is working on this host"
+                return "unbork's sync 7 is working on this host"
             ssh.reachable = True
             return None
 
@@ -1327,7 +1327,7 @@ class TestNewSafeguards:
         await db.flush()
         decided = await resolve(db, await _alert(db, here.id))
         assert decided.level == "read_only"
-        assert "LabDog runs on this host" in decided.note
+        assert "unbork runs on this host" in decided.note
 
     async def test_a_remote_labdog_on_the_same_lan_is_not_mistaken_for_local(
         self, db, full_auto_ready, ssh
@@ -1423,7 +1423,7 @@ class TestTheApi:
         response = await superuser_client.post(f"/api/ai/sessions/{session.id}/rollback", json={})
 
         assert response.status_code == 409
-        assert "LabDog runs on" in response.json()["detail"]
+        assert "unbork runs on" in response.json()["detail"]
         sent.assert_not_called()
 
     async def test_not_while_labdog_is_working_on_the_host(
@@ -1491,7 +1491,7 @@ class TestTheApi:
         host = await create_host(db)
         event, session, _ = await _fix(db, ai_provider, host)
         event.remediation_outcome = "made_worse"
-        event.remediation_detail = "LabDog can no longer reach it."
+        event.remediation_detail = "unbork can no longer reach it."
         await remediation.record_refused(
             db,
             session=session,
@@ -1504,7 +1504,7 @@ class TestTheApi:
         rows = (await superuser_client.get("/api/alerts")).json()
         [row] = [r for r in rows if r["id"] == event.id]
         assert row["remediation_outcome"] == "made_worse"
-        assert row["remediation_detail"] == "LabDog can no longer reach it."
+        assert row["remediation_detail"] == "unbork can no longer reach it."
         assert row["rollback_status"] == "refused"
         assert "ai.alert_auto_rollback" in row["rollback_detail"]
 
@@ -1596,7 +1596,7 @@ class TestFromAlertToRollback:
     A webhook delivers a firing alert for a listed alert name on a mapped
     host. The investigation is decided at full auto; the model restarts a
     service, behind a snapshot; the session ends; the check falls due and
-    finds the host unreachable; LabDog restores the snapshot and says so;
+    finds the host unreachable; unbork restores the snapshot and says so;
     and the next alert for that host is held back to the base level.
     """
 
@@ -1721,7 +1721,7 @@ class TestFromAlertToRollback:
         }
         assert event.remediation_outcome == "made_worse"
         assert proxmox.restored == [snapshot]
-        assert any(s.startswith("[LabDog] Rolled back") for s in await _subjects(db))
+        assert any(s.startswith("[unbork] Rolled back") for s in await _subjects(db))
 
         # 5. The next alert on that host is not trusted to full auto.
         ssh.reachable = True
