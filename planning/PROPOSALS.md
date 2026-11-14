@@ -106,5 +106,11 @@ scores, a stage and specs in Phases 4 and 5.
   comes back: S-003's interface must be one kennel could sit behind, and
   C-045 is not specified, because restoring from backups may belong in
   kennel instead of unbork.
+- **Future kennel use cases (Dennis, 2026-11-14: note them, decide
+  later).** Parked ideas, not items: Kubernetes autoscaling on Proxmox (a
+  Cluster Autoscaler external gRPC provider), CI runners, preview
+  environments, multi-VM disaster-recovery drills, forensic copies,
+  Proxmox node maintenance, and pack tests on real VMs. Listed under
+  "Future use cases" in https://claude.ai/artifact/MJo5wKpzFdKspSeMNDrL3S
 - A third item from the same message is Enterprise and is recorded in
   that repository.
