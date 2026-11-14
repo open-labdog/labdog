@@ -19,26 +19,32 @@ Enterprise repository.
 Recommendation: A.
 
 ### D-19 Memory restore: snapshot with RAM, or Proxmox Backup Server
-Blocks: C-045. Shapes C-044.
-Dennis asked for rollback through Proxmox Backup with memory restore as
-the main goal. As far as the planning session knows, a Proxmox backup
-(vzdump, to PBS or elsewhere) holds disks and configuration but not the
-VM's RAM, while a Proxmox *snapshot* can include RAM (`vmstate`). This
-was not verified against a Proxmox host in this session.
-- A. Add RAM to the existing snapshots (C-044) and treat PBS as a
-  separate, disk-only fallback (C-045).
-- B. PBS only, accepting that memory is not restored.
-- C. Both, with C-044 first.
+Blocks: C-045. Shapes C-044 and S-003.
+Finding from the kennel exploration (2026-11-14, checked in the
+proxmox/qemu-server source): a Proxmox backup, to PBS or elsewhere, never
+holds RAM. It copies the disk volumes only and skips the config's
+snapshot sections. Memory comes back only from a snapshot taken with
+`vmstate=1`. Write-up: https://claude.ai/artifact/MJo5wKpzFdKspSeMNDrL3S
+- A. RAM in snapshots (C-044) and PBS as a disk-only fallback inside
+  unbork (C-045).
+- B. PBS only, with no memory restore.
+- D. C-044 in unbork; backup-based restore belongs to kennel (C-028), and
+  C-045 is recast as "PBS restore points through kennel" and parked with
+  it.
 
-- D. Leave backup-based restore to kennel (C-028) and keep only C-044 in
-  unbork.
+Recommendation: D. unbork keeps the in-run snapshot and rollback direct,
+with RAM, and decides when to revert; kennel would own restore tests,
+PBS restore points, leases for surge nodes and test VMs, sandbox copies
+and a sweeper.
 
-Dennis asked on 2026-11-14 to couple this with kennel, so this decision
-waits for the kennel exploration.
+Carried into S-003 whatever is picked: a per-VM capability check
+(snapshot, RAM, restore point, free space), which is also what C-005
+calls; `create(vm, label, include_ram)` returning an opaque handle;
+`rollback(handle, start)`; `delete`; asynchronous completion.
 
-Recommendation: C, after confirming on a test VM what a PBS restore
-brings back. Snapshots with RAM are slower and need space for the memory
-image, so C-044 should be a per-action or per-host choice.
+Kennel itself (go or no-go, sandbox network, how far in-place restore
+goes, its name) is Dennis's to decide from the write-up; it stays parked
+as C-028 until then.
 
 ## Assumptions made without asking
 
