@@ -321,6 +321,10 @@ the right one, because Enterprise RBAC grants rights per host and group:
   `require_on(user, perm, hosts=[...], groups=[...])`: all or nothing.
 - **Anything that changes other hosts' outcome** (a group's priority) asks
   `require_on(user, perm)` with no targets, a global check.
+- **Where a host is reached** (`hostname`, `ip_address`, `ssh_port`,
+  `ssh_user`, `ssh_key_id`; `CONNECTION_FIELDS` in `app/api/hosts.py`)
+  is global too: a grant on a host must not let its holder point the row,
+  and the key it uses, at another machine. Unchanged values pass.
 - Everything else stays global by default, which a scoped user is refused.
 
 Extensions replace the resolver through `set_permission_resolver()` and

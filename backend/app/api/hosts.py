@@ -343,6 +343,11 @@ async def get_host(
     return host
 
 
+#: Host fields that decide which machine unbork connects to, and as whom,
+#: or that other hosts' config is rendered from. See ``update_host``.
+CONNECTION_FIELDS = ("hostname", "ip_address", "ssh_port", "ssh_user", "ssh_key_id")
+
+
 @router.put("/{host_id}", response_model=HostResponse)
 async def update_host(
     host_id: int,
@@ -357,6 +362,27 @@ async def update_host(
 
     update_data = body.model_dump(exclude_none=True)
     group_ids = update_data.pop("group_ids", None)
+
+    # Where and how unbork reaches the host is not the host's own
+    # business: a right scoped to this host must not let its holder point
+    # the row (and the SSH key it uses) at another machine, and the name
+    # and address also end up in other hosts' firewall rules and
+    # /etc/hosts. Changing them needs config.edit globally. Fields sent
+    # unchanged pass, so a full-form save from a scoped editor still works.
+    changed_connection = sorted(
+        f for f in CONNECTION_FIELDS if f in update_data and update_data[f] != getattr(host, f)
+    )
+    if changed_connection:
+        try:
+            await require_on(user, "config.edit")
+        except HTTPException as exc:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Missing permission: config.edit globally, to change "
+                    + ", ".join(changed_connection)
+                ),
+            ) from exc
 
     for field, value in update_data.items():
         setattr(host, field, value)
@@ -527,10 +553,13 @@ async def get_current_rules(
 async def import_rules(
     host_id: int,
     body: ImportRulesRequest,
-    _: User = Depends(require("config.edit")),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     """Import selected rules from host into a group."""
+    # The rules land on the group named in the body, so every member's
+    # firewall changes: the path's host scope alone does not cover that.
+    await require_on(user, "config.edit", groups=[body.group_id])
     result = await db.execute(select(Host).where(Host.id == host_id))
     host = result.scalar_one_or_none()
     if not host:

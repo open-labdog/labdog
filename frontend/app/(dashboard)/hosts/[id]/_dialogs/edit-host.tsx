@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useApiMutation } from "@/lib/mutations"
 import { apiFetch } from "@/lib/api"
+import { can, useAuth } from "@/lib/auth"
 import { Banner, Field, Modal } from "@/components/ld"
 import { GroupMultiSelect } from "@/components/group-multi-select"
 import type { Host, HostGroup, SSHKey } from "@/lib/types"
@@ -26,6 +27,10 @@ export function EditHostDialog({
   const [sshUser, setSshUser] = useState(host.ssh_user)
   const [sshKeyId, setSshKeyId] = useState<number | null>(host.ssh_key_id)
   const [groupIds, setGroupIds] = useState<number[]>(host.group_ids ?? [])
+  // Where unbork connects to (name, address, port, user, key) takes
+  // config.edit everywhere, not just on this host; the API refuses it.
+  const { user } = useAuth()
+  const lockConnection = !can(user, "config.edit")
 
   const saveMutation = useApiMutation({
     mutationFn: (data: Record<string, unknown>) => apiFetch(`/api/hosts/${hostId}`, { method: "PUT", body: JSON.stringify(data) }),
@@ -51,22 +56,25 @@ export function EditHostDialog({
         </>
       }
     >
+      {lockConnection && (
+        <Banner>Changing the address, port, user or SSH key needs config editing on every host. You can change this host&apos;s groups.</Banner>
+      )}
       <Field label="hostname" htmlFor="edit-hostname">
-        <input id="edit-hostname" className="inp mono" value={hostname} onChange={(e) => setHostname(e.target.value)} required />
+        <input id="edit-hostname" disabled={lockConnection} className="inp mono" value={hostname} onChange={(e) => setHostname(e.target.value)} required />
       </Field>
       <div className="grid gap-[11px] grid-cols-1 sm:grid-cols-[1fr_100px]">
         <Field label="ip address" htmlFor="edit-ip">
-          <input id="edit-ip" className="inp mono" value={ip} onChange={(e) => setIp(e.target.value)} required />
+          <input id="edit-ip" disabled={lockConnection} className="inp mono" value={ip} onChange={(e) => setIp(e.target.value)} required />
         </Field>
         <Field label="ssh port" htmlFor="edit-ssh-port">
-          <input id="edit-ssh-port" type="number" min={1} max={65535} className="inp mono num" value={sshPort} onChange={(e) => setSshPort(Number(e.target.value))} required />
+          <input id="edit-ssh-port" disabled={lockConnection} type="number" min={1} max={65535} className="inp mono num" value={sshPort} onChange={(e) => setSshPort(Number(e.target.value))} required />
         </Field>
       </div>
       <Field label="ssh user" htmlFor="edit-ssh-user">
-        <input id="edit-ssh-user" className="inp mono" value={sshUser} onChange={(e) => setSshUser(e.target.value)} required />
+        <input id="edit-ssh-user" disabled={lockConnection} className="inp mono" value={sshUser} onChange={(e) => setSshUser(e.target.value)} required />
       </Field>
       <Field label="ssh key" htmlFor="edit-ssh-key">
-        <select id="edit-ssh-key" className="inp" value={sshKeyId ?? ""} onChange={(e) => setSshKeyId(e.target.value ? Number(e.target.value) : null)}>
+        <select id="edit-ssh-key" disabled={lockConnection} className="inp" value={sshKeyId ?? ""} onChange={(e) => setSshKeyId(e.target.value ? Number(e.target.value) : null)}>
           <option value="">No SSH key</option>
           {sshKeys?.map((key) => <option key={key.id} value={key.id}>{key.name}{key.is_default ? " (default)" : ""}</option>)}
         </select>

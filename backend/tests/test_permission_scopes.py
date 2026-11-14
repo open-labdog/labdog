@@ -25,7 +25,7 @@ from app.auth.permissions import (
     set_visible_hosts_resolver,
 )
 from app.models.sync_job import SyncJob
-from tests.conftest import create_group, create_host
+from tests.conftest import create_group, create_host, create_ssh_key
 from tests.test_permissions import _client
 
 GRANT = frozenset({"hosts.view", "config.edit", "sync.run", "actions.run", "schedules.manage"})
@@ -162,6 +162,75 @@ class TestBodyTargets:
         assert renamed.status_code == 200, renamed.text
         moved = await scoped.put(f"/api/groups/{world['g_in']}", json={"priority": 777})
         assert moved.status_code == 403
+
+
+class TestHostConnectionFields:
+    """A grant on a host covers its config, not where unbork connects to."""
+
+    @pytest.mark.parametrize(
+        "change",
+        [
+            {"ip_address": "192.0.2.99"},
+            {"hostname": "elsewhere.example"},
+            {"ssh_port": 2222},
+            {"ssh_user": "someone"},
+        ],
+    )
+    async def test_scoped_editor_cannot_repoint_their_host(self, scoped, db, world, change):
+        from app.models.host import Host
+
+        before = await db.get(Host, world["h_in"])
+        snapshot = {f: getattr(before, f) for f in change}
+        resp = await scoped.put(f"/api/hosts/{world['h_in']}", json=change)
+        assert resp.status_code == 403, resp.text
+        assert "globally" in resp.json()["detail"]
+        await db.refresh(before)
+        assert {f: getattr(before, f) for f in change} == snapshot
+
+    async def test_scoped_editor_cannot_swap_the_ssh_key(self, scoped, db, world):
+        key = await create_ssh_key(db)
+        resp = await scoped.put(f"/api/hosts/{world['h_in']}", json={"ssh_key_id": key.id})
+        assert resp.status_code == 403, resp.text
+
+    async def test_unchanged_connection_fields_and_other_edits_pass(self, scoped, db, world):
+        from app.models.host import Host
+
+        host = await db.get(Host, world["h_in"])
+        resp = await scoped.put(
+            f"/api/hosts/{world['h_in']}",
+            json={
+                "hostname": host.hostname,
+                "ip_address": host.ip_address,
+                "ssh_port": host.ssh_port,
+                "ssh_user": host.ssh_user,
+                "drift_check_enabled": True,
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["drift_check_enabled"] is True
+
+    async def test_global_editor_can_repoint(self, app, db, world):
+        client, _ = await _client(app, db, "operator")
+        try:
+            resp = await client.put(
+                f"/api/hosts/{world['h_in']}", json={"ip_address": "192.0.2.98"}
+            )
+            assert resp.status_code == 200, resp.text
+            assert resp.json()["ip_address"] == "192.0.2.98"
+        finally:
+            await client.aclose()
+
+    async def test_importing_rules_into_a_group_you_do_not_hold(self, scoped, world):
+        resp = await scoped.post(
+            f"/api/hosts/{world['h_in']}/import-rules",
+            json={"group_id": world["g_out"], "rules": [{"port_start": 22}]},
+        )
+        assert resp.status_code == 403, resp.text
+        ok = await scoped.post(
+            f"/api/hosts/{world['h_in']}/import-rules",
+            json={"group_id": world["g_in"], "rules": [{"port_start": 22}]},
+        )
+        assert ok.status_code == 201, ok.text
 
 
 class TestMe:
