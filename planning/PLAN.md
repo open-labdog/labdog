@@ -176,7 +176,7 @@ Grafana (`backend/app/api/webhooks.py`). Community, M, class B, stage 5.
 
 Added by Dennis on 2026-11-14 (`source: user`), to be scored in Phase 4:
 C-044 (memory in the rollback snapshot, stage 2), C-045 (PBS restore
-points through kennel, parked with C-028 by D-19) and one Enterprise item. See
+points through kennel, with C-028 by D-19) and one Enterprise item. See
 PROPOSALS.md.
 
 ### Scoring
@@ -240,7 +240,7 @@ decision from Dennis first.
 | C-041 | k8s-upgrade on RHEL-family hosts | P3 | 4.0 | 3/3/1/1 | M | B | park | none | Needs RHEL-family test hosts. |
 | C-027 | Application rollback and cluster rejoin, starting with etcd | P3 | 3.3 | 3/2/1/4 | L | B | park | C-014 | Needs a real cluster to test against; board P3. |
 | C-033 | Export: GitOps YAML, standalone playbooks, settings backup | P3 | 3.3 | 3/3/1/3 | L | B | park | none | Three exports in one item; split when promoted. |
-| C-028 | Companion VM layer, "kennel" (separate project) | P3 | 3.0 | 3/3/1/2 | L | H | park | none | A new product, not a stage item; needs a go/no-go from Dennis. |
+| C-028 | Companion VM layer, "kennel" (separate project) | P2 | to score | to score | L | H | to stage | S-003 | D-22: Dennis decided to build it. Split into sub-items in Phase 4; class H until its open scope questions are answered. |
 | C-038 | Assistant usage: plan quota and session limits | P3 | 3.0 | 2/2/1/1 | M | B | park | none | Board P3. |
 | C-035 | Visualise rule calculation: show losing candidates | P3 | 2.5 | 2/1/1/1 | M | A | park | none | Board P3 idea. |
 | C-042 | Run log: fold task lines, PLAY RECAP as a table | P3 | 2.5 | 2/1/1/1 | M | A | park | none | Polish. |
@@ -364,7 +364,8 @@ visible.
 | 6 | A safer assistant | C-010, C-020, C-037, C-011, C-019, C-009 |
 | 7 | Rollback beyond Proxmox | E-011, E-012, E-008 |
 | 8 | Scale and assurance | C-029, E-018, E-019, E-017, E-016, E-015 |
-| parked | P3 | C-027, C-028, C-031 to C-036, C-038 to C-043, E-009, E-010, E-013, E-014 |
+| kennel track | A VM operations service (new repository) | C-028, C-045, to be split in Phase 4 |
+| parked | P3 | C-027, C-031 to C-036, C-038 to C-043, E-009, E-010, E-013, E-014 |
 
 Critical path: stage 0 hooks, then the release in stage 1. Everything
 after stage 1 ships through the release path that stage 1 proves.
