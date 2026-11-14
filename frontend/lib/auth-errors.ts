@@ -4,6 +4,7 @@ export type AuthErrorKind =
   | "server"
   | "unavailable"
   | "unknown"
+  | "external"
 
 export interface AuthErrorInfo {
   kind: AuthErrorKind
@@ -49,6 +50,30 @@ export function classifyAuthError(status: number | null): AuthErrorInfo {
     kind: "unknown",
     title: "Sign in failed",
     body: "Something went wrong. Try again in a moment.",
+    fieldLevel: false,
+  }
+}
+
+/** Why a directory sign-in (SSO, LDAP) was refused, keyed by the code the
+ *  backend's `ExternalLoginRefused` carries. An SSO callback redirects to
+ *  `/login?sso_error=<code>`; the login page shows this. */
+const EXTERNAL_LOGIN_ERRORS: Record<string, string> = {
+  no_access: "Your directory account is not in any group that has access. Ask an administrator.",
+  not_provisioned: "You do not have an account here yet. Ask an administrator for one.",
+  email_in_use:
+    "An account with your email address already exists. Ask an administrator to link it to your directory account.",
+  disabled: "Your account is disabled.",
+  no_email: "Your identity provider did not send an email address for your account.",
+  bad_email: "Your identity provider sent an email address that cannot be used.",
+  directory_unavailable: "The directory could not be reached. Try again, or ask an administrator.",
+  unknown_provider: "This sign-in method is no longer available. Reload the page.",
+}
+
+export function classifyExternalLoginError(code: string): AuthErrorInfo {
+  return {
+    kind: "external",
+    title: "Directory sign-in refused",
+    body: EXTERNAL_LOGIN_ERRORS[code] ?? "Signing in through your identity provider failed. Try again, or ask an administrator.",
     fieldLevel: false,
   }
 }

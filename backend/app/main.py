@@ -70,10 +70,12 @@ from app.api.sync import router as sync_router
 from app.api.user_sync import router as user_sync_router
 from app.api.version import router as version_router
 from app.api.webhooks import router as webhooks_router
+from app.auth.login_paths import is_password_login_path
 from app.auth.schemas import UserRead, UserUpdate
 from app.auth.users import auth_backend, fastapi_users
 from app.config import settings
 from app.middleware.csrf import CSRFMiddleware
+from app.plugins import load_plugins
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -243,8 +245,8 @@ def _build_login_limiter():
 # change exists to remove, and behind a proxy it is the same global
 # bucket by another name.
 
-#: Paths the login limiter guards.
-_LOGIN_PATHS = frozenset({"/api/auth/jwt/login", "/api/auth/register"})
+#: Paths the login limiter guards: ``app.auth.login_paths``, which an
+#: extension's own password login (LDAP) joins.
 
 #: Most a login body may be before we stop buffering it to find the
 #: account name. A real one is a couple of hundred bytes; the cap keeps
@@ -532,7 +534,7 @@ class _LoginRateLimitMiddleware:
             await self.app(scope, receive, send)
             return
         request = Request(scope, receive)
-        if not (request.method == "POST" and request.url.path in _LOGIN_PATHS):
+        if not (request.method == "POST" and is_password_login_path(request.url.path)):
             await self.app(scope, receive, send)
             return
 
@@ -662,6 +664,9 @@ def create_app() -> FastAPI:
     _add_middleware(app)
     _include_auth_routers(app)
     _include_api_routers(app)
+    # After the core routers so a plugin cannot shadow them, and before the
+    # SPA fallback, whose catch-all would shadow the plugin's routes.
+    load_plugins(app)
     _add_health_routes(app)
     _add_spa_fallback(app)
     return app

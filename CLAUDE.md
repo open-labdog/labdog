@@ -318,6 +318,46 @@ it through `PATCH /api/users/me` (which needs `current_password`).
 `python -m app.auth.users_cli` is the recovery path when no admin can
 sign in.
 
+### Extensions (plugins) and directory sign-in
+
+The Enterprise edition is a separate package that plugs into this one;
+Community ships no Enterprise code. `app/plugins.py` loads every Python
+entry point in the `unbork.plugins` group from `create_app()`, after the
+core routers and before the SPA fallback. An entry point names a
+`register(app)` callable with a `requires_plugin_api = "X.Y"` attribute; it
+loads only when the major equals `PLUGIN_API` (`app/auth/permissions.py`)
+and the minor is not newer. Anything else, and any plugin that raises, is
+logged and skipped, never fatal: a Community install with a stale
+Enterprise package must still start and let an admin sign in. Bump
+`PLUGIN_API`'s minor when adding to the contract, its major when changing
+it, and note what changed in the comment above it.
+
+An extension with tables of its own declares a second entry point, in
+`unbork.migrations`, naming an `upgrade()` that runs its own Alembic
+environment with its **own version table**. `python -m app` calls it after
+core's `upgrade head`, in the roles that migrate. Never put extension
+revisions in core's `alembic_version`: once the extension is uninstalled,
+core would meet a revision it cannot locate and refuse to start.
+
+The contract (1.1) is the permission hooks above plus three directory
+sign-in hooks, none of which Community uses itself:
+
+- `app/auth/external.py`: `register_login_provider_source()` puts buttons
+  on the login page through the public `GET /api/auth/providers`
+  (`redirect` kind for OIDC/SAML, `password` kind for LDAP);
+  `resolve_external_user()` maps an `ExternalIdentity` to a user (existing
+  `user_identities` link, else a verified-email link when allowed, else a
+  new account with no password and no role), flushing but never
+  committing so a later refusal rolls it back; `issue_session()` sets the
+  same auth and CSRF cookies password login does. Refusals raise
+  `ExternalLoginRefused(code, message)`; a callback redirects to
+  `/login?sso_error=<code>`, which the login page explains.
+- `app/auth/login_paths.py`: `register_password_login_path()` makes an
+  extension's own password endpoint CSRF-exempt and login-rate-limited,
+  like `/api/auth/jwt/login`. Exact paths only.
+- `users.hashed_password` is nullable: NULL is a directory-only account,
+  which password login and `PATCH /api/users/me` refuse.
+
 ### About / version surface
 
 `GET /api/version` is a public (no-auth) endpoint exposing

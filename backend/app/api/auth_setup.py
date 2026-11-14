@@ -3,6 +3,7 @@ import secrets
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import func, select, text
 
+from app.auth.external import list_login_providers
 from app.auth.permissions import permissions_for
 from app.auth.schemas import MeRead, UserCreate, UserRead
 from app.auth.users import UserManager, current_active_user, get_user_manager
@@ -22,6 +23,22 @@ async def setup_status():
         return {"needs_setup": count == 0}
     except Exception:
         raise HTTPException(status_code=503, detail="Database unavailable")
+
+
+@router.get("/providers")
+async def login_providers():
+    """The sign-in methods besides email and password, for the login page.
+
+    Public: the page needs it before anyone is signed in. Empty unless an
+    extension registered a source (``app.auth.external``); Community shows
+    the password form alone then.
+    """
+    providers = await list_login_providers()
+    return {
+        "providers": [
+            {"key": p.key, "name": p.name, "kind": p.kind, "url": p.url} for p in providers
+        ]
+    }
 
 
 @router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)

@@ -48,6 +48,10 @@ def _run_migrations() -> None:
     except Exception:
         logger.exception("Database migration failed")
         sys.exit(1)
+    # Extensions keep their own version table; see app.plugins.
+    from app.plugins import run_plugin_migrations  # noqa: PLC0415
+
+    run_plugin_migrations()
 
 
 def _wait_for_schema(poll_seconds: float = 5.0) -> None:
