@@ -163,6 +163,11 @@ No board item was dropped. Splits and merges:
 - Four items from the other board change this repository and nothing in
   the Enterprise one, so they are shared: S-007 to S-012.
 
+Added by Dennis on 2026-11-14 (`source: user`), to be scored in Phase 4:
+C-044 (memory in the rollback snapshot), C-045 (Proxmox Backup Server as
+a rollback source, waiting on D-19) and one Enterprise item. See
+PROPOSALS.md.
+
 ### Scoring
 
 Value, Strategic, Unblocks and Risk reduction are each 1 to 5; effort is

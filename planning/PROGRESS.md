@@ -14,3 +14,10 @@ Append-only. Newest entry last.
   the skills are not written yet.
 - Not done: the Playwright suite, the docs build and the load test were
   not run.
+
+## 2026-11-14 Checkpoint follow-up
+
+- Dennis asked for a thread per open question; 17 threads are exploring
+  them. Decisions are logged in DECISIONS.md as he picks.
+- Dennis added work: C-044, C-045 and one Enterprise item (source: user).
+  New question D-19.

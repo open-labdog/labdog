@@ -83,4 +83,20 @@ PR-08, PR-09, PR-07, PR-06, PR-04, PR-10, PR-05.
 
 ## Other work Dennis asked to add
 
-None yet.
+Added 2026-11-14. These are normal items with `source: user`; they get
+scores, a stage and specs in Phases 4 and 5.
+
+- **C-044 Keep the VM's memory in the rollback snapshot.** Dennis's goal:
+  a rollback restores the running machine, memory included.
+  `ProxmoxClient.create_snapshot` (`backend/app/proxmox/client.py:229`)
+  sends only `snapname` and `description`, so today's snapshots hold
+  disks only and a rollback leaves the VM as if it had lost power.
+  Proxmox takes a `vmstate` flag on that same call. Community, M, class B.
+  Fits stage 2, after S-003.
+- **C-045 Proxmox Backup Server as a rollback source.** Take a backup
+  before a destructive run and restore from it on failure, for hosts or
+  storage where a snapshot is not possible, and keep restore points
+  beyond the run. Community, L, class H until D-19 is answered. Builds on
+  S-003.
+- A third item from the same message is Enterprise and is recorded in
+  that repository.

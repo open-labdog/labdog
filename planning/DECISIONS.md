@@ -85,6 +85,22 @@ directory has to, or the next session cannot find it.
 Recommendation: keep `planning/` as a named exception in CONTRIBUTING.md
 and CLAUDE.md, and keep `plans/` as it is.
 
+### D-19 Memory restore: snapshot with RAM, or Proxmox Backup Server
+Blocks: C-045. Shapes C-044.
+Dennis asked for rollback through Proxmox Backup with memory restore as
+the main goal. As far as the planning session knows, a Proxmox backup
+(vzdump, to PBS or elsewhere) holds disks and configuration but not the
+VM's RAM, while a Proxmox *snapshot* can include RAM (`vmstate`). This
+was not verified against a Proxmox host in this session.
+- A. Add RAM to the existing snapshots (C-044) and treat PBS as a
+  separate, disk-only fallback (C-045).
+- B. PBS only, accepting that memory is not restored.
+- C. Both, with C-044 first.
+
+Recommendation: C, after confirming on a test VM what a PBS restore
+brings back. Snapshots with RAM are slower and need space for the memory
+image, so C-044 should be a per-action or per-host choice.
+
 ## Assumptions made without asking
 
 - A-01. "Harden the webhook" (C-022) is taken from the board text as
