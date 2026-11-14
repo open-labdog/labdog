@@ -536,11 +536,14 @@ jobs:
 
   pages-build:
     # Build and upload the docs site artifact for main. Deploy step
-    # follows immediately after.
+    # follows immediately after. A manual dispatch on dev also publishes,
+    # so the docs can be fixed between releases (e.g. after the repo
+    # rename moved the Pages address). The next push to main overwrites it.
     runs-on: ubuntu-24.04
     if: >-
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-      && github.ref == 'refs/heads/main'
+      ((github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && github.ref == 'refs/heads/main')
+      || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev')
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -562,12 +565,15 @@ jobs:
           include-hidden-files: true
 
   pages-deploy:
-    # Publishes the built docs site to GitHub Pages on main only.
+    # Publishes the built docs site to GitHub Pages on main, or on a
+    # manual dispatch on dev (see pages-build).
     # Requires the repository to have Pages enabled in Settings → Pages,
-    # with "Build and deployment → Source" set to "GitHub Actions".
+    # with "Build and deployment → Source" set to "GitHub Actions", and
+    # dev allowed by the github-pages environment's deployment branches.
     if: >-
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-      && github.ref == 'refs/heads/main'
+      ((github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && github.ref == 'refs/heads/main')
+      || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev')
     needs: [pages-build]
     runs-on: ubuntu-24.04
     permissions:
