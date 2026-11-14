@@ -243,7 +243,7 @@ async def authorize(user: User, permission: str, scope: BoundScope | None = None
 
 #: Answer for a user whose password an administrator set. Everything but
 #: ``/api/users/me`` (and logging out) is refused until they change it.
-PASSWORD_CHANGE_REQUIRED = "password_change_required"
+PASSWORD_CHANGE_REQUIRED = "password_change_required"  # nosec B105 - an error code
 
 
 def require(permission: str | Permission, *, scope: ScopeSpec | None = None):
