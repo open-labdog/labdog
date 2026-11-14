@@ -170,6 +170,10 @@ per-host results** (Ansible `set_stats`) on `ActionHostRun`
 `action_group.py`) and pass them through the S-002 run-end hook. Shared,
 M, class B.
 
+Added on 2026-11-14 by decision D-05, to be scored in Phase 4: **C-046
+Zabbix alert intake**, an adapter on the S-005 alert source seam next to
+Grafana (`backend/app/api/webhooks.py`). Community, M, class B, stage 5.
+
 Added by Dennis on 2026-11-14 (`source: user`), to be scored in Phase 4:
 C-044 (memory in the rollback snapshot), C-045 (Proxmox Backup Server as
 a rollback source, waiting on D-19) and one Enterprise item. See
@@ -315,7 +319,7 @@ internal items, are in the Enterprise repository.
 | E-004 | Maintenance windows: calendar UI on Settings, host and group pages | Enterprise |
 | E-005 | SAML sign-in | Enterprise |
 | E-006 | Secrets from HashiCorp Vault | Enterprise |
-| E-007 | Zabbix alert intake | Enterprise |
+| E-007 | Zabbix write-back | Enterprise |
 | E-008 | Change-ticket integration: core and one first system | Enterprise |
 | E-009 | Change tickets: the remaining systems | Enterprise |
 | E-010 | Snapshot and rollback on VMware | Enterprise |
