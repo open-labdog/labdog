@@ -163,6 +163,13 @@ No board item was dropped. Splits and merges:
 - Four items from the other board change this repository and nothing in
   the Enterprise one, so they are shared: S-007 to S-012.
 
+Added on 2026-11-14 from a decision (D-10 in the Enterprise repository),
+to be scored in Phase 4: **S-013 Store each action run's structured
+per-host results** (Ansible `set_stats`) on `ActionHostRun`
+(`backend/app/models`, `backend/app/tasks/action_host.py`,
+`action_group.py`) and pass them through the S-002 run-end hook. Shared,
+M, class B.
+
 Added by Dennis on 2026-11-14 (`source: user`), to be scored in Phase 4:
 C-044 (memory in the rollback snapshot), C-045 (Proxmox Backup Server as
 a rollback source, waiting on D-19) and one Enterprise item. See
