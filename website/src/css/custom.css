@@ -1,30 +1,106 @@
-/**
- * Any CSS included here will be global. The classic template
- * bundles Infima by default. Infima is a CSS framework designed to
- * work well for content-centric websites.
+/*
+ * The docs site wears the product's own world: the unbork mark's navy and
+ * cream, the app's steel-blue accent (hue 247) and its Atkinson Hyperlegible
+ * faces. Values mirror the tokens in frontend/app/globals.css; keep the two
+ * in step when the app's palette changes. The mark's amber stays in the
+ * logo only, as it does in the app.
  */
 
-/* You can override the default Infima variables here. */
-:root {
-  --ifm-color-primary: #2e8555;
-  --ifm-color-primary-dark: #29784c;
-  --ifm-color-primary-darker: #277148;
-  --ifm-color-primary-darkest: #205d3b;
-  --ifm-color-primary-light: #33925d;
-  --ifm-color-primary-lighter: #359962;
-  --ifm-color-primary-lightest: #3cad6e;
-  --ifm-code-font-size: 95%;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+@font-face {
+  font-family: 'Atkinson Hyperlegible Next';
+  src: url('./fonts/atkinson-hyperlegible-next.woff2') format('woff2');
+  font-weight: 200 800;
+  font-display: swap;
 }
 
-/* For readability concerns, you should choose a lighter palette in dark mode. */
+@font-face {
+  font-family: 'Atkinson Hyperlegible Mono';
+  src: url('./fonts/atkinson-hyperlegible-mono.woff2') format('woff2');
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+:root {
+  --ifm-font-family-base: 'Atkinson Hyperlegible Next', system-ui, -apple-system, sans-serif;
+  --ifm-font-family-monospace: 'Atkinson Hyperlegible Mono', ui-monospace, monospace;
+  --ifm-heading-font-weight: 700;
+  --ifm-code-font-size: 92%;
+
+  /* Light: cream ground, navy ink. */
+  --ifm-color-primary: oklch(0.46 0.09 247);
+  --ifm-color-primary-dark: oklch(0.42 0.085 247);
+  --ifm-color-primary-darker: oklch(0.39 0.08 247);
+  --ifm-color-primary-darkest: oklch(0.34 0.07 247);
+  --ifm-color-primary-light: oklch(0.50 0.09 247);
+  --ifm-color-primary-lighter: oklch(0.53 0.09 247);
+  --ifm-color-primary-lightest: oklch(0.58 0.09 247);
+
+  --ifm-background-color: oklch(0.975 0.01 82);
+  --ifm-background-surface-color: oklch(0.992 0.005 82);
+  --ifm-font-color-base: oklch(0.24 0.035 247);
+  --ifm-font-color-secondary: oklch(0.41 0.03 247);
+  --ifm-color-emphasis-300: oklch(0.89 0.016 82);
+  --ifm-toc-border-color: oklch(0.89 0.016 82);
+  --ifm-hr-border-color: oklch(0.89 0.016 82);
+  --ifm-table-border-color: oklch(0.89 0.016 82);
+  --ifm-table-stripe-background: oklch(0.95 0.014 82 / 0.6);
+  --ifm-code-background: oklch(0.95 0.014 82);
+  --ifm-navbar-background-color: oklch(0.992 0.005 82);
+  --ifm-menu-color-background-active: oklch(0.935 0.022 247);
+  --ifm-menu-color-background-hover: oklch(0.95 0.014 82);
+  --docusaurus-highlighted-code-line-bg: oklch(0.46 0.09 247 / 0.1);
+
+  --unbork-selection: oklch(0.80 0.045 247 / 0.55);
+}
+
+/* Dark: the mark's navy tile as ground, cream ink. */
 [data-theme='dark'] {
-  --ifm-color-primary: #25c2a0;
-  --ifm-color-primary-dark: #21af90;
-  --ifm-color-primary-darker: #1fa588;
-  --ifm-color-primary-darkest: #1a8870;
-  --ifm-color-primary-light: #29d5b0;
-  --ifm-color-primary-lighter: #32d8b4;
-  --ifm-color-primary-lightest: #4fddbf;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+  --ifm-color-primary: oklch(0.74 0.09 247);
+  --ifm-color-primary-dark: oklch(0.70 0.09 247);
+  --ifm-color-primary-darker: oklch(0.68 0.09 247);
+  --ifm-color-primary-darkest: oklch(0.62 0.09 247);
+  --ifm-color-primary-light: oklch(0.78 0.085 247);
+  --ifm-color-primary-lighter: oklch(0.81 0.08 247);
+  --ifm-color-primary-lightest: oklch(0.86 0.07 247);
+
+  --ifm-background-color: oklch(0.175 0.022 247);
+  --ifm-background-surface-color: oklch(0.215 0.028 247);
+  --ifm-font-color-base: oklch(0.94 0.025 82);
+  --ifm-font-color-secondary: oklch(0.78 0.02 82);
+  --ifm-color-emphasis-300: oklch(0.31 0.034 247);
+  --ifm-toc-border-color: oklch(0.31 0.034 247);
+  --ifm-hr-border-color: oklch(0.31 0.034 247);
+  --ifm-table-border-color: oklch(0.31 0.034 247);
+  --ifm-table-stripe-background: oklch(0.215 0.028 247 / 0.6);
+  --ifm-code-background: oklch(0.245 0.031 247);
+  --ifm-navbar-background-color: oklch(0.19 0.026 247);
+  --ifm-footer-background-color: oklch(0.19 0.026 247);
+  --ifm-menu-color-background-active: oklch(0.33 0.055 247);
+  --ifm-menu-color-background-hover: oklch(0.245 0.031 247);
+  --docusaurus-highlighted-code-line-bg: oklch(0.74 0.09 247 / 0.14);
+
+  --unbork-selection: oklch(0.48 0.075 247 / 0.6);
+}
+
+/* The footer is "dark" style in both themes: give it the navy, not Infima's grey. */
+.footer--dark {
+  --ifm-footer-background-color: oklch(0.19 0.026 247);
+}
+
+::selection {
+  background: var(--unbork-selection);
+}
+
+/* A reading column, not the full content width. */
+.theme-doc-markdown {
+  max-width: 75ch;
+}
+
+.markdown a {
+  text-underline-offset: 0.18em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 2px;
 }
