@@ -222,7 +222,7 @@ The dialog also takes a GPG key URL.
 `/etc/hosts` entries on every host in the group. An entry is either:
 
 - **Literal address + name** — an IP address and a hostname, or
-- **Registered host** — a unbork host, written with its *current* address
+- **Registered host** — an unbork host, written with its *current* address
   and name at sync time, so the entry follows the host when it moves.
 
 | Column | Description |

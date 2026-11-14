@@ -12,7 +12,7 @@ template delimiter is written with the ``!unsafe`` tag, which ansible-core
 honours and passes to the module verbatim. Only strings unbork authored as
 templates are exempt, and those must be marked with :class:`Template`.
 Making "unsafe" the default means a new operator-supplied field is covered
-without anyone remembering to wrap it; forgetting to mark a unbork template
+without anyone remembering to wrap it; forgetting to mark an unbork template
 fails loudly (the expression reaches the host as literal text) instead of
 silently opening a code-execution path.
 
@@ -34,7 +34,7 @@ UNSAFE_TAG = "!unsafe"
 
 
 class Template(str):
-    """A unbork-authored Jinja string that Ansible should evaluate.
+    """An unbork-authored Jinja string that Ansible should evaluate.
 
     Never wrap operator input in this. Every other string containing a
     template delimiter is emitted as ``!unsafe``.

@@ -418,7 +418,7 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
             "put the label on the alert rule, with a template if only some hosts should qualify. "
             "On: ai.alert_full_auto_rules decides, matching alert names, labels, and unbork "
             "hosts and groups. Either way an alert runs at full auto — changes made with nobody "
-            "approving them — only while every safeguard holds: it is firing and names a unbork "
+            "approving them — only while every safeguard holds: it is firing and names an unbork "
             "host, the webhook token is at least 32 characters, a snapshot can be taken first, "
             "no other automatic fix is running on the host, and the cooldown and daily cap allow "
             "it. Otherwise it runs at ai.alert_autonomy_level, and its row on the Alerts page "

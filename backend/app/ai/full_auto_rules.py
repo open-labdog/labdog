@@ -21,7 +21,7 @@ can override another. Conditions:
   when the label is missing). Quote a value that contains a comma.
 * ``host:web-1``, ``host:web-1|web-2`` — the unbork host the alert
   resolved to, by hostname.
-* ``group:web`` — a unbork group that host is a member of.
+* ``group:web`` — an unbork group that host is a member of.
 * ``!host:…``, ``!group:…`` — the host is not one of these, or in none of
   these groups.
 

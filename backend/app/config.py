@@ -107,7 +107,7 @@ class MetricsConfig(BaseModel):
     ``AppSetting``**: the endpoint is unauthenticated (like ``GET
     /api/version``) once enabled, so flipping it on must require server
     access (editing ``labdog.toml`` / setting ``LABDOG_METRICS__ENABLED``
-    and restarting), not just a unbork login. ``/api/settings`` is
+    and restarting), not just an unbork login. ``/api/settings`` is
     readable by every role and writable by any admin session, so a DB
     toggle would let one admin — or one XSS'd admin session — expose fleet
     state with one PATCH.

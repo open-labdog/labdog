@@ -710,7 +710,7 @@ class TestWhereLabDogRuns:
         assert labdog_host.runs_here(client, addresses) is expected
 
     def test_a_lan_bridge_is_not_a_container_bridge(self) -> None:
-        """A hypervisor's ``vmbr0`` carries its LAN address; a unbork
+        """A hypervisor's ``vmbr0`` carries its LAN address; an unbork
         elsewhere on that LAN is inside its subnet and is still elsewhere."""
         _, addresses = labdog_host.parse_probe(
             "x 1 22\n2: vmbr0    inet 10.10.10.2/24 brd 10.10.10.255 scope global vmbr0"

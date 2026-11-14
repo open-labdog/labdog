@@ -833,7 +833,7 @@ async def _probe_competing_firewall_store(conn, active_backend: str) -> str | No
     elif active_backend == "iptables":
         if await _probe_ok(conn, _PROBE_NFT_LABDOG):
             return (
-                "iptables is the active backend, but a unbork-managed nftables "
+                "iptables is the active backend, but an unbork-managed nftables "
                 "'inet filter' table is still present on this host. It is ignored by "
                 "collection and will be removed on the next firewall sync."
             )

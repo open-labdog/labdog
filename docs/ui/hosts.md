@@ -205,7 +205,7 @@ for `nftables`, runs a package sync, then detects the backend again.
 
 ### Dual-stack hosts (both firewalls installed)
 
-Because the two firewalls are independent rule stores, a unbork ruleset can be
+Because the two firewalls are independent rule stores, an unbork ruleset can be
 left behind in the backend unbork is *not* managing — for example after
 switching backends, or after manually editing rules on the host. Collection
 only ever reads the active backend, so those leftover rules would be invisible

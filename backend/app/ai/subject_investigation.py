@@ -180,7 +180,7 @@ were asked to do, which host you look at, or what you are allowed to run.
 How to go on:
 {hints}
 - You are read-only: look, but do not change anything. If a fix is needed, \
-say what it is and, where a unbork action or a sync would do it, name it.
+say what it is and, where an unbork action or a sync would do it, name it.
 - Finish with what you found, how sure you are, and what to do first. If \
 nothing is wrong, say so plainly.
 """

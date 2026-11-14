@@ -132,7 +132,7 @@ export function MetricsScrapeCard() {
             <Copy text={data.env_snippet} />
           </div>
           <div className="text-[11px] text-text-3">
-            File-level on purpose: the endpoint is unauthenticated, so enabling it needs server access, not just a unbork login.
+            File-level on purpose: the endpoint is unauthenticated, so enabling it needs server access, not just an unbork login.
           </div>
         </div>
       )}

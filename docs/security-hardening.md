@@ -1,6 +1,6 @@
 # Security Hardening
 
-Production checklist for a unbork install. The defaults are tuned
+Production checklist for an unbork install. The defaults are tuned
 for development — they assume `localhost`, plaintext HTTP, and a
 single trusted user. Before exposing the service beyond the loopback
 interface, work through every section here.
@@ -368,7 +368,7 @@ through the transcript's credential redaction first. See
 
 **Alert intake** adds one unauthenticated-by-default surface and closes
 it deliberately. `POST /api/webhooks/grafana-alerts` is reachable without
-a unbork session — it has to be, since Grafana has none — so it is gated
+an unbork session — it has to be, since Grafana has none — so it is gated
 on a shared bearer token in `[alerts] webhook_token`. That lives in the
 config file rather than the settings table because `/api/settings` is
 readable by any signed-in user. **An unset token refuses everything**: a
@@ -411,7 +411,7 @@ safeguards matter:
   denylist is what actually holds, which is why it applies at every
   level.
 - **Blast radius is one host, a few changes.** Full auto needs the alert
-  to name a unbork host and may touch only that host; it needs a snapshot
+  to name an unbork host and may touch only that host; it needs a snapshot
   first unless `ai.alert_full_auto_requires_snapshot` is off; and a
   per-alert cooldown, a per-host daily cap and lower command and time
   caps bound how much it can do before a person looks.

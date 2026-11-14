@@ -203,7 +203,7 @@ def from_alertmanager_v2(alerts: list[Any]) -> list[NormalizedAlert]:
 
 
 async def resolve_host(db: AsyncSession, labels: dict[str, Any]) -> int | None:
-    """Best-effort match from alert labels to a unbork host.
+    """Best-effort match from alert labels to an unbork host.
 
     Returns ``None`` freely. Plenty of alerts are about a service, a
     cluster, or a job rather than a machine unbork manages, and guessing
