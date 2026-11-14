@@ -1,5 +1,6 @@
 "use client"
 
+import { useCan } from "@/lib/auth"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
@@ -23,6 +24,8 @@ export function ServicesTab({
   syncDisabled: boolean
   onSync: () => void
 }) {
+  const canEdit = useCan("config.edit")
+  const canSync = useCan("sync.run")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [mode, setMode] = useState<"add" | "edit">("add")
   const [editRuleId, setEditRuleId] = useState<number | null>(null)
@@ -133,10 +136,10 @@ export function ServicesTab({
       <Toolbar
         actions={
           <>
-            <button type="button" className="btn btn-sm btn-ghost" disabled={syncDisabled} onClick={onSync}>
+            <button type="button" className="btn btn-sm btn-ghost" disabled={syncDisabled || !canSync} onClick={onSync}>
               sync services
             </button>
-            <button type="button" className="btn btn-sm btn-primary" onClick={openCreate}>
+            <button type="button" className="btn btn-sm btn-primary" disabled={!canEdit} onClick={openCreate}>
               add service
             </button>
           </>
@@ -158,11 +161,11 @@ export function ServicesTab({
             k: "actions", label: "", w: "118px", right: true, sortable: false,
             cell: (s) =>
               s.source === "group" ? (
-                <button type="button" className="btn btn-sm btn-ghost" onClick={() => openEditFromEffective(s)}>edit</button>
+                <button type="button" className="btn btn-sm btn-ghost" disabled={!canEdit} onClick={() => openEditFromEffective(s)}>edit</button>
               ) : (
                 <span className="flex gap-0.5">
-                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => openEditFromEffective(s)}>edit</button>
-                  <button type="button" className="btn btn-sm btn-ghost text-danger" disabled={deleteMutation.isPending} onClick={() => setDeleting(s.service_name)}>delete</button>
+                  <button type="button" className="btn btn-sm btn-ghost" disabled={!canEdit} onClick={() => openEditFromEffective(s)}>edit</button>
+                  <button type="button" className="btn btn-sm btn-ghost text-danger" disabled={!canEdit || deleteMutation.isPending} onClick={() => setDeleting(s.service_name)}>delete</button>
                 </span>
               ),
           },

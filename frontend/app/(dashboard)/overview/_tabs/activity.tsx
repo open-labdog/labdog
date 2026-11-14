@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Empty, Panel, Seg } from "@/components/ld"
 import { failuresFirst, useFeedExtras, withinHours, type ActivityItem, type FeedItem, type FeedKind } from "@/lib/activity"
 import { apiFetch } from "@/lib/api"
-import { useAuth } from "@/lib/auth"
+import { can, useAuth } from "@/lib/auth"
 import { shortAgo } from "@/lib/fleet"
 import { buckets, clock } from "@/lib/overview"
 import { useNow } from "@/hooks/use-now"
@@ -56,7 +56,7 @@ export function ActivityTab({
   const { data: users } = useQuery<AdminUser[]>({
     queryKey: ["admin-users"],
     queryFn: () => apiFetch<AdminUser[]>("/api/admin/users"),
-    enabled: !!user?.is_superuser,
+    enabled: can(user, "users.manage"),
     retry: false,
   })
 

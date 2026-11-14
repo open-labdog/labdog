@@ -12,7 +12,8 @@ import { MODULES } from "@/lib/modules"
 import { showError, showSuccess } from "@/lib/toast"
 import type { Host, HostGroup } from "@/lib/types"
 import { Kbd } from "@/components/ld"
-import { ZONE_DEFS } from "./zones"
+import { can, useAuth } from "@/lib/auth"
+import { zonesFor } from "./zones"
 
 interface Entry {
   group: "destinations" | "config" | "hosts" | "groups" | "verbs"
@@ -23,6 +24,8 @@ interface Entry {
   run: () => void
   /** Shown before anything is typed. Everything else needs a query. */
   defaultVisible?: boolean
+  /** Left out for roles without this permission. */
+  permission?: string
 }
 
 const SETTINGS_SECTIONS = [
@@ -41,6 +44,7 @@ const SETTINGS_SECTIONS = [
  */
 export function Palette({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter()
+  const { user } = useAuth()
   const [q, setQ] = useState("")
 
   const { data: hosts } = useQuery<Host[]>({
@@ -58,7 +62,7 @@ export function Palette({ open, onClose }: { open: boolean; onClose: () => void 
     const go = (href: string) => () => router.push(href)
     const out: Entry[] = []
 
-    for (const z of ZONE_DEFS) {
+    for (const z of zonesFor(user)) {
       for (const it of z.items) {
         out.push({ group: "destinations", label: `${z.label} · ${it.label}`, keywords: [z.label, it.label], run: go(it.href), defaultVisible: true })
       }
@@ -104,18 +108,18 @@ export function Palette({ open, onClose }: { open: boolean; onClose: () => void 
     }
 
     out.push(
-      { group: "verbs", label: "Plan a sync…", meta: "creates a plan, nothing applied", keywords: ["plan", "sync", "apply"], run: go("/plans"), defaultVisible: true },
-      { group: "verbs", label: "Check the fleet for drift", meta: `${hosts?.length ?? "all"} hosts · read-only`, keywords: ["drift", "check", "collect", "state"], run: () => void driftCheckFleet(), defaultVisible: true },
-      { group: "verbs", label: "Approve pending hosts", meta: "discovery queue", keywords: ["approve", "pending", "discovery"], run: go("/discovery"), defaultVisible: true },
-      { group: "verbs", label: "Start a scan", meta: "discovery is read-only", keywords: ["scan", "discover", "network"], run: go("/discovery?tab=scan"), defaultVisible: true },
-      { group: "verbs", label: "Add a host", keywords: ["add", "host", "new"], run: go("/hosts/new"), defaultVisible: true },
-      { group: "verbs", label: "New group", keywords: ["new", "group", "create"], run: go("/groups/new"), defaultVisible: true },
+      { group: "verbs", label: "Plan a sync…", meta: "creates a plan, nothing applied", keywords: ["plan", "sync", "apply"], run: go("/plans"), defaultVisible: true, permission: "sync.run" },
+      { group: "verbs", label: "Check the fleet for drift", meta: `${hosts?.length ?? "all"} hosts · read-only`, keywords: ["drift", "check", "collect", "state"], run: () => void driftCheckFleet(), defaultVisible: true, permission: "sync.run" },
+      { group: "verbs", label: "Approve pending hosts", meta: "discovery queue", keywords: ["approve", "pending", "discovery"], run: go("/discovery"), defaultVisible: true, permission: "discovery.run" },
+      { group: "verbs", label: "Start a scan", meta: "discovery is read-only", keywords: ["scan", "discover", "network"], run: go("/discovery?tab=scan"), defaultVisible: true, permission: "discovery.run" },
+      { group: "verbs", label: "Add a host", keywords: ["add", "host", "new"], run: go("/hosts/new"), defaultVisible: true, permission: "config.edit" },
+      { group: "verbs", label: "New group", keywords: ["new", "group", "create"], run: go("/groups/new"), defaultVisible: true, permission: "config.edit" },
     )
     for (const h of hosts ?? []) {
-      out.push({ group: "verbs", label: `Open terminal — ${h.hostname}`, meta: "SSH via control plane", keywords: ["terminal", "ssh", h.hostname], run: go(`/hosts/${h.id}/terminal`) })
+      out.push({ group: "verbs", label: `Open terminal — ${h.hostname}`, meta: "SSH via control plane", keywords: ["terminal", "ssh", h.hostname], run: go(`/hosts/${h.id}/terminal`), permission: "terminal.open" })
     }
-    return out
-  }, [hosts, groups, router])
+    return out.filter((e) => !e.permission || can(user, e.permission))
+  }, [hosts, groups, router, user])
 
   const visible = q.trim() ? entries : entries.filter((e) => e.defaultVisible)
   const groupsInOrder: Entry["group"][] = ["destinations", "config", "hosts", "groups", "verbs"]

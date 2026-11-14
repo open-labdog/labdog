@@ -1,5 +1,6 @@
 "use client"
 
+import { useCan } from "@/lib/auth"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
@@ -12,6 +13,7 @@ import type { CACertActionRun, CACertRule, EffectiveCACert, Host } from "@/lib/t
 const defaults = { name: "", pem: "", comment: "", state: "present" as "present" | "absent" }
 
 export function CaCertsTab({ hostId, host }: { hostId: number; host: Host | undefined }) {
+  const canEdit = useCan("config.edit")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState(defaults)
@@ -86,7 +88,7 @@ export function CaCertsTab({ hostId, host }: { hostId: number; host: Host | unde
             <button type="button" className="btn btn-sm btn-ghost" disabled={deployMutation.isPending || !host?.ssh_key_id} onClick={() => setDeployConfirm(true)}>
               deploy
             </button>
-            <button type="button" className="btn btn-sm btn-primary" onClick={openCreate}>add override</button>
+            <button type="button" className="btn btn-sm btn-primary" disabled={!canEdit} onClick={openCreate}>add override</button>
           </>
         }
       >
@@ -109,11 +111,11 @@ export function CaCertsTab({ hostId, host }: { hostId: number; host: Host | unde
             k: "actions", label: "", w: "108px", right: true, sortable: false,
             cell: (c) =>
               c.source === "group" ? (
-                <button type="button" className="btn btn-sm btn-ghost" onClick={() => openEdit(c)}>edit</button>
+                <button type="button" className="btn btn-sm btn-ghost" disabled={!canEdit} onClick={() => openEdit(c)}>edit</button>
               ) : (
                 <span className="flex gap-0.5">
-                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => openEdit(c)}>edit</button>
-                  <button type="button" className="btn btn-sm btn-ghost text-danger" disabled={deleteMutation.isPending} onClick={() => setDeleting({ fingerprint: c.fingerprint_sha256, name: c.name })}>delete</button>
+                  <button type="button" className="btn btn-sm btn-ghost" disabled={!canEdit} onClick={() => openEdit(c)}>edit</button>
+                  <button type="button" className="btn btn-sm btn-ghost text-danger" disabled={!canEdit || deleteMutation.isPending} onClick={() => setDeleting({ fingerprint: c.fingerprint_sha256, name: c.name })}>delete</button>
                 </span>
               ),
           },

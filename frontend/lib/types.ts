@@ -490,9 +490,14 @@ export interface EffectiveFirewallRule {
 export interface AdminUser {
   id: number
   email: string
+  display_name: string | null
+  /** `null` = no role: the account can sign in but do nothing. */
+  role: "admin" | "operator" | "viewer" | null
   is_active: boolean
   is_superuser: boolean
   is_verified: boolean
+  must_change_password: boolean
+  last_login_at: string | null
   created_at: string
   updated_at: string
 }

@@ -20,7 +20,7 @@ RUN npm run build
 # Output: /app/out/
 
 # ── Stage 2: Build Python backend + install deps ──────────────────────
-FROM python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea AS backend-builder
+FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b AS backend-builder
 WORKDIR /app
 RUN pip install --no-cache-dir uv
 COPY backend/pyproject.toml backend/uv.lock ./
@@ -39,7 +39,7 @@ RUN uv export --frozen --no-emit-project --extra agent --format requirements-txt
     && uv pip install --no-cache-dir --system -r /tmp/req.txt
 
 # ── Stage 3: Runtime ──────────────────────────────────────────────────
-FROM python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
+FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
 WORKDIR /app
 
 # Install the runtime tools we need, then fully upgrade every base

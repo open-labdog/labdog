@@ -1,5 +1,6 @@
 "use client"
 
+import { useCan } from "@/lib/auth"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
@@ -26,6 +27,8 @@ export function ResolverTab({
   syncDisabled: boolean
   onSync: () => void
 }) {
+  const canEdit = useCan("config.edit")
+  const canSync = useCan("sync.run")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [resolverType, setResolverType] = useState<"resolv_conf" | "systemd_resolved" | "networkmanager">("resolv_conf")
   const [nameservers, setNameservers] = useState<string[]>([])
@@ -105,13 +108,13 @@ export function ResolverTab({
       <Toolbar
         actions={
           <>
-            <button type="button" className="btn btn-sm btn-ghost" disabled={syncDisabled} onClick={onSync}>sync dns</button>
+            <button type="button" className="btn btn-sm btn-ghost" disabled={syncDisabled || !canSync} onClick={onSync}>sync dns</button>
             {override && (
-              <button type="button" className="btn btn-sm btn-ghost text-danger" disabled={deleteMutation.isPending} onClick={() => setDeleteConfirm(true)}>
+              <button type="button" className="btn btn-sm btn-ghost text-danger" disabled={!canEdit || deleteMutation.isPending} onClick={() => setDeleteConfirm(true)}>
                 delete override
               </button>
             )}
-            <button type="button" className="btn btn-sm btn-primary" onClick={openEdit}>
+            <button type="button" className="btn btn-sm btn-primary" disabled={!canEdit} onClick={openEdit}>
               {override ? "edit override" : effective ? "create override" : "configure dns"}
             </button>
           </>
@@ -123,7 +126,7 @@ export function ResolverTab({
       {error && <Banner tone="danger" flush>Could not load the DNS resolver: {error.message}</Banner>}
       {deleteMutation.error && <Banner tone="danger" flush>{deleteMutation.error.message}</Banner>}
 
-      {notConfigured && <Empty title="DNS is not managed for this host" note="Configure DNS at the group level to get started, or configure it directly on this host." action={<button type="button" className="btn btn-sm btn-primary" onClick={openEdit}>configure dns</button>} />}
+      {notConfigured && <Empty title="DNS is not managed for this host" note="Configure DNS at the group level to get started, or configure it directly on this host." action={<button type="button" className="btn btn-sm btn-primary" disabled={!canEdit} onClick={openEdit}>configure dns</button>} />}
 
       {!isLoading && !error && effective && (
         <div className="scroll flex flex-1 flex-col gap-3 p-3.5">
