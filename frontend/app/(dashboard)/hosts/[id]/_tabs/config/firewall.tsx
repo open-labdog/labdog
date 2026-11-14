@@ -1,5 +1,6 @@
 "use client"
 
+import { useCan } from "@/lib/auth"
 import { useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
@@ -30,6 +31,8 @@ export function FirewallTab({
   syncDisabled: boolean
   onSync: () => void
 }) {
+  const canEdit = useCan("config.edit")
+  const canSync = useCan("sync.run")
   const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<EffectiveFirewallRule | null>(null)
@@ -111,10 +114,10 @@ export function FirewallTab({
       <Toolbar
         actions={
           <>
-            <button type="button" className="btn btn-sm btn-ghost" disabled={syncDisabled} onClick={onSync}>
+            <button type="button" className="btn btn-sm btn-ghost" disabled={syncDisabled || !canSync} onClick={onSync}>
               sync rules
             </button>
-            <button type="button" className="btn btn-sm btn-primary" onClick={openCreate}>
+            <button type="button" className="btn btn-sm btn-primary" disabled={!canEdit} onClick={openCreate}>
               add rule
             </button>
           </>
@@ -148,11 +151,11 @@ export function FirewallTab({
               r.is_system || r.source === "system" ? (
                 <span className="text-[11px] text-text-faint">read-only</span>
               ) : r.source === "group" ? (
-                <button type="button" className="btn btn-sm btn-ghost" onClick={() => openEdit(r)}>edit</button>
+                <button type="button" className="btn btn-sm btn-ghost" disabled={!canEdit} onClick={() => openEdit(r)}>edit</button>
               ) : r.rule_id != null ? (
                 <span className="flex gap-0.5">
-                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => openEdit(r)}>edit</button>
-                  <button type="button" className="btn btn-sm btn-ghost text-danger" disabled={deleteMutation.isPending} onClick={() => setDeleting(r)}>delete</button>
+                  <button type="button" className="btn btn-sm btn-ghost" disabled={!canEdit} onClick={() => openEdit(r)}>edit</button>
+                  <button type="button" className="btn btn-sm btn-ghost text-danger" disabled={!canEdit || deleteMutation.isPending} onClick={() => setDeleting(r)}>delete</button>
                 </span>
               ) : null,
           },

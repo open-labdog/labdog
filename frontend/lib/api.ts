@@ -55,6 +55,18 @@ function _readCsrfCookie(): string {
   return match ? match.slice("labdog_csrf=".length) : ""
 }
 
+/**
+ * Turn the backend's 403 details into something a person can act on.
+ * `Missing permission: config.edit` comes from `require()` on every route;
+ * `password_change_required` from an administrator-set password.
+ */
+export function describeForbidden(detail: string): string {
+  const missing = /^Missing permission: (\S+)$/.exec(detail)
+  if (missing) return `Your role cannot do this (it needs ${missing[1]}). Ask an admin if you need it.`
+  if (detail === "password_change_required") return "Choose your own password before you continue."
+  return detail
+}
+
 export async function apiFetch<T>(
   path: string,
   options?: RequestInit & { json?: unknown }
@@ -104,6 +116,7 @@ export async function apiFetch<T>(
         detail = body.detail
       }
     } catch {}
+    if (res.status === 403) detail = describeForbidden(detail)
     throw new ApiError(detail, res.status)
   }
   if (res.status === 204 || res.headers.get("content-length") === "0") return undefined as T

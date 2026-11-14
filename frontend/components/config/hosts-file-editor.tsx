@@ -19,7 +19,7 @@ const defaults: HostsEntryInput = { mode: "literal", ip_address: "", hostname: "
  * time. Embedded in the group page's Config tab.
  */
 export function HostsFileEditor({ groupId }: { groupId: number }) {
-  const { group, gitops } = useEditorGroup(groupId)
+  const { group, managedByGit, locked: gitops } = useEditorGroup(groupId)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<HostsEntry | null>(null)
   const [deleting, setDeleting] = useState<HostsEntry | null>(null)
@@ -112,7 +112,7 @@ export function HostsFileEditor({ groupId }: { groupId: number }) {
       >
         <span className="tt">{rows.length} {rows.length === 1 ? "entry" : "entries"} declared here</span>
       </Toolbar>
-      {gitops && <GitOpsBanner group={group} what="hosts entries are" />}
+      {managedByGit && <GitOpsBanner group={group} what="hosts entries are" />}
       {error && (
         <Banner tone="danger" flush>
           Could not load hosts entries: {error.message}

@@ -7,6 +7,7 @@ import Link from "next/link"
 import { Banner, Field, Modal } from "@/components/ld"
 import { ActionParameterForm } from "@/components/action-parameter-form"
 import { apiFetch } from "@/lib/api"
+import { useCan } from "@/lib/auth"
 import { nextCodename } from "@/lib/os-upgrade-paths"
 import { useActionTray } from "@/lib/action-tray"
 import { toast } from "sonner"
@@ -84,6 +85,7 @@ export function formValuesFromRun(action: ActionDefinition, run: ActionRun): { v
 const NO_PARAMS: Record<string, unknown> = {}
 
 export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOsCodename, actions, onPickAction, targetLabel, rerunOf }: ActionRunDialogProps) {
+  const canRun = useCan("actions.run")
   const router = useRouter()
   const { trackRun } = useActionTray()
   const rerun = useMemo(() => (action && rerunOf ? formValuesFromRun(action, rerunOf) : null), [action, rerunOf])
@@ -238,7 +240,7 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
     }
   }
 
-  const blocked = submitting || !!action.unresolved || missingDestination
+  const blocked = submitting || !!action.unresolved || missingDestination || !canRun
   const current = scope === "host" ? hostOsCodename : groupSingleCodename
 
   return (
@@ -250,6 +252,7 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
       w={440}
       footer={
         <>
+          {!canRun && <span className="tt">your role cannot run actions</span>}
           <button type="button" className="btn ml-auto" disabled={blocked} onClick={() => handleSubmit(true)}>
             Preview (dry-run)
           </button>

@@ -1,5 +1,6 @@
 "use client"
 
+import { useCan } from "@/lib/auth"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
@@ -24,6 +25,8 @@ export function UsersTab({
   syncDisabled: boolean
   onSync: () => void
 }) {
+  const canEdit = useCan("config.edit")
+  const canSync = useCan("sync.run")
   const [luOpen, setLuOpen] = useState(false)
   const [luEditingId, setLuEditingId] = useState<number | null>(null)
   const [luForm, setLuForm] = useState(userDefaults)
@@ -151,9 +154,9 @@ export function UsersTab({
       <Toolbar
         actions={
           <>
-            <button type="button" className="btn btn-sm btn-ghost" disabled={syncDisabled} onClick={onSync}>sync</button>
-            <button type="button" className="btn btn-sm" onClick={openLuCreate}>add user override</button>
-            <button type="button" className="btn btn-sm btn-primary" onClick={openLgCreate}>add group override</button>
+            <button type="button" className="btn btn-sm btn-ghost" disabled={syncDisabled || !canSync} onClick={onSync}>sync</button>
+            <button type="button" className="btn btn-sm" disabled={!canEdit} onClick={openLuCreate}>add user override</button>
+            <button type="button" className="btn btn-sm btn-primary" disabled={!canEdit} onClick={openLgCreate}>add group override</button>
           </>
         }
       >
@@ -179,8 +182,8 @@ export function UsersTab({
               cell: (u) =>
                 u.source === "host" ? (
                   <span className="flex gap-0.5">
-                    <button type="button" className="btn btn-sm btn-ghost" onClick={() => handleLuEdit(u.username)}>edit</button>
-                    <button type="button" className="btn btn-sm btn-ghost text-danger" disabled={luDeleteMutation.isPending} onClick={() => setLuDeleting(u.username)}>delete</button>
+                    <button type="button" className="btn btn-sm btn-ghost" disabled={!canEdit} onClick={() => handleLuEdit(u.username)}>edit</button>
+                    <button type="button" className="btn btn-sm btn-ghost text-danger" disabled={!canEdit || luDeleteMutation.isPending} onClick={() => setLuDeleting(u.username)}>delete</button>
                   </span>
                 ) : (
                   <span className="text-[11px] text-text-faint">read-only</span>
@@ -210,8 +213,8 @@ export function UsersTab({
               cell: (g) =>
                 g.source === "host" ? (
                   <span className="flex gap-0.5">
-                    <button type="button" className="btn btn-sm btn-ghost" onClick={() => handleLgEdit(g.groupname)}>edit</button>
-                    <button type="button" className="btn btn-sm btn-ghost text-danger" disabled={lgDeleteMutation.isPending} onClick={() => setLgDeleting(g.groupname)}>delete</button>
+                    <button type="button" className="btn btn-sm btn-ghost" disabled={!canEdit} onClick={() => handleLgEdit(g.groupname)}>edit</button>
+                    <button type="button" className="btn btn-sm btn-ghost text-danger" disabled={!canEdit || lgDeleteMutation.isPending} onClick={() => setLgDeleting(g.groupname)}>delete</button>
                   </span>
                 ) : (
                   <span className="text-[11px] text-text-faint">read-only</span>

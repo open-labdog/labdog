@@ -4,7 +4,7 @@ import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
-import { can, useAuth } from "@/lib/auth"
+import { can, ROLE_INFO, useAuth, type User } from "@/lib/auth"
 import { shortAgo } from "@/lib/fleet"
 import type { AIProvider, AIUsageSummary, AlertIntakeStatus, EmailSettings, GitRepository, GrafanaInstance, MetricsStatus, ProxmoxNode, SSHKey } from "@/lib/types"
 import { MetricsScrapeCard } from "@/components/metrics-scrape-card"
@@ -51,7 +51,7 @@ export default function SettingsPage() {
             <SettingsEditor categories={["ai"]} />
           </div>
         )}
-        {section === "access" && <Access superuser={!!user?.is_superuser} />}
+        {section === "access" && <Access user={user} />}
         {section === "fleet" && <SettingsEditor categories={["drift", "ssh", "ansible", "actions", "scheduling", "alerts", "workflow", "discovery"]} includeUncategorised />}
         {section === "system" && (
           <div className="flex flex-col gap-3">
@@ -228,7 +228,9 @@ function ProvidersRow() {
   )
 }
 
-function Access({ superuser }: { superuser: boolean }) {
+function Access({ user }: { user: User | null }) {
+  const manage = can(user, "users.manage")
+  const role = user?.role ? ROLE_INFO[user.role].label : null
   const { data: keys } = useQuery<SSHKey[]>({ queryKey: ["ssh-keys"], queryFn: () => apiFetch<SSHKey[]>("/api/ssh-keys"), retry: false })
   return (
     <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
@@ -242,11 +244,11 @@ function Access({ superuser }: { superuser: boolean }) {
       />
       <Card
         name="Users"
-        state={superuser ? "ok" : "idle"}
-        detail={superuser ? "you are a superuser" : "administrators only"}
-        meta={superuser ? "accounts and superuser status" : "ask an administrator to manage accounts"}
-        href={superuser ? "/users" : "/settings?section=access"}
-        action={superuser ? "Manage users…" : "Superuser gate"}
+        state={manage ? "ok" : "idle"}
+        detail={role ? `your role: ${role}` : "you have no role"}
+        meta={manage ? "accounts and their roles" : "ask an admin to manage accounts or change your role"}
+        href={manage ? "/users" : "/settings?section=access"}
+        action={manage ? "Manage users…" : "Admins only"}
       />
       <Panel title="your account" meta="password + sign out">
         <div className="flex flex-col gap-2 p-[11px] text-[11.5px] text-text-3">

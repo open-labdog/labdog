@@ -1,5 +1,6 @@
 "use client"
 
+import { useCan } from "@/lib/auth"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { apiFetch, API_BASE } from "@/lib/api"
@@ -22,6 +23,8 @@ export function HostsFileTab({
   syncDisabled: boolean
   onSync: () => void
 }) {
+  const canEdit = useCan("config.edit")
+  const canSync = useCan("sync.run")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState(defaults)
@@ -110,13 +113,13 @@ export function HostsFileTab({
       <Toolbar
         actions={
           <>
-            <button type="button" className="btn btn-sm btn-ghost" disabled={syncDisabled} onClick={onSync}>
+            <button type="button" className="btn btn-sm btn-ghost" disabled={syncDisabled || !canSync} onClick={onSync}>
               sync
             </button>
             <button type="button" className="btn btn-sm btn-ghost" disabled={previewLoading} onClick={fetchPreview}>
               {previewLoading ? "loading…" : "preview file"}
             </button>
-            <button type="button" className="btn btn-sm btn-primary" onClick={openCreate}>
+            <button type="button" className="btn btn-sm btn-primary" disabled={!canEdit} onClick={openCreate}>
               add override
             </button>
           </>
@@ -153,13 +156,13 @@ export function HostsFileTab({
             k: "actions", label: "", w: "108px", right: true, sortable: false,
             cell: (e) => {
               if (e.is_system || e.source === "system") return <span className="text-[11px] text-text-faint">read-only</span>
-              if (e.source === "group") return <button type="button" className="btn btn-sm btn-ghost" onClick={() => openEdit(e)}>edit</button>
+              if (e.source === "group") return <button type="button" className="btn btn-sm btn-ghost" disabled={!canEdit} onClick={() => openEdit(e)}>edit</button>
               const override = overrides?.find((o) => o.hostname === e.hostname && o.ip_address === e.ip_address)
               if (!override) return null
               return (
                 <span className="flex gap-0.5">
-                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => openEdit(e)}>edit</button>
-                  <button type="button" className="btn btn-sm btn-ghost text-danger" disabled={deleteMutation.isPending} onClick={() => setDeleting(override)}>delete</button>
+                  <button type="button" className="btn btn-sm btn-ghost" disabled={!canEdit} onClick={() => openEdit(e)}>edit</button>
+                  <button type="button" className="btn btn-sm btn-ghost text-danger" disabled={!canEdit || deleteMutation.isPending} onClick={() => setDeleting(override)}>delete</button>
                 </span>
               )
             },

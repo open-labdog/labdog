@@ -24,7 +24,7 @@ function shortFingerprint(fp: string) {
  * the recent deployment runs. Embedded in the group page's Config tab.
  */
 export function CaCertsEditor({ groupId }: { groupId: number }) {
-  const { group, gitops } = useEditorGroup(groupId)
+  const { group, managedByGit, locked: gitops } = useEditorGroup(groupId)
 
   const [addOpen, setAddOpen] = useState(false)
   const [name, setName] = useState("")
@@ -132,7 +132,7 @@ export function CaCertsEditor({ groupId }: { groupId: number }) {
         <span className="tt">{plural(certs.length, "certificate")} declared here</span>
         <span className="hidden text-[11px] text-text-faint sm:inline">deployed as a one-time action, no drift detection · new hosts auto-deploy</span>
       </Toolbar>
-      {gitops && <GitOpsBanner group={group} what="CA certificates are" />}
+      {managedByGit && <GitOpsBanner group={group} what="CA certificates are" />}
       {error && (
         <Banner tone="danger" flush>
           Could not load certificates: {error.message}

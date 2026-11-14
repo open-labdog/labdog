@@ -11,6 +11,8 @@
  * and a host's effective state on the host's page — the palette indexes
  * every module × group pair to keep that one keystroke away.
  */
+import { can, type User } from "@/lib/auth"
+
 export type ZoneKey = "overview" | "fleet" | "ops" | "assistant" | "settings"
 
 export type GlyphShape = "ring" | "grid" | "stack" | "tri" | "gear" | "search" | "contrast"
@@ -47,6 +49,8 @@ export interface ZoneDef {
   glyph: GlyphShape
   href: string
   items: PaneItem[]
+  /** Hidden from roles without this permission (`app/auth/permissions.py`). */
+  permission?: string
 }
 
 const nz = (v: number | undefined) => (v && v > 0 ? v : undefined)
@@ -95,9 +99,15 @@ export const ZONE_DEFS: ZoneDef[] = [
     label: "Assistant",
     glyph: "tri",
     href: "/assistant",
+    permission: "ai.use",
     items: [{ label: "Sessions", href: "/assistant", badge: (c) => nz(c.approvals) }],
   },
 ]
+
+/** The zones this user's role can use. A zone without a permission is everyone's. */
+export function zonesFor(user: User | null): ZoneDef[] {
+  return ZONE_DEFS.filter((z) => !z.permission || can(user, z.permission))
+}
 
 /** Settings sits at the bottom of the rail, not as a peer of the work. */
 export const SETTINGS_ZONE: ZoneDef = {
