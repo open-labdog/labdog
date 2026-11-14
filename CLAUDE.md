@@ -332,6 +332,13 @@ Enterprise package must still start and let an admin sign in. Bump
 `PLUGIN_API`'s minor when adding to the contract, its major when changing
 it, and note what changed in the comment above it.
 
+An extension with tables of its own declares a second entry point, in
+`unbork.migrations`, naming an `upgrade()` that runs its own Alembic
+environment with its **own version table**. `python -m app` calls it after
+core's `upgrade head`, in the roles that migrate. Never put extension
+revisions in core's `alembic_version`: once the extension is uninstalled,
+core would meet a revision it cannot locate and refuse to start.
+
 The contract (1.1) is the permission hooks above plus three directory
 sign-in hooks, none of which Community uses itself:
 

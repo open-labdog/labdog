@@ -380,3 +380,49 @@ class TestPasswordLoginPaths:
         assert login_paths.is_password_login_path("/api/auth/jwt/login")
         assert login_paths.is_password_login_path("/api/auth/register")
         assert not login_paths.is_password_login_path("/api/hosts")
+
+
+_migrated: list[str] = []
+
+
+def _migrate():
+    _migrated.append("ran")
+
+
+_migrate.requires_plugin_api = "1.0"
+
+
+def _migrate_too_new():  # pragma: no cover - must never run
+    raise AssertionError("an incompatible migration ran")
+
+
+_migrate_too_new.requires_plugin_api = "9.0"
+
+
+def _migrate_broken():
+    raise RuntimeError("relation already exists")
+
+
+_migrate_broken.requires_plugin_api = "1.0"
+
+
+class TestPluginMigrations:
+    def test_runs_compatible_migrations_and_survives_the_rest(self, caplog):
+        from app.plugins import run_plugin_migrations
+
+        _migrated.clear()
+        done = run_plugin_migrations(
+            [
+                EntryPoint("a-good", "tests.test_external_auth:_migrate", "unbork.migrations"),
+                EntryPoint(
+                    "b-new", "tests.test_external_auth:_migrate_too_new", "unbork.migrations"
+                ),
+                EntryPoint(
+                    "c-broken", "tests.test_external_auth:_migrate_broken", "unbork.migrations"
+                ),
+            ]
+        )
+        assert done == ["a-good"]
+        assert _migrated == ["ran"]
+        assert "need plugin API '9.0'" in caplog.text
+        assert "c-broken" in caplog.text and "failed; skipped" in caplog.text

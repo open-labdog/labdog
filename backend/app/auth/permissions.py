@@ -50,7 +50,8 @@ logger = logging.getLogger(__name__)
 #: minor for additions, major for anything that could break an extension.
 #:
 #: 1.0  permission catalog, ``require()``, the two ``set_*_resolver`` hooks.
-#: 1.1  ``app.plugins`` entry-point loading, ``app.auth.external`` (login
+#: 1.1  ``app.plugins`` entry-point loading (``unbork.plugins`` and
+#:      ``unbork.migrations``), ``app.auth.external`` (login
 #:      providers, ``resolve_external_user``, ``issue_session``) and the
 #:      ``user_identities`` table.
 PLUGIN_API = "1.1"

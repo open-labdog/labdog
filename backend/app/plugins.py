@@ -42,6 +42,7 @@ from app.auth.permissions import PLUGIN_API
 logger = logging.getLogger(__name__)
 
 ENTRY_POINT_GROUP = "unbork.plugins"
+MIGRATIONS_GROUP = "unbork.migrations"
 
 
 @dataclass(frozen=True)
@@ -117,3 +118,50 @@ def load_plugins(app: FastAPI, eps: Iterable[EntryPoint] | None = None) -> list[
         logger.info("plugin %s (%s) loaded", ep.name, dist or ep.value)
     loaded_plugins[:] = loaded
     return loaded
+
+
+def run_plugin_migrations(eps: Iterable[EntryPoint] | None = None) -> list[str]:
+    """Bring each installed plugin's own tables up to date; return their names.
+
+    An extension with tables declares a second entry point, in the
+    ``unbork.migrations`` group, naming a callable ``upgrade()`` (with the
+    same ``requires_plugin_api`` attribute) that runs its own Alembic
+    environment against ``settings.database.url``. It must keep its own
+    version table (``alembic_version_enterprise``, say), never core's
+    ``alembic_version``: a revision core does not know in core's table
+    would stop a Community install from starting once the extension is
+    uninstalled.
+
+    Called by ``python -m app`` right after core's own ``upgrade head``,
+    only in the roles that migrate. A failing plugin migration is logged
+    and skipped like a failing plugin: core keeps running, and the plugin
+    is expected to notice its schema is behind and refuse to register.
+    """
+    if eps is None:
+        eps = entry_points(group=MIGRATIONS_GROUP)
+    done: list[str] = []
+    for ep in sorted(eps, key=lambda e: e.name):
+        dist = _distribution(ep) or ep.value
+        try:
+            upgrade = ep.load()
+        except Exception:
+            logger.exception("plugin migrations %s (%s): failed to import; skipped", ep.name, dist)
+            continue
+        required = getattr(upgrade, "requires_plugin_api", None)
+        if not isinstance(required, str) or not is_compatible(required):
+            logger.error(
+                "plugin migrations %s (%s) need plugin API %r, this unbork provides %s; skipped",
+                ep.name,
+                dist,
+                required,
+                PLUGIN_API,
+            )
+            continue
+        try:
+            logger.info("Running plugin migrations %s (%s) ...", ep.name, dist)
+            upgrade()
+        except Exception:
+            logger.exception("plugin migrations %s (%s) failed; skipped", ep.name, dist)
+            continue
+        done.append(ep.name)
+    return done
