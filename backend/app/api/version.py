@@ -18,7 +18,7 @@ router = APIRouter(prefix="/api", tags=["version"])
 # ---------------------------------------------------------------------------
 
 _LICENSE = "AGPL-3.0-or-later"
-_REPO_URL = "https://github.com/open-labdog/labdog"
+_REPO_URL = "https://github.com/open-unbork/unbork"
 _UNKNOWN_VERSION = "0.0.0+unknown"
 
 # ---------------------------------------------------------------------------

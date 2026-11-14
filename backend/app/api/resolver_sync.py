@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api._group_sync import group_member_ids_or_400, sync_group_members
 from app.api.sync import SyncJobResponse
-from app.auth.users import current_active_user
+from app.auth.permissions import require, row_scope
 from app.crypto.encryption import decrypt_ssh_key
 from app.crypto.key_management import get_master_key
 from app.db import get_db
@@ -41,7 +41,7 @@ class ResolverSyncPlan(BaseModel):
 @router.post("/hosts/{host_id}/plan", response_model=ResolverSyncPlan)
 async def plan_resolver_sync(
     host_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("sync.run")),
     db: AsyncSession = Depends(get_db),
 ):
     host_result = await db.execute(select(Host).where(Host.id == host_id))
@@ -86,7 +86,7 @@ async def plan_resolver_sync(
 @router.post("/hosts/{host_id}/sync", response_model=SyncJobResponse, status_code=201)
 async def trigger_resolver_sync(
     host_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("sync.run")),
     db: AsyncSession = Depends(get_db),
 ):
     host_result = await db.execute(select(Host).where(Host.id == host_id))
@@ -134,7 +134,7 @@ async def trigger_resolver_sync(
 @router.post("/groups/{group_id}/sync", status_code=201)
 async def trigger_group_resolver_sync(
     group_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("sync.run")),
     db: AsyncSession = Depends(get_db),
 ):
     host_ids = await group_member_ids_or_400(db, group_id)
@@ -155,7 +155,7 @@ async def trigger_group_resolver_sync(
 @router.get("/jobs/{job_id}", response_model=SyncJobResponse)
 async def get_resolver_sync_job(
     job_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view", scope=row_scope(SyncJob, "job_id"))),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(SyncJob).where(SyncJob.id == job_id))
@@ -169,7 +169,7 @@ async def get_resolver_sync_job(
 async def check_resolver_drift(
     host_id: int,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("sync.run")),
 ):
     host = (await db.execute(select(Host).where(Host.id == host_id))).scalar_one_or_none()
     if not host:
@@ -230,7 +230,7 @@ async def update_resolver_drift_settings(
     host_id: int,
     enabled: bool = True,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
 ):
     hms = (
         await db.execute(

@@ -66,7 +66,7 @@ rest redirect to their new homes.
 | [Grafana](host-metrics.md) | Two directions on one page. **Metrics in:** register a Mimir/Loki (Prometheus-compatible) backend to show instant CPU/memory/disk on the host page; ties into the Alloy install action from `labdog-playbooks`. **Metrics out:** the [Prometheus scrape endpoint](../metrics-export.md) — status, scrape URL and config snippet |
 | [AI Providers](assistant.md#ai-providers) | Connect a local or hosted LLM, set per-token pricing, and cap spend with daily/monthly budgets |
 | [Audit Log](operations.md#audit) | Append-only record of every change, with SSH session transcripts |
-| [Users](admin.md#users) | LabDog user accounts (superuser only) |
+| [Users](admin.md#users) | User accounts and roles (admins only) |
 | [Settings](settings.md) | Five sections — Integrations (a registry of what is connected), AI, Access, Fleet defaults, System |
 | [About](settings.md#about) | Build metadata — version, commit SHA, build date, license, repo URL (Settings · System) |
 

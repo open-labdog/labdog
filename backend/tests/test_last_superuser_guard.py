@@ -40,8 +40,10 @@ async def test_the_last_superuser_cannot_be_deactivated(superuser_client, db):
 
     resp = await superuser_client.patch(f"/api/admin/users/{me}", json={"is_active": False})
 
+    # Refused twice over since roles: nobody disables themselves, and the
+    # last active admin is never disabled.
     assert resp.status_code == 400
-    assert "deactivate the last superuser" in resp.json()["detail"]
+    assert "yourself" in resp.json()["detail"]
 
 
 async def test_an_inactive_superuser_does_not_count_as_another(superuser_client, db):
@@ -54,10 +56,9 @@ async def test_an_inactive_superuser_does_not_count_as_another(superuser_client,
 
 
 async def test_with_another_active_superuser_it_is_allowed(superuser_client, db):
-    me = await _me(superuser_client)
-    await _superuser(db, active=True)
+    other = await _superuser(db, active=True)
 
-    resp = await superuser_client.patch(f"/api/admin/users/{me}", json={"is_active": False})
+    resp = await superuser_client.patch(f"/api/admin/users/{other.id}", json={"is_active": False})
 
     assert resp.status_code == 200, resp.text
 

@@ -143,7 +143,7 @@ local-filesystem. Until a pack has synced, the registry holds only the
 built-in pseudo-actions (`_builtin.*`, `app/actions/builtins.py`).
 
 A fresh install seeds one pack, `labdog-playbooks`, pointing at
-[`open-labdog/labdog-playbooks`](https://github.com/open-labdog/labdog-playbooks)
+[`open-unbork/unbork-playbooks`](https://github.com/open-unbork/unbork-playbooks)
 `main` (git repo + pack rows in `alembic 0001`). It is an ordinary pack:
 operators edit, disable or delete it like any other, and re-add it by
 hand. A site without GitHub access points that repository at an internal
@@ -287,6 +287,37 @@ Each module supplies only a `check_one(host, hms, db)` body that writes
 into the session and never commits — the driver owns the transaction,
 because throwing it away is how a mid-check claim is handled.
 
+### Access control
+
+Every account has a role: `admin`, `operator` or `viewer` (`users.role`;
+NULL means no role and grants nothing). Roles map onto a fixed permission
+catalog in `app/auth/permissions.py` (`hosts.view`, `config.edit`,
+`sync.run`, `actions.run`, `terminal.open`, `integrations.manage`,
+`settings.manage`, `users.manage`, ...), and that dict is the only place a
+role name means anything.
+
+**Every new route declares one permission** with
+`Depends(require("sync.run"))`, which also returns the user, in place of
+`current_active_user`. Never test `user.role` or `is_superuser` in an
+endpoint: `is_superuser` survives only as a mirror of `role == "admin"`
+for fastapi-users and the superuser metric. `tests/test_permissions.py`
+fails on any route without a `require()` (apart from its explicit
+`PUBLIC` list) and checks that every route refuses a role lacking its
+permission. The SSH terminal websocket checks `terminal.open` itself in
+`app/api/ssh_terminal.py`, since a websocket is outside the dependency
+chain.
+
+Checks carry a lazily resolved scope: `{host_id}` / `{group_id}` in the
+path by default, `scope=row_scope(SyncJob, "job_id")` for rows owned by a
+host or group. The Community resolver ignores scope. Extensions (RBAC)
+replace it through `set_permission_resolver()` and filter host lists
+through `set_visible_hosts_resolver()`; `PLUGIN_API` versions that
+contract. A user with `must_change_password` gets 403
+`password_change_required` from every `require()` route until they change
+it through `PATCH /api/users/me` (which needs `current_password`).
+`python -m app.auth.users_cli` is the recovery path when no admin can
+sign in.
+
 ### About / version surface
 
 `GET /api/version` is a public (no-auth) endpoint exposing
@@ -330,7 +361,7 @@ scratchpad:
 4. **Delete `plans/` before opening the PR.** `dev` and `main` must
    never carry it.
 
-Where work is tracked: the [roadmap board](https://github.com/orgs/open-labdog/projects/1)
+Where work is tracked: the [roadmap board](https://github.com/orgs/open-unbork/projects/1)
 (direction and open tasks; research and design notes go in each item),
 [`BUGS.md`](BUGS.md) (open bug registry, open-only), `plans/` (private
 in-flight scratchpad on work branches). See

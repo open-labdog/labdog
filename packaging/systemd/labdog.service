@@ -1,6 +1,6 @@
 [Unit]
 Description=LabDog
-Documentation=https://open-labdog.github.io/labdog/
+Documentation=https://open-unbork.github.io/unbork/
 # Order after network and (optional) local DB/Redis. We do NOT Require= them
 # because PostgreSQL and Redis are commonly hosted off-box in production.
 # The application retries DB/Redis connections at startup.

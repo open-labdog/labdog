@@ -169,8 +169,9 @@ verify and grace), since there is no telling how far it got; its log
 stops where the restart cut it off. The hosts the run had not reached
 then run as usual, at the run's parallelism.
 
-**Who can run actions:** any logged-in user. **Who can configure packs
-or schedules:** superusers only.
+**Who can run actions:** operators and admins. **Who can manage
+schedules:** operators and admins. **Who can configure packs and pick
+winners:** admins only. See [roles](admin.md#users).
 
 ### Group-dispatch actions
 
@@ -282,7 +283,7 @@ global pack ordering.
 
 A fresh install registers one pack, `labdog-playbooks`, on the git
 repository
-[`open-labdog/labdog-playbooks`](https://github.com/open-labdog/labdog-playbooks)
+[`open-unbork/unbork-playbooks`](https://github.com/open-unbork/unbork-playbooks)
 (branch `main`). It syncs on startup like any other pack and supplies
 the baseline actions, among them:
 
@@ -305,7 +306,7 @@ are available.
   all keys**, or delete `labdog-playbooks` so your fork is the only
   contributor.
 - **Deleted it by mistake**: add the repository again
-  (`https://github.com/open-labdog/labdog-playbooks`, branch `main`, no
+  (`https://github.com/open-unbork/unbork-playbooks`, branch `main`, no
   credentials), then **Add pack…** on it with the path left blank.
 
 To override one of its actions, add a pack that declares the same key
@@ -337,7 +338,7 @@ root and walks the whole repo to find them — `packs/<name>/`,
 `actions/<name>/`, the repo root itself, all work. If no `pack.yml`
 exists anywhere but the repo root has an `actions/*/manifest.yml`
 tree, the repo is treated as a single root-level pack (matches the
-[`labdog-playbooks`](https://github.com/open-labdog/labdog-playbooks)
+[`labdog-playbooks`](https://github.com/open-unbork/unbork-playbooks)
 convention).
 
 **Per-pack alternative.** When you want to add a single pack, or the
@@ -462,12 +463,12 @@ The three example packs in
 [`docs/examples/action-packs/`](../examples/action-packs/) cover the
 bread and butter:
 
-- [`minimal-pack/`](https://github.com/open-labdog/labdog/tree/main/docs/examples/action-packs/minimal-pack) — smallest
+- [`minimal-pack/`](https://github.com/open-unbork/unbork/tree/main/docs/examples/action-packs/minimal-pack) — smallest
   possible pack, one action with no parameters.
-- [`reboot-pack/`](https://github.com/open-labdog/labdog/tree/main/docs/examples/action-packs/reboot-pack) — a
+- [`reboot-pack/`](https://github.com/open-unbork/unbork/tree/main/docs/examples/action-packs/reboot-pack) — a
   destructive action with a parameter, suitable as a template for
   things that modify host state.
-- [`with-role/`](https://github.com/open-labdog/labdog/tree/main/docs/examples/action-packs/with-role) — a pack that
+- [`with-role/`](https://github.com/open-unbork/unbork/tree/main/docs/examples/action-packs/with-role) — a pack that
   ships its own Ansible role and reuses it from a playbook.
 
 ### Pack layout
@@ -549,7 +550,7 @@ parameters:                  # passed as --extra-vars at run time
 Unknown fields are rejected (the manifest is validated with pydantic
 `extra="forbid"`), so typos fail loudly instead of silently doing
 nothing. The manifests in
-[`labdog-playbooks/actions/`](https://github.com/open-labdog/labdog-playbooks/tree/main/actions)
+[`labdog-playbooks/actions/`](https://github.com/open-unbork/unbork-playbooks/tree/main/actions)
 are working examples of every field.
 
 ### Playbook conventions
@@ -668,10 +669,10 @@ the main playbook.
 built-in SSH + services + packages check (healthy if every
 currently-desired service is running and every desired package is
 installed). The full working example is
-[`docs/examples/action-packs/with-verify/`](https://github.com/open-labdog/labdog/tree/main/docs/examples/action-packs/with-verify).
+[`docs/examples/action-packs/with-verify/`](https://github.com/open-unbork/unbork/tree/main/docs/examples/action-packs/with-verify).
 
 **Reusable verify templates** ship in the `labdog-playbooks` repo
-under [`verify/`](https://github.com/open-labdog/labdog-playbooks/tree/main/verify)
+under [`verify/`](https://github.com/open-unbork/unbork-playbooks/tree/main/verify)
 — point `verify_playbook:` at one of them (e.g.
 `../../verify/post-upgrade.yml` — `../../` reaches the pack root from
 inside the action directory) and pass overrides through manifest

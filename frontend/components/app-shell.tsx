@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useState } from "react"
 import { usePathname } from "next/navigation"
 import { useTheme } from "next-themes"
-import { useAuth } from "@/lib/auth"
+import { can, useAuth } from "@/lib/auth"
 import { useViewportWidth } from "@/hooks/use-viewport"
 import { MobileRail, RAIL_W, RAIL_W_EXPANDED, Rail, ThemeToggle } from "@/components/shell/rail"
 import { useLocalPref } from "@/lib/local-pref"
 import { Pane } from "@/components/shell/pane"
 import { Palette } from "@/components/shell/palette"
 import { AccountMenu } from "@/components/shell/account-menu"
+import { ForcedPasswordChange } from "@/components/shell/forced-password-change"
 import { useShellCounts } from "@/components/shell/use-shell-counts"
 import { zoneDef, zoneForPath } from "@/components/shell/zones"
 
@@ -60,8 +61,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const railExpanded = railPref.expanded
   const toggleRail = useCallback(() => setRailPref({ expanded: !railExpanded }), [setRailPref, railExpanded])
   const railW = railExpanded ? RAIL_W_EXPANDED : RAIL_W
-  // Shell queries only run once someone is signed in and off the auth pages.
-  const counts = useShellCounts(!isAuthPage && !!user)
+  // Shell queries only run once someone is signed in and off the auth pages,
+  // and not while a forced password change refuses every one of them.
+  const signedIn = !isAuthPage && !!user && !user.must_change_password
+  const counts = useShellCounts(signedIn, can(user, "ai.use"))
 
   const toggleTheme = useCallback(
     () => setTheme(resolvedTheme === "light" ? "dark" : "light"),
@@ -125,7 +128,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {mobile && (
           <header className="flex shrink-0 items-center gap-[9px] border-b border-line bg-surface px-3 py-[9px]">
             {/* eslint-disable-next-line @next/next/no-img-element -- static svg, no optimisation needed */}
-            <img src="/logo.svg" alt="LabDog" width={22} height={22} className="block" />
+            <img src="/logo.svg" alt="unbork" width={22} height={22} className="block" />
             <span className="text-[12.5px] font-semibold">{zoneDef(zone).label}</span>
             <button type="button" className="btn btn-sm btn-ghost ml-auto" onClick={() => setPalette(true)} aria-label="Search">
               search
@@ -136,7 +139,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         )}
         {/* Every screen owns its header and scroll region (PageHead + a
             `.scroll` body), so the shell hands over the whole column. */}
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</main>
+        {/* Nothing behind the forced password change would load: every API
+            call is refused until it is done. */}
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col">{user?.must_change_password ? null : children}</main>
+        <ForcedPasswordChange />
       </div>
 
       {mobile && <MobileRail zone={zone} counts={counts} />}

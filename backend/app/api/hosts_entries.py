@@ -13,7 +13,7 @@ from app.api._scoped_rules import (
     require_host,
     scoped_row_or_404,
 )
-from app.auth.users import current_active_user
+from app.auth.permissions import require
 from app.db import get_db
 from app.hosts_mgmt.merge import get_effective_hosts_entries, render_hosts_file
 from app.hosts_mgmt.models import HostsEntry
@@ -80,7 +80,7 @@ async def _apply_entry_update(db: AsyncSession, entry: HostsEntry, body: HostsEn
 )
 async def list_group_hosts_entries(
     group_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     await require_group(db, group_id)
@@ -101,7 +101,7 @@ async def list_group_hosts_entries(
 async def create_group_hosts_entry(
     group_id: int,
     body: HostsEntryCreate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -122,7 +122,7 @@ async def update_group_hosts_entry(
     group_id: int,
     entry_id: int,
     body: HostsEntryUpdate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -139,7 +139,7 @@ async def update_group_hosts_entry(
 async def delete_group_hosts_entry(
     group_id: int,
     entry_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -160,7 +160,7 @@ async def delete_group_hosts_entry(
 )
 async def list_host_hosts_entries(
     host_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     await require_host(db, host_id)
@@ -181,7 +181,7 @@ async def list_host_hosts_entries(
 async def create_host_hosts_entry(
     host_id: int,
     body: HostsEntryCreate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     await require_host(db, host_id)
@@ -201,7 +201,7 @@ async def update_host_hosts_entry(
     host_id: int,
     entry_id: int,
     body: HostsEntryUpdate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     entry = await scoped_row_or_404(
@@ -217,7 +217,7 @@ async def update_host_hosts_entry(
 async def delete_host_hosts_entry(
     host_id: int,
     entry_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     entry = await scoped_row_or_404(
@@ -237,7 +237,7 @@ async def delete_host_hosts_entry(
 )
 async def effective_hosts_entries(
     host_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     await require_host(db, host_id)
@@ -256,7 +256,7 @@ async def effective_hosts_entries(
 )
 async def hosts_file_preview(
     host_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     await require_host(db, host_id)

@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api._gitops_lock import check_gitops_lock
 from app.api._scoped_rules import require_group, require_host, scoped_row_or_404
-from app.auth.users import current_active_user
+from app.auth.permissions import require
 from app.db import get_db
 from app.models.firewall_rule import FirewallRule
 from app.models.host import Host
@@ -33,7 +33,7 @@ _NOT_FOUND = "Rule not found"
 @router.get("/groups/{group_id}/rules", response_model=list[RuleResponse])
 async def list_rules(
     group_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
@@ -71,7 +71,7 @@ def _check_ports(body: RuleCreate) -> None:
 async def create_rule(
     group_id: int,
     body: RuleCreate,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -88,7 +88,7 @@ async def create_rule(
 async def reorder_rules(
     group_id: int,
     body: RuleReorder,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -111,7 +111,7 @@ async def update_rule(
     group_id: int,
     rule_id: int,
     body: RuleUpdate,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -151,7 +151,7 @@ async def _apply_rule_update(db: AsyncSession, rule: FirewallRule, body: RuleUpd
 async def delete_rule(
     group_id: int,
     rule_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -165,7 +165,7 @@ async def delete_rule(
 @router.get("/hosts/{host_id}/firewall-rules", response_model=list[RuleResponse])
 async def list_host_rules(
     host_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """List host-level firewall rule overrides."""
@@ -181,7 +181,7 @@ async def list_host_rules(
 async def create_host_rule(
     host_id: int,
     body: RuleCreate,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a host-level firewall rule override."""
@@ -200,7 +200,7 @@ async def update_host_rule(
     host_id: int,
     rule_id: int,
     body: RuleUpdate,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     """Update a host-level firewall rule override."""
@@ -217,7 +217,7 @@ async def update_host_rule(
 async def delete_host_rule(
     host_id: int,
     rule_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a host-level firewall rule override."""
@@ -231,7 +231,7 @@ async def delete_host_rule(
 @router.get("/hosts/{host_id}/effective-rules", response_model=list[EffectiveRuleResponse])
 async def effective_rules_endpoint(
     host_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """Get merged ruleset for a host (all groups, priority-merged, with SSH lockout rule)."""
@@ -241,7 +241,7 @@ async def effective_rules_endpoint(
 @router.get("/groups/{group_id}/policies", response_model=ChainPoliciesResponse)
 async def get_group_policies(
     group_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     group = await require_group(db, group_id)
@@ -255,7 +255,7 @@ async def get_group_policies(
 async def update_group_policies(
     group_id: int,
     body: GroupPoliciesUpdate,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -273,7 +273,7 @@ async def update_group_policies(
 @router.get("/hosts/{host_id}/effective-policies", response_model=ChainPoliciesResponse)
 async def effective_policies_endpoint(
     host_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """Get merged chain policies for a host (all groups, priority-merged)."""

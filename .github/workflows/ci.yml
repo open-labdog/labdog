@@ -886,7 +886,7 @@ jobs:
         # the files match a list written by whoever wrote the files.
         # An attestation is signed by GitHub's OIDC identity for this
         # workflow run and verified with:
-        #   gh attestation verify labdog_X.Y.Z_amd64.deb --repo open-labdog/labdog
+        #   gh attestation verify labdog_X.Y.Z_amd64.deb --repo open-unbork/unbork
         if: steps.ver.outputs.skip != 'true'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -977,6 +977,33 @@ jobs:
           set -euo pipefail
           args=()
           for t in $TAGS; do args+=(-t "${REPO}:${t}"); done
+          docker buildx imagetools create "${args[@]}" "${REPO}:${GITHUB_SHA}"
+      # Installs from before the move to unbork pull openlabdog/labdog. Until
+      # the release lines they run reach end of life, every release is also
+      # copied there (:latest plus the version tags). Set the variable
+      # LEGACY_DOCKER_HUB_REPO and the secret LEGACY_DOCKER_HUB_PAT to turn
+      # it on; unset, the steps are skipped. The copy runs after the tags
+      # above and logs in as the legacy account, which replaces the first
+      # login, so it must stay last.
+      - name: Log in to the legacy Docker Hub account
+        if: vars.LEGACY_DOCKER_HUB_REPO != ''
+        id: legacy
+        run: echo "user=$(echo '${{ vars.LEGACY_DOCKER_HUB_REPO }}' | cut -d/ -f1)" >> "$GITHUB_OUTPUT"
+      - if: vars.LEGACY_DOCKER_HUB_REPO != ''
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          username: ${{ steps.legacy.outputs.user }}
+          password: ${{ secrets.LEGACY_DOCKER_HUB_PAT }}
+      - name: Copy the release to the legacy repository
+        if: vars.LEGACY_DOCKER_HUB_REPO != ''
+        env:
+          REPO: ${{ vars.DOCKER_HUB_REPO }}
+          LEGACY: ${{ vars.LEGACY_DOCKER_HUB_REPO }}
+          TAGS: ${{ steps.tags.outputs.tags }}
+        run: |
+          set -euo pipefail
+          args=(-t "${LEGACY}:latest")
+          for t in $TAGS; do args+=(-t "${LEGACY}:${t}"); done
           docker buildx imagetools create "${args[@]}" "${REPO}:${GITHUB_SHA}"
 
 

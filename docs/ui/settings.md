@@ -9,7 +9,7 @@ Settings has five sections, each a tab with its own URL
 |---------|---------------|
 | **Integrations** | A registry of what LabDog is connected to — Proxmox, Grafana / Mimir / Loki, Git remotes, AI providers, email, the Prometheus export and alert intake — each with its state and a link to configure it. See [Integrations](#integrations). |
 | **AI** | The AI providers, then every `ai.*` setting. See [AI](#ai). |
-| **Access** | [SSH keys](admin.md#ssh-keys), [Users](admin.md#users) (superusers only) and your own account — change password, sign out. |
+| **Access** | [SSH keys](admin.md#ssh-keys), [Users](admin.md#users) (admins only) and your own account — change password, sign out. |
 | **Fleet defaults** | How LabDog talks to hosts: drift checks, SSH, Ansible, actions, workflows and discovery. |
 | **System** | Logging and retention, the [Prometheus export](../metrics-export.md) and [About](#about). |
 

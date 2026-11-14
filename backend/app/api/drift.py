@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api._group_sync import group_member_ids
-from app.auth.users import current_active_user
+from app.auth.permissions import require
 from app.db import get_db
 from app.drift.detector import check_drift
 from app.enum_utils import enum_str
@@ -63,7 +63,7 @@ async def _get_desired_state_for_host(
 @router.post("/hosts/{host_id}/check", response_model=DriftResponse)
 async def check_host_drift(
     host_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("sync.run")),
     db: AsyncSession = Depends(get_db),
 ):
     host_result = await db.execute(select(Host).where(Host.id == host_id))
@@ -113,7 +113,7 @@ async def check_host_drift(
 @router.post("/groups/{group_id}/check", response_model=list[DriftResponse])
 async def check_group_drift(
     group_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("sync.run")),
     db: AsyncSession = Depends(get_db),
 ):
     host_ids = await group_member_ids(db, group_id)
@@ -169,7 +169,7 @@ async def check_group_drift(
 async def update_drift_settings(
     host_id: int,
     body: DriftSettingsUpdate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     host_result = await db.execute(select(Host).where(Host.id == host_id))

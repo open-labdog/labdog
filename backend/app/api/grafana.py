@@ -7,7 +7,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
-from app.auth.users import current_active_user
+from app.auth.permissions import require
 from app.crypto import decrypt_ssh_key, encrypt_ssh_key, get_master_key
 from app.db import get_db
 from app.grafana.client import PrometheusClient, PrometheusError
@@ -96,7 +96,7 @@ async def _run_test(
 
 @router.get("/instances", response_model=list[GrafanaInstanceResponse])
 async def list_instances(
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
@@ -108,7 +108,7 @@ async def list_instances(
 @router.post("/instances", response_model=GrafanaInstanceResponse, status_code=201)
 async def create_instance(
     body: GrafanaInstanceCreate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("integrations.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     existing = await db.execute(select(GrafanaInstance).where(GrafanaInstance.name == body.name))
@@ -163,7 +163,7 @@ async def create_instance(
 @router.get("/instances/{instance_id}", response_model=GrafanaInstanceResponse)
 async def get_instance(
     instance_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     inst = await db.get(GrafanaInstance, instance_id)
@@ -176,7 +176,7 @@ async def get_instance(
 async def update_instance(
     instance_id: int,
     body: GrafanaInstanceUpdate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("integrations.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     inst = await db.get(GrafanaInstance, instance_id)
@@ -236,7 +236,7 @@ async def update_instance(
 @router.delete("/instances/{instance_id}", status_code=204)
 async def delete_instance(
     instance_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("integrations.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     inst = await db.get(GrafanaInstance, instance_id)
@@ -289,7 +289,7 @@ async def delete_instance(
 @router.post("/instances/{instance_id}/test", response_model=GrafanaTestResponse)
 async def test_instance(
     instance_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("integrations.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     inst = await db.get(GrafanaInstance, instance_id)
@@ -310,7 +310,7 @@ async def test_instance(
 @router.post("/instances/test", response_model=GrafanaTestResponse)
 async def test_draft_instance(
     body: GrafanaInstanceCreate,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("integrations.manage")),
 ):
     """Pre-save connectivity test for an unsaved form — never persists."""
     return await _run_test(
@@ -341,7 +341,7 @@ async def _unconfigured_reason(db: AsyncSession) -> str:
 
 @router.get("/fleet/metrics", response_model=FleetMetrics)
 async def get_fleet_metrics(
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """Instant CPU, memory and root-disk use for every host, in three
@@ -389,7 +389,7 @@ async def get_fleet_metrics(
 @router.get("/hosts/{host_id}/metrics", response_model=HostMetrics)
 async def get_host_metrics(
     host_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     host = await db.get(Host, host_id)
@@ -445,7 +445,7 @@ async def _host_destinations(db: AsyncSession, host: Host) -> HostDestinations:
 @router.get("/destinations/hosts/{host_id}", response_model=HostDestinations)
 async def get_host_destinations(
     host_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """The Mimir and Loki instances this host names, and where its data
@@ -460,7 +460,7 @@ async def get_host_destinations(
 async def set_host_destinations(
     host_id: int,
     body: DestinationAssignment,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("integrations.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Set (or clear, with null) this host's own destinations. Takes effect
@@ -493,7 +493,7 @@ async def set_host_destinations(
 @router.get("/destinations/groups/{group_id}", response_model=DestinationAssignment)
 async def get_group_destinations(
     group_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     group = await db.get(HostGroup, group_id)
@@ -508,7 +508,7 @@ async def get_group_destinations(
 async def set_group_destinations(
     group_id: int,
     body: DestinationAssignment,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("integrations.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Set (or clear) the destinations for member hosts that don't name

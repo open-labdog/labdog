@@ -4,10 +4,10 @@
 
 # LabDog
 
-[![ci](https://img.shields.io/github/actions/workflow/status/open-labdog/labdog/ci.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=ci)](https://github.com/open-labdog/labdog/actions/workflows/ci.yml)
-[![release](https://img.shields.io/github/v/release/open-labdog/labdog?style=for-the-badge&logo=github&color=16a34a)](https://github.com/open-labdog/labdog/releases/latest)
-[![docker pulls](https://img.shields.io/docker/pulls/openlabdog/labdog?style=for-the-badge&logo=docker&logoColor=white&color=2563eb)](https://hub.docker.com/r/openlabdog/labdog)
-[![docs](https://img.shields.io/badge/docs-labdog-1e293b?style=for-the-badge)](https://open-labdog.github.io/labdog/)
+[![ci](https://img.shields.io/github/actions/workflow/status/open-unbork/unbork/ci.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=ci)](https://github.com/open-unbork/unbork/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/open-unbork/unbork?style=for-the-badge&logo=github&color=16a34a)](https://github.com/open-unbork/unbork/releases/latest)
+[![docker pulls](https://img.shields.io/docker/pulls/unbork/unbork?style=for-the-badge&logo=docker&logoColor=white&color=2563eb)](https://hub.docker.com/r/unbork/unbork)
+[![docs](https://img.shields.io/badge/docs-labdog-1e293b?style=for-the-badge)](https://open-unbork.github.io/unbork/)
 [![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-d97706?style=for-the-badge)](LICENSE)
 
 Manage firewall rules, systemd services, `/etc/hosts`, packages, users and more from a single web UI. Declare state in groups, preview the exact Ansible diff before applying, detect drift, and roll it back if something looks wrong.
@@ -17,18 +17,18 @@ Manage firewall rules, systemd services, `/etc/hosts`, packages, users and more 
 ```bash
 docker run -d --name labdog -p 8000:8000 \
   -v labdog-data:/var/lib/labdog \
-  openlabdog/labdog:latest
+  unbork/unbork:latest
 ```
 
 Then open <http://localhost:8000> and register the first admin user.
 
-→ **[Docker Hub](https://hub.docker.com/r/openlabdog/labdog)** for image tags, signed digests, and `compose` examples
+→ **[Docker Hub](https://hub.docker.com/r/unbork/unbork)** for image tags, signed digests, and `compose` examples
 
-→ **[Full installation guide](https://open-labdog.github.io/labdog/#installation)** — `.deb`, `.rpm`, tarball, or Docker
+→ **[Full installation guide](https://open-unbork.github.io/unbork/#installation)** — `.deb`, `.rpm`, tarball, or Docker
 
 ## 📦 Install
 
-The Docker command above is the fastest path — see [`openlabdog/labdog`](https://hub.docker.com/r/openlabdog/labdog) on Docker Hub for image tags, signed digests, and `compose` examples. For `.deb` / `.rpm` / tarball / from source, see the **[installation guide](https://open-labdog.github.io/labdog/#installation)**.
+The Docker command above is the fastest path — see [`unbork/unbork`](https://hub.docker.com/r/unbork/unbork) on Docker Hub for image tags, signed digests, and `compose` examples. For `.deb` / `.rpm` / tarball / from source, see the **[installation guide](https://open-unbork.github.io/unbork/#installation)**.
 
 ## ✨ What you get
 
@@ -79,11 +79,11 @@ parser, bounded by a host allowlist, redacted, and written to the audit log.
 
 Runs against OpenAI-compatible endpoints (Ollama, vLLM, OpenRouter), the
 Anthropic API, or a Claude subscription. See the
-[assistant guide](https://open-labdog.github.io/labdog/ui/assistant/).
+[assistant guide](https://open-unbork.github.io/unbork/ui/assistant/).
 
 **Extensibility**
 
-- **GitOps** — webhook-driven sync from any Git repo (see the [YAML schema](https://open-labdog.github.io/labdog/examples/gitops/))
+- **GitOps** — webhook-driven sync from any Git repo (see the [YAML schema](https://open-unbork.github.io/unbork/examples/gitops/))
 - **Action packs** — BYO Ansible playbooks as one-click actions
 - **Scheduled actions** — cron-driven runs with optional Proxmox snapshot + verify + auto-rollback
 
@@ -117,11 +117,11 @@ Anthropic API, or a Claude subscription. See the
 
 ## 📚 Documentation
 
-All technical content lives under **[the documentation site](https://open-labdog.github.io/labdog/)**:
+All technical content lives under **[the documentation site](https://open-unbork.github.io/unbork/)**:
 
-- **Concepts** — [how config is applied](https://open-labdog.github.io/labdog/#how-configuration-is-applied) · [precedence (worked examples)](https://open-labdog.github.io/labdog/examples/precedence/)
-- **Operations** — [installation](https://open-labdog.github.io/labdog/#installation) · [local development](https://open-labdog.github.io/labdog/#local-development) · [API reference](https://open-labdog.github.io/labdog/#api-endpoints)
-- **Guides** — [GitOps](https://open-labdog.github.io/labdog/examples/gitops/) · [Actions & packs](https://open-labdog.github.io/labdog/ui/actions/) · [example packs](https://open-labdog.github.io/labdog/examples/action-packs/) · [Scheduled actions](https://open-labdog.github.io/labdog/ui/scheduled-actions/) · [AI assistant](https://open-labdog.github.io/labdog/ui/assistant/) · [Alerts](https://open-labdog.github.io/labdog/ui/alerts/) · [Live host metrics](https://open-labdog.github.io/labdog/ui/host-metrics/) · [Metrics export](https://open-labdog.github.io/labdog/metrics-export/)
+- **Concepts** — [how config is applied](https://open-unbork.github.io/unbork/#how-configuration-is-applied) · [precedence (worked examples)](https://open-unbork.github.io/unbork/examples/precedence/)
+- **Operations** — [installation](https://open-unbork.github.io/unbork/#installation) · [local development](https://open-unbork.github.io/unbork/#local-development) · [API reference](https://open-unbork.github.io/unbork/#api-endpoints)
+- **Guides** — [GitOps](https://open-unbork.github.io/unbork/examples/gitops/) · [Actions & packs](https://open-unbork.github.io/unbork/ui/actions/) · [example packs](https://open-unbork.github.io/unbork/examples/action-packs/) · [Scheduled actions](https://open-unbork.github.io/unbork/ui/scheduled-actions/) · [AI assistant](https://open-unbork.github.io/unbork/ui/assistant/) · [Alerts](https://open-unbork.github.io/unbork/ui/alerts/) · [Live host metrics](https://open-unbork.github.io/unbork/ui/host-metrics/) · [Metrics export](https://open-unbork.github.io/unbork/metrics-export/)
 
 ## 🐛 Found a bug?
 

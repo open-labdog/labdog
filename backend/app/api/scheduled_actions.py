@@ -1,8 +1,9 @@
 """Unified scheduled-actions API.
 
 POST/PUT/DELETE/GET on the ``ScheduledAction`` table plus a ``run-now``
-shortcut and a runs-history list. All endpoints are superuser-only —
-scheduling work that affects shared infrastructure is privileged.
+shortcut and a runs-history list. Reading needs ``hosts.view``; changing
+a schedule needs ``schedules.manage`` and ``run-now`` needs
+``actions.run`` (see ``app.auth.permissions``).
 
 Validation is shared with ``POST /api/actions/runs`` via
 ``app.actions.validation.build_param_model`` so a parameter that's
@@ -37,7 +38,7 @@ from app.actions.registry import ACTION_REGISTRY, ActionDefinition
 from app.actions.run_target import describe_target
 from app.actions.validation import build_param_model
 from app.audit.logger import log_action
-from app.auth.users import current_active_user
+from app.auth.permissions import require
 from app.cron_walk import get_schedule_timezone, iter_fire_times
 from app.db import get_db
 from app.models.action_run import ActionRun
@@ -306,7 +307,7 @@ async def list_scheduled_actions(
         default=8, ge=0, le=50, description="how many of each schedule's newest runs to include"
     ),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
 ) -> list[ScheduledActionOut]:
     stmt = select(ScheduledAction).order_by(ScheduledAction.created_at.desc())
     if target_kind is not None:
@@ -344,7 +345,7 @@ async def list_scheduled_action_runs(
     limit: int = Query(default=10, ge=1, le=50),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
 ) -> list[ScheduledActionRunOut]:
     """Flat, newest-first feed of individual runs that came from a schedule.
 
@@ -386,7 +387,7 @@ async def list_scheduled_action_runs(
 async def create_scheduled_action(
     body: ScheduledActionIn,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("schedules.manage")),
 ) -> ScheduledActionOut:
     _validate_request(body)
     await _validate_target_exists(db, body.target_kind, body.target_id)
@@ -435,7 +436,7 @@ async def create_scheduled_action(
 async def get_scheduled_action(
     scheduled_action_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
 ) -> ScheduledActionOut:
     sa = await db.get(ScheduledAction, scheduled_action_id)
     if sa is None:
@@ -448,7 +449,7 @@ async def update_scheduled_action(
     scheduled_action_id: int,
     body: ScheduledActionIn,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("schedules.manage")),
 ) -> ScheduledActionOut:
     sa = await db.get(ScheduledAction, scheduled_action_id)
     if sa is None:
@@ -501,7 +502,7 @@ async def update_scheduled_action(
 async def delete_scheduled_action(
     scheduled_action_id: int,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("schedules.manage")),
 ) -> None:
     sa = await db.get(ScheduledAction, scheduled_action_id)
     if sa is None:
@@ -525,7 +526,7 @@ async def delete_scheduled_action(
 async def run_now(
     scheduled_action_id: int,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("actions.run")),
 ) -> ActionRunOut:
     """Create an immediate ActionRun for this schedule and dispatch it.
 
@@ -648,7 +649,7 @@ async def list_runs(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
 ) -> list[ActionRunOut]:
     sa = await db.get(ScheduledAction, scheduled_action_id)
     if sa is None:
@@ -680,7 +681,7 @@ async def list_runs(
 async def validate_cron(
     body: ValidateCronRequest,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("schedules.manage")),
 ) -> ValidateCronResponse:
     """Cron syntax check + next-3-fire-times preview. Used by the
     frontend's <CronInput /> for live feedback as the operator types.

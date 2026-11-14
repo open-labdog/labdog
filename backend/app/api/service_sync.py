@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api._group_sync import group_member_ids_or_400, sync_group_members
 from app.api.sync import SyncJobResponse
-from app.auth.users import current_active_user
+from app.auth.permissions import require, row_scope
 from app.crypto import decrypt_ssh_key, get_master_key
 from app.db import get_db
 from app.models.host import Host
@@ -40,7 +40,7 @@ class ServiceSyncPlan(BaseModel):
 @router.post("/hosts/{host_id}/plan", response_model=ServiceSyncPlan)
 async def plan_service_sync(
     host_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("sync.run")),
     db: AsyncSession = Depends(get_db),
 ):
     """Preview service changes for a host (does NOT apply)."""
@@ -93,7 +93,7 @@ async def plan_service_sync(
 @router.post("/hosts/{host_id}/sync", response_model=SyncJobResponse, status_code=201)
 async def trigger_service_sync(
     host_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("sync.run")),
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger service sync for a single host."""
@@ -147,7 +147,7 @@ async def trigger_service_sync(
 @router.post("/groups/{group_id}/sync", status_code=201)
 async def trigger_group_service_sync(
     group_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("sync.run")),
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger service sync for all hosts in a group."""
@@ -162,7 +162,7 @@ async def trigger_group_service_sync(
 @router.get("/jobs/{job_id}", response_model=SyncJobResponse)
 async def get_service_job(
     job_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view", scope=row_scope(SyncJob, "job_id"))),
     db: AsyncSession = Depends(get_db),
 ):
     """Get a service sync job by ID."""

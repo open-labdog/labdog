@@ -107,9 +107,10 @@ class MetricsConfig(BaseModel):
     ``AppSetting``**: the endpoint is unauthenticated (like ``GET
     /api/version``) once enabled, so flipping it on must require server
     access (editing ``labdog.toml`` / setting ``LABDOG_METRICS__ENABLED``
-    and restarting), not just a LabDog login. ``/api/settings`` gates on
-    ``current_active_user`` (not superuser), so a DB toggle would let any
-    authenticated — or XSS'd — session expose fleet state with one PATCH.
+    and restarting), not just a LabDog login. ``/api/settings`` is
+    readable by every role and writable by any admin session, so a DB
+    toggle would let one admin — or one XSS'd admin session — expose fleet
+    state with one PATCH.
     Protection for the enabled endpoint itself is expected to be a reverse
     proxy allow-list, not application-level auth.
     """
@@ -130,10 +131,9 @@ class AlertsConfig(BaseModel):
 
     ``webhook_token`` is the shared bearer token a Grafana contact point
     must send. **File-level rather than a DB-backed ``AppSetting``**, for
-    the same reason as ``MetricsConfig`` above: ``/api/settings`` gates on
-    ``current_active_user``, so a token stored there could be read — and
-    rewritten — by any authenticated or XSS'd session, which is not where
-    a shared secret belongs.
+    the same reason as ``MetricsConfig`` above: ``/api/settings`` is
+    readable by every role, so a token stored there could be read by any
+    signed-in or XSS'd session, which is not where a shared secret belongs.
 
     Empty by default, and an empty token means the endpoint refuses
     everything rather than accepting anything. An alert receiver that

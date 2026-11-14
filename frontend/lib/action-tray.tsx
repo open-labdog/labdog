@@ -91,7 +91,8 @@ export function ActionTrayProvider({ children }: { children: ReactNode }) {
   )
 
   useEffect(() => {
-    if (!user) return
+    // A pending forced password change refuses every API call.
+    if (!user || user.must_change_password) return
     let cancelled = false
     let timer: ReturnType<typeof setTimeout> | null = null
     let inFlight = false

@@ -130,7 +130,7 @@ export function RegisterForm() {
   return (
     <AuthCard>
       <div className="flex flex-col gap-5 p-7">
-        <AuthHeading title="Welcome to LabDog" sub="This is a fresh instance. Create the admin account to get started." />
+        <AuthHeading title="Welcome to unbork" sub="This is a fresh instance. Create the admin account to get started." />
 
         <form onSubmit={handleSubmit} action="" method="post" className="flex flex-col gap-3" aria-busy={loading} noValidate>
           <AuthError ref={errorRef} error={authError} id="register-error" />

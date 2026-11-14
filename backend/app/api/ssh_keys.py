@@ -3,7 +3,7 @@ from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
-from app.auth.users import current_active_user
+from app.auth.permissions import require
 from app.crypto import encrypt_ssh_key, get_master_key
 from app.db import get_db
 from app.models.host import Host
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/ssh-keys", tags=["ssh-keys"])
 
 @router.get("", response_model=list[SSHKeyResponse])
 async def list_ssh_keys(
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(SSHKey).order_by(SSHKey.created_at.desc()))
@@ -27,7 +27,7 @@ async def list_ssh_keys(
 @router.post("", response_model=SSHKeyResponse, status_code=201)
 async def create_ssh_key(
     body: SSHKeyCreate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("integrations.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     # Check unique name
@@ -71,7 +71,7 @@ async def create_ssh_key(
 async def update_ssh_key(
     key_id: int,
     body: SSHKeyUpdate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("integrations.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(SSHKey).where(SSHKey.id == key_id))
@@ -114,7 +114,7 @@ async def update_ssh_key(
 @router.delete("/{key_id}", status_code=204)
 async def delete_ssh_key(
     key_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("integrations.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(SSHKey).where(SSHKey.id == key_id))

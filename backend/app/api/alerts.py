@@ -30,7 +30,7 @@ from app.ai.schemas import AlertDispatchOut, AlertEventResponse
 from app.ai.service import AIDisabledError, BudgetExceededError
 from app.alerts.models import AlertAction, AlertActionDispatch
 from app.audit.logger import log_action
-from app.auth.users import current_active_user
+from app.auth.permissions import require
 from app.db import get_db
 from app.models.action_run import ActionRun
 from app.models.host import Host
@@ -169,7 +169,7 @@ async def list_alerts(
     limit: int = 100,
     status: str | None = None,
     host_id: int | None = None,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """Recent alerts, newest first.
@@ -191,7 +191,7 @@ async def list_alerts(
 @router.post("/{alert_id}/investigate", response_model=AlertEventResponse)
 async def investigate_alert_now(
     alert_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("ai.use")),
     db: AsyncSession = Depends(get_db),
 ):
     """Start an investigation for one alert by hand.
@@ -248,7 +248,7 @@ async def investigate_alert_now(
 
 @router.get("/intake", response_model=AlertIntakeStatus)
 async def alert_intake_status(
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """Whether alerts can reach LabDog, what they can set off, and when the
@@ -298,7 +298,7 @@ async def alert_intake_status(
 @router.get("/hosts/{host_id}", response_model=HostAlertsResponse)
 async def host_alerts(
     host_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """What alerts may do to ``host_id``: the actions they may run, and
@@ -463,7 +463,7 @@ _DUPLICATE = "{key} is already on the list of actions alerts may run. Edit that 
 
 @router.get("/actions", response_model=list[AlertActionOut])
 async def list_alert_actions(
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """The actions alerts may run, by action key."""
@@ -474,7 +474,7 @@ async def list_alert_actions(
 @router.post("/actions", response_model=AlertActionOut, status_code=201)
 async def create_alert_action(
     body: AlertActionIn,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("alerts.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Allow alerts to run an action: ``labdog_action=<key>`` then starts it."""
@@ -504,7 +504,7 @@ async def create_alert_action(
 @router.get("/actions/{entry_id}", response_model=AlertActionOut)
 async def get_alert_action(
     entry_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     return await _hydrate(db, await _get_entry(db, entry_id))
@@ -514,7 +514,7 @@ async def get_alert_action(
 async def update_alert_action(
     entry_id: int,
     body: AlertActionIn,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("alerts.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Change an entry. The action key cannot change: the label names it,
@@ -547,7 +547,7 @@ async def update_alert_action(
 @router.delete("/actions/{entry_id}", status_code=204)
 async def delete_alert_action(
     entry_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("alerts.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     """Take an action off the list. Alerts naming it are refused from now

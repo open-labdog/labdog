@@ -53,7 +53,7 @@ def _check_host_blocked(host: str) -> None:
     """Raise ``ValueError`` if *host* resolves to a blocked network range.
 
     String-checks only — no DNS resolution is performed (DNS rebinding is
-    out of scope; the operator is superuser-only).
+    out of scope; adding a repository needs ``integrations.manage``, i.e. an admin).
     """
     if host.lower() == "localhost":
         raise ValueError(

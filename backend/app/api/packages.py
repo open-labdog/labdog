@@ -17,7 +17,7 @@ from app.api._scoped_rules import (
     scoped_row_or_404,
 )
 from app.audit.logger import log_action
-from app.auth.users import current_active_user
+from app.auth.permissions import require
 from app.db import get_db
 from app.db_after_commit import run_after_commit
 from app.models.host import Host
@@ -64,7 +64,7 @@ _REPO_AUDIT = RuleAudit("package_repo", _repo_state)
 @router.get("/groups/{group_id}/packages", response_model=list[PackageRuleResponse])
 async def list_group_packages(
     group_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     await require_group(db, group_id)
@@ -85,7 +85,7 @@ async def list_group_packages(
 async def create_group_package(
     group_id: int,
     body: PackageRuleCreate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -105,7 +105,7 @@ async def update_group_package(
     group_id: int,
     rule_id: int,
     body: PackageRuleUpdate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -123,7 +123,7 @@ async def delete_group_package(
     group_id: int,
     rule_id: int,
     uninstall: bool = False,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -201,7 +201,7 @@ async def delete_group_package(
 @router.get("/hosts/{host_id}/packages", response_model=list[PackageRuleResponse])
 async def list_host_packages(
     host_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     await require_host(db, host_id)
@@ -222,7 +222,7 @@ async def list_host_packages(
 async def create_host_package(
     host_id: int,
     body: PackageRuleCreate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     await require_host(db, host_id)
@@ -241,7 +241,7 @@ async def update_host_package(
     host_id: int,
     rule_id: int,
     body: PackageRuleUpdate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     rule = await scoped_row_or_404(
@@ -257,7 +257,7 @@ async def update_host_package(
 async def delete_host_package(
     host_id: int,
     rule_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     rule = await scoped_row_or_404(
@@ -278,7 +278,7 @@ async def delete_host_package(
 )
 async def effective_packages(
     host_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     await require_host(db, host_id)
@@ -292,7 +292,7 @@ async def effective_packages(
 )
 async def effective_repos(
     host_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     await require_host(db, host_id)
@@ -311,7 +311,7 @@ async def effective_repos(
 )
 async def list_group_repos(
     group_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     await require_group(db, group_id)
@@ -332,7 +332,7 @@ async def list_group_repos(
 async def create_group_repo(
     group_id: int,
     body: PackageRepositoryCreate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -352,7 +352,7 @@ async def update_group_repo(
     group_id: int,
     repo_id: int,
     body: PackageRepositoryUpdate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -373,7 +373,7 @@ async def update_group_repo(
 async def delete_group_repo(
     group_id: int,
     repo_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)

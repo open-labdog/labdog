@@ -25,6 +25,7 @@ async def _user(db, **kw) -> User:
         hashed_password="x",
         is_active=kw.get("is_active", True),
         is_superuser=False,
+        role="operator",
         is_verified=True,
         token_version=kw.get("token_version", 0),
     )

@@ -34,7 +34,7 @@ const atkinsonMono = localFont({
 })
 
 export const metadata: Metadata = {
-  title: 'LabDog',
+  title: 'unbork',
   description: 'Self-hosted Linux configuration management',
 }
 

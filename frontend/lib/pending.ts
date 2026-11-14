@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
+import { can, useAuth } from "@/lib/auth"
 import { shortAgo, untilLabel } from "@/lib/fleet"
 import { useNow } from "@/hooks/use-now"
 import { actionLabel, BAD, durationLabel, failStreak, scheduleName, tallyLabel, useFailedRuns, useSchedules, useStuckOperations } from "@/lib/overview"
@@ -73,11 +74,14 @@ function readDismissed(): Record<string, number> {
 }
 
 export function usePendingQueue(enabled = true) {
+  const { user } = useAuth()
   const q = { refetchInterval: 30_000, retry: false, enabled }
   const approvals = useQuery<AIApprovalRequest[]>({
     queryKey: ["ai-approvals"],
     queryFn: () => apiFetch<AIApprovalRequest[]>("/api/ai/approvals?status=pending"),
     ...q,
+    // A viewer has no ai.use and would get a 403 every poll.
+    enabled: enabled && can(user, "ai.use"),
   })
   const alerts = useQuery<AlertEvent[]>({
     queryKey: ["alerts", "firing"],
@@ -307,11 +311,13 @@ export interface SettledItem {
  * were decided or ran out, alerts that resolved. Newest first.
  */
 export function useSettled(hours = 24) {
+  const { user } = useAuth()
   const q = { refetchInterval: 60_000, retry: false }
   const approvals = useQuery<AIApprovalRequest[]>({
     queryKey: ["ai-approvals", "all"],
     queryFn: () => apiFetch<AIApprovalRequest[]>("/api/ai/approvals?status=all&limit=100"),
     ...q,
+    enabled: can(user, "ai.use"),
   })
   const alerts = useQuery<AlertEvent[]>({
     queryKey: ["alerts", "resolved"],

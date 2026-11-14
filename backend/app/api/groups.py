@@ -5,7 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
-from app.auth.users import current_active_user
+from app.auth.permissions import require
 from app.ca_certs.actions import auto_enqueue_for_new_membership
 from app.db import get_db
 from app.models.git_repository import GitOpsStatus, GitRepository
@@ -48,7 +48,7 @@ async def _flush_or_conflict(db: AsyncSession) -> None:
 
 @router.get("", response_model=list[GroupResponse])
 async def list_groups(
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(HostGroup).order_by(HostGroup.priority.desc()))
@@ -58,7 +58,7 @@ async def list_groups(
 @router.post("", response_model=GroupResponse, status_code=201)
 async def create_group(
     body: GroupCreate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     # Check unique name
@@ -92,7 +92,7 @@ async def create_group(
 
 @router.get("/summary")
 async def list_groups_summary(
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """Return all groups with per-module rule counts and host counts.
@@ -184,7 +184,7 @@ async def list_groups_summary(
 @router.get("/{group_id}", response_model=GroupResponse)
 async def get_group(
     group_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(HostGroup).where(HostGroup.id == group_id))
@@ -198,7 +198,7 @@ async def get_group(
 async def update_group(
     group_id: int,
     body: GroupUpdate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(HostGroup).where(HostGroup.id == group_id))
@@ -260,7 +260,7 @@ async def update_group(
 @router.delete("/{group_id}", status_code=204)
 async def delete_group(
     group_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.models.host import HostGroupMembership
@@ -297,7 +297,7 @@ async def delete_group(
 @router.get("/{group_id}/host-count")
 async def get_group_host_count(
     group_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     from sqlalchemy import func
@@ -313,7 +313,7 @@ async def get_group_host_count(
 @router.get("/{group_id}/module-status", response_model=list[MemberModuleStatus])
 async def get_group_module_status(
     group_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     """Every member's status for every module it has a row for.
@@ -351,7 +351,7 @@ async def get_group_module_status(
 @router.get("/{group_id}/hosts", response_model=list[HostResponse])
 async def list_group_hosts(
     group_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(HostGroup).where(HostGroup.id == group_id))
@@ -389,7 +389,7 @@ async def list_group_hosts(
 async def add_hosts_to_group(
     group_id: int,
     body: BulkAddHostsRequest,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     """Add multiple hosts to this group (skips hosts already in the group)."""
@@ -436,7 +436,7 @@ async def add_hosts_to_group(
 async def remove_hosts_from_group(
     group_id: int,
     body: BulkAddHostsRequest,
-    user: User = Depends(current_active_user),
+    user: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     """Remove multiple hosts from this group."""
@@ -484,7 +484,7 @@ async def remove_hosts_from_group(
 async def enable_gitops(
     group_id: int,
     body: GitOpsEnableRequest,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(HostGroup).where(HostGroup.id == group_id))
@@ -523,7 +523,7 @@ async def enable_gitops(
 @router.post("/{group_id}/gitops/disable", response_model=GitOpsStatusResponse)
 async def disable_gitops(
     group_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("config.edit")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(HostGroup).where(HostGroup.id == group_id))
@@ -554,7 +554,7 @@ async def disable_gitops(
 @router.get("/{group_id}/gitops/status", response_model=GitOpsStatusResponse)
 async def get_gitops_status(
     group_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(require("hosts.view")),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(HostGroup).where(HostGroup.id == group_id))

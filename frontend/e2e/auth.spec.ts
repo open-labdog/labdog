@@ -10,7 +10,7 @@ test.use({ storageState: { cookies: [], origins: [] } })
 test.describe("Login page", () => {
   test("renders login form correctly", async ({ page }) => {
     await page.goto("/login")
-    await expect(page.getByRole("heading", { name: "LabDog" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "unbork" })).toBeVisible()
     await expect(page.locator("#email")).toBeVisible()
     await expect(page.locator("#password")).toBeVisible()
     await expect(page.getByRole("button", { name: "Sign In" })).toBeVisible()

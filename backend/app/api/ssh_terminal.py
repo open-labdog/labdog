@@ -10,6 +10,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
 from app.audit.logger import log_action
+from app.auth.permissions import BoundScope, Permission, Scope, authorize
 from app.auth.ws_auth import check_ws_origin, get_ws_user
 from app.db import AsyncSessionLocal
 from app.models.host import Host
@@ -74,6 +75,16 @@ async def _open_session(websocket: WebSocket, host_id: int) -> "_TerminalSession
         try:
             user = await get_ws_user(websocket, db)
         except RuntimeError:
+            return None
+
+        # The HTTP routes get this from require(); a WebSocket is outside
+        # that dependency chain, so the check is made here, before accept.
+        # A role change bumps token_version, which _session_still_valid
+        # already watches, so a demoted user loses an open shell too.
+        if (user.must_change_password and user.hashed_password) or not await authorize(
+            user, Permission.TERMINAL_OPEN, BoundScope.of(Scope("host", host_id))
+        ):
+            await websocket.close(code=4403, reason="Not allowed to open a terminal")
             return None
 
         await websocket.accept()
