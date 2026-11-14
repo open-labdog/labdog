@@ -51,6 +51,9 @@ class LoadedPlugin:
     #: ``name==version`` of the distribution that provided it, if known.
     distribution: str | None
     requires_plugin_api: str
+    #: Top-level package of the entry point (``unbork_enterprise``), so
+    #: Community's own checks can tell the routes it added from core's.
+    package: str = ""
 
 
 #: What this process loaded, in load order. Read-only for everyone else.
@@ -113,7 +116,12 @@ def load_plugins(app: FastAPI, eps: Iterable[EntryPoint] | None = None) -> list[
                 "plugin %s (%s): register() failed; skipped", ep.name, dist or ep.value
             )
             continue
-        plugin = LoadedPlugin(name=ep.name, distribution=dist, requires_plugin_api=required)
+        plugin = LoadedPlugin(
+            name=ep.name,
+            distribution=dist,
+            requires_plugin_api=required,
+            package=ep.value.split(":", 1)[0].split(".", 1)[0],
+        )
         loaded.append(plugin)
         logger.info("plugin %s (%s) loaded", ep.name, dist or ep.value)
     loaded_plugins[:] = loaded

@@ -31,6 +31,7 @@ from app.auth.permissions import (
 )
 from app.models.sync_job import SyncJob
 from app.models.user import ROLE_VALUES, User
+from app.plugins import loaded_plugins
 from tests.conftest import _CsrfAutoTransport, create_host
 
 PASSWORD = "TestPass1!-long-enough"
@@ -88,6 +89,12 @@ def _routes(app):
         elif isinstance(original, APIRoute):
             route = _Route(original.path, original.methods, original.dependant)
         else:
+            continue
+        # An installed extension (Enterprise) adds routes of its own; it
+        # tests them itself. This suite covers Community's, so its result
+        # does not depend on what else is installed in the environment.
+        module = getattr(original.endpoint, "__module__", "") or ""
+        if any(p.package and module.split(".", 1)[0] == p.package for p in loaded_plugins):
             continue
         for method in route.methods:
             yield method, route
