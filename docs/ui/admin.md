@@ -106,6 +106,10 @@ If a request is refused anyway, the error names the permission it needed.
 
 - At least one active admin remains. Demoting, disabling or deleting the
   last one is refused.
+- At least one active admin can sign in with a password. Accounts created
+  by directory sign-in (Enterprise) have none and cannot sign in when the
+  identity provider is down, so the last admin with a password is kept the
+  same way.
 - Nobody changes their own role, disables themselves, or deletes their own
   account.
 

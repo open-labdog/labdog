@@ -4,7 +4,10 @@ Every route needs ``users.manage`` (admins only). Three rules hold on
 every path that could break them:
 
 * at least one active admin remains: demoting, disabling or deleting the
-  last one is refused;
+  last one is refused. Nor may the last active admin who has a password
+  go: directory-only admins (Enterprise SSO) cannot sign in when the
+  identity provider is down or misconfigured, and the password is the
+  way back in;
 * nobody changes their own role, disables or deletes themselves, so an
   admin cannot lock the installation out by accident;
 * a change that should take effect now (a new role, disabling, a reset
@@ -116,6 +119,36 @@ async def _other_active_admins(db: AsyncSession, user_id: int) -> int:
     return result.scalar_one()
 
 
+async def _other_password_admins(db: AsyncSession, user_id: int) -> int:
+    result = await db.execute(
+        select(func.count())
+        .select_from(User)
+        .where(
+            User.role == "admin",
+            User.is_active.is_(True),
+            User.hashed_password.is_not(None),
+            User.id != user_id,
+        )
+    )
+    return result.scalar_one()
+
+
+async def _refuse_if_last_admin(db: AsyncSession, user: User, verb: str) -> None:
+    """Refuse taking *user* away as an admin if that would leave none, or
+    none who can sign in with a password. Call only for an active admin."""
+    if await _other_active_admins(db, user.id) == 0:
+        raise HTTPException(status_code=400, detail=f"Cannot {verb} the last admin")
+    if user.hashed_password is not None and await _other_password_admins(db, user.id) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Cannot {verb} the last admin who can sign in with a password. "
+                "Directory sign-in fails when the identity provider does; "
+                "give another admin a password first."
+            ),
+        )
+
+
 async def _get_or_404(db: AsyncSession, user_id: int) -> User:
     user = await db.get(User, user_id)
     if user is None:
@@ -202,8 +235,7 @@ async def update_user(
             status_code=400, detail="You cannot change your own role or disable yourself"
         )
     if user.role == "admin" and user.is_active and (role_changes or disables):
-        if await _other_active_admins(db, user.id) == 0:
-            raise HTTPException(status_code=400, detail="Cannot demote the last admin")
+        await _refuse_if_last_admin(db, user, "demote")
 
     if "email" in fields and fields["email"] != user.email:
         clash = await db.execute(
@@ -246,8 +278,8 @@ async def delete_user(
         raise HTTPException(status_code=400, detail="Cannot delete yourself")
 
     user = await _get_or_404(db, user_id)
-    if user.role == "admin" and user.is_active and await _other_active_admins(db, user.id) == 0:
-        raise HTTPException(status_code=400, detail="Cannot delete the last admin")
+    if user.role == "admin" and user.is_active:
+        await _refuse_if_last_admin(db, user, "delete")
 
     await log_action(
         db=db,
