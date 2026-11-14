@@ -1035,6 +1035,11 @@ export interface ScheduledAction {
   /** The schedule's newest runs, newest first (8 unless the list was asked
    *  for another number with `?recent_runs=`). */
   recent_runs?: ScheduledActionRunSummary[]
+  /** Whose rights each run is checked against; null on older schedules. */
+  owner_user_id?: number | null
+  owner_email?: string | null
+  /** Set while runs are skipped because of the owner. */
+  owner_blocked_reason?: "owner_removed" | "owner_inactive" | "owner_lacks_permission" | null
 }
 
 // GET /api/scheduled-actions/runs — flat, newest-first feed of individual

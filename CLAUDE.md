@@ -309,10 +309,30 @@ chain.
 
 Checks carry a lazily resolved scope: `{host_id}` / `{group_id}` in the
 path by default, `scope=row_scope(SyncJob, "job_id")` for rows owned by a
-host or group. The Community resolver ignores scope. Extensions (RBAC)
-replace it through `set_permission_resolver()` and filter host lists
-through `set_visible_hosts_resolver()`; `PLUGIN_API` versions that
-contract. A user with `must_change_password` gets 403
+host or group, `scope=param_scope("host", "host_id")` for `?host_id=`
+routes. The Community resolver ignores scope, but routes must still pass
+the right one, because Enterprise RBAC grants rights per host and group:
+
+- **List and catalog routes** use `scope=anywhere` (the user needs the
+  permission on at least one host or group) and narrow what they return
+  with `visible_filter()` / `visible_host_ids()` / `visible_group_ids()`.
+- **Targets in the request body** (starting a run, a schedule's target,
+  group membership) are checked in the handler with
+  `require_on(user, perm, hosts=[...], groups=[...])`: all or nothing.
+- **Anything that changes other hosts' outcome** (a group's priority) asks
+  `require_on(user, perm)` with no targets, a global check.
+- Everything else stays global by default, which a scoped user is refused.
+
+Extensions replace the resolver through `set_permission_resolver()` and
+the lists through `set_visible_hosts_resolver()` /
+`set_visible_groups_resolver()`; `PLUGIN_API` versions that contract.
+`tests/test_permission_scopes.py` registers a stand-in scoped resolver and
+pins those promises. `GET /api/users/me` returns `permissions` and
+`permissions_anywhere`; host and group pages wrap themselves in
+`<PermissionScope>` (from `GET /api/users/me/permissions?host_id=`), so
+`useCan()` answers for that page.
+
+A user with `must_change_password` gets 403
 `password_change_required` from every `require()` route until they change
 it through `PATCH /api/users/me` (which needs `current_password`).
 `python -m app.auth.users_cli` is the recovery path when no admin can
@@ -339,7 +359,7 @@ core's `upgrade head`, in the roles that migrate. Never put extension
 revisions in core's `alembic_version`: once the extension is uninstalled,
 core would meet a revision it cannot locate and refuse to start.
 
-The contract (1.1) is the permission hooks above plus three directory
+The contract (1.2) is the permission hooks above plus three directory
 sign-in hooks, none of which Community uses itself:
 
 - `app/auth/external.py`: `register_login_provider_source()` puts buttons

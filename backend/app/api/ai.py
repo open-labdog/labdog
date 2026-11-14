@@ -63,7 +63,7 @@ from app.ai.schemas import (
 )
 from app.ai.service import AIDisabledError, BudgetExceededError
 from app.audit.logger import log_action
-from app.auth.permissions import require
+from app.auth.permissions import require, require_on
 from app.crypto import encrypt_ssh_key, get_master_key
 from app.db import get_db
 from app.models.user import User
@@ -1040,10 +1040,13 @@ async def list_approvals(
 async def decide_approval(
     approval_id: int,
     payload: AIApprovalDecision,
-    user: User = Depends(require("ai.use")),
+    user: User = Depends(require("ai.approve")),
     db: AsyncSession = Depends(get_db),
 ):
     """Approve or reject a paused command, and resume the session.
+
+    Needs ``ai.approve``, on the command's target host when it has one:
+    approving is authorising a change to that host.
 
     Deciding twice is refused rather than ignored. The first decision may
     already have run a command on a host, and a second request that
@@ -1058,6 +1061,11 @@ async def decide_approval(
     )
     if approval is None:
         raise HTTPException(status_code=404, detail="Approval request not found")
+    await require_on(
+        user,
+        "ai.approve",
+        hosts=[approval.target_host_id] if approval.target_host_id is not None else [],
+    )
     if approval.status != "pending":
         raise HTTPException(
             status_code=409,

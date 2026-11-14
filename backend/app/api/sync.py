@@ -13,7 +13,7 @@ from app.api._group_sync import (
     has_sync_in_flight,
 )
 from app.audit.logger import log_action
-from app.auth.permissions import require, row_scope
+from app.auth.permissions import anywhere, require, row_scope, visible_filter
 from app.db import get_db, release_connection
 from app.enum_utils import enum_str
 from app.models.host import Host, HostGroupMembership
@@ -742,13 +742,16 @@ async def list_jobs(
     # Capped like list_runs' (BUG-162): a bare int let ?limit=1000000 load
     # the whole table.
     limit: int = Query(20, ge=1, le=500),
-    _: User = Depends(require("hosts.view")),
+    user: User = Depends(require("hosts.view", scope=anywhere)),
     db: AsyncSession = Depends(get_db),
 ):
     """List sync jobs. ``ids`` is a comma-separated set of job ids — used by
     the client to batch-poll exactly the jobs an apply triggered (e.g. every
     per-host job from a group bulk sync) in a single request."""
     q = select(SyncJob).order_by(SyncJob.id.desc())
+    visible = await visible_filter(user, host_col=SyncJob.host_id)
+    if visible is not None:
+        q = q.where(visible)
     if ids:
         try:
             id_list = [int(x) for x in ids.split(",") if x.strip()]

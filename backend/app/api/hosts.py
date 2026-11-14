@@ -7,7 +7,7 @@ from sqlalchemy import delete, func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
-from app.auth.permissions import require, visible_host_ids
+from app.auth.permissions import anywhere, require, require_on, visible_host_ids
 from app.ca_certs.actions import auto_enqueue_for_new_membership
 from app.crypto.encryption import decrypt_ssh_key
 from app.crypto.key_management import get_master_key
@@ -87,7 +87,7 @@ async def _visible(user: User, hosts: list) -> list:
 
 @router.get("", response_model=list[HostResponse])
 async def list_hosts(
-    user: User = Depends(require("hosts.view")),
+    user: User = Depends(require("hosts.view", scope=anywhere)),
     db: AsyncSession = Depends(get_db),
 ):
     hosts = await _visible(user, await _load_hosts_resilient(db))
@@ -228,7 +228,7 @@ async def create_host(
 
 @router.get("/summary")
 async def list_hosts_summary(
-    user: User = Depends(require("hosts.view")),
+    user: User = Depends(require("hosts.view", scope=anywhere)),
     db: AsyncSession = Depends(get_db),
 ):
     """Return all hosts with group memberships and per-module override counts."""
@@ -370,6 +370,11 @@ async def update_host(
         )
         existing_set = {r[0] for r in existing.all()}
         new_group_ids = [gid for gid in group_ids if gid not in existing_set]
+        # Joining or leaving a group changes what that group's config does,
+        # so the editor needs the right on each group touched, not only on
+        # the host: otherwise pulling a host into a group you control would
+        # be a way to gain rights over it.
+        await require_on(user, "config.edit", groups=sorted(set(group_ids) ^ existing_set))
 
         await db.execute(
             delete(HostGroupMembership).where(HostGroupMembership.c.host_id == host_id)

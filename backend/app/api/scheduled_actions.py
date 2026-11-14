@@ -38,7 +38,15 @@ from app.actions.registry import ACTION_REGISTRY, ActionDefinition
 from app.actions.run_target import describe_target
 from app.actions.validation import build_param_model
 from app.audit.logger import log_action
-from app.auth.permissions import require
+from app.auth.permissions import (
+    GLOBAL,
+    Scope,
+    anywhere,
+    require,
+    require_on,
+    visible_group_ids,
+    visible_host_ids,
+)
 from app.cron_walk import get_schedule_timezone, iter_fire_times
 from app.db import get_db
 from app.models.action_run import ActionRun
@@ -241,6 +249,9 @@ async def _hydrate(
     :func:`_recent_runs_by_schedule`, batched the same way.
     """
     out = ScheduledActionOut.model_validate(sa)
+    if sa.owner_user_id is not None:
+        owner = await db.get(User, sa.owner_user_id)
+        out.owner_email = owner.email if owner is not None else None
     if tz is None:
         tz = await get_schedule_timezone(db)
     out.next_run_at, out.upcoming_runs = _fire_times(sa, tz, datetime.now(UTC))
@@ -295,6 +306,39 @@ async def _resolve_target_name(
 # ---------------------------------------------------------------------------
 
 
+def _target_scope(target_kind: str, target_id: int | None) -> Scope:
+    """A schedule's target as a permission scope; a fleet target is global."""
+    if target_kind in ("host", "group") and target_id is not None:
+        return Scope(target_kind, target_id)
+    return GLOBAL
+
+
+def _target_kwargs(target_kind: str, target_id: int | None) -> dict[str, list[int]]:
+    scope = _target_scope(target_kind, target_id)
+    return (
+        {"hosts": [scope.id]}
+        if scope.kind == "host"
+        else ({"groups": [scope.id]} if scope.kind == "group" else {})
+    )
+
+
+async def _schedule_scope(request, db) -> Scope:
+    """Scope spec: the target of the schedule named in the path."""
+    try:
+        sa = await db.get(ScheduledAction, int(request.path_params["scheduled_action_id"]))
+    except (KeyError, TypeError, ValueError):
+        return GLOBAL
+    return GLOBAL if sa is None else _target_scope(sa.target_kind, sa.target_id)
+
+
+async def _visible_schedule(user: User, sa: ScheduledAction, hosts, groups) -> bool:
+    if sa.target_kind == "host":
+        return hosts is None or sa.target_id in hosts
+    if sa.target_kind == "group":
+        return groups is None or sa.target_id in groups
+    return hosts is None and groups is None
+
+
 @router.get("", response_model=list[ScheduledActionOut])
 async def list_scheduled_actions(
     target_kind: str | None = Query(default=None),
@@ -307,7 +351,7 @@ async def list_scheduled_actions(
         default=8, ge=0, le=50, description="how many of each schedule's newest runs to include"
     ),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require("hosts.view")),
+    user: User = Depends(require("hosts.view", scope=anywhere)),
 ) -> list[ScheduledActionOut]:
     stmt = select(ScheduledAction).order_by(ScheduledAction.created_at.desc())
     if target_kind is not None:
@@ -324,6 +368,8 @@ async def list_scheduled_actions(
         stmt = stmt.where(~ScheduledAction.action_key.startswith("_builtin."))
 
     rows = (await db.execute(stmt)).scalars().all()
+    hosts, groups = await visible_host_ids(user), await visible_group_ids(user)
+    rows = [sa for sa in rows if await _visible_schedule(user, sa, hosts, groups)]
     tz = await get_schedule_timezone(db)
     recent = await _recent_runs_by_schedule(db, [sa.id for sa in rows], recent_runs)
     return [
@@ -345,7 +391,7 @@ async def list_scheduled_action_runs(
     limit: int = Query(default=10, ge=1, le=50),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require("hosts.view")),
+    user: User = Depends(require("hosts.view", scope=anywhere)),
 ) -> list[ScheduledActionRunOut]:
     """Flat, newest-first feed of individual runs that came from a schedule.
 
@@ -362,8 +408,11 @@ async def list_scheduled_action_runs(
         .offset(offset)
     )
     rows = (await db.execute(stmt)).all()
+    hosts, groups = await visible_host_ids(user), await visible_group_ids(user)
     out: list[ScheduledActionRunOut] = []
     for run, sa in rows:
+        if not await _visible_schedule(user, sa, hosts, groups):
+            continue
         action = ACTION_REGISTRY.get(run.action_key)
         out.append(
             ScheduledActionRunOut(
@@ -387,9 +436,10 @@ async def list_scheduled_action_runs(
 async def create_scheduled_action(
     body: ScheduledActionIn,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require("schedules.manage")),
+    user: User = Depends(require("schedules.manage", scope=anywhere)),
 ) -> ScheduledActionOut:
     _validate_request(body)
+    await require_on(user, "schedules.manage", **_target_kwargs(body.target_kind, body.target_id))
     await _validate_target_exists(db, body.target_kind, body.target_id)
 
     sa = ScheduledAction(
@@ -403,6 +453,8 @@ async def create_scheduled_action(
         verify_enabled=body.verify_enabled,
         auto_rollback=body.auto_rollback,
         batch_size=body.batch_size,
+        owner_user_id=user.id,
+        owner_required=True,
     )
     db.add(sa)
     try:
@@ -436,7 +488,7 @@ async def create_scheduled_action(
 async def get_scheduled_action(
     scheduled_action_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require("hosts.view")),
+    _: User = Depends(require("hosts.view", scope=_schedule_scope)),
 ) -> ScheduledActionOut:
     sa = await db.get(ScheduledAction, scheduled_action_id)
     if sa is None:
@@ -449,7 +501,7 @@ async def update_scheduled_action(
     scheduled_action_id: int,
     body: ScheduledActionIn,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require("schedules.manage")),
+    user: User = Depends(require("schedules.manage", scope=_schedule_scope)),
 ) -> ScheduledActionOut:
     sa = await db.get(ScheduledAction, scheduled_action_id)
     if sa is None:
@@ -502,7 +554,7 @@ async def update_scheduled_action(
 async def delete_scheduled_action(
     scheduled_action_id: int,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require("schedules.manage")),
+    user: User = Depends(require("schedules.manage", scope=_schedule_scope)),
 ) -> None:
     sa = await db.get(ScheduledAction, scheduled_action_id)
     if sa is None:
@@ -526,7 +578,7 @@ async def delete_scheduled_action(
 async def run_now(
     scheduled_action_id: int,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(require("actions.run")),
+    user: User = Depends(require("actions.run", scope=_schedule_scope)),
 ) -> ActionRunOut:
     """Create an immediate ActionRun for this schedule and dispatch it.
 
@@ -649,7 +701,7 @@ async def list_runs(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require("hosts.view")),
+    _: User = Depends(require("hosts.view", scope=_schedule_scope)),
 ) -> list[ActionRunOut]:
     sa = await db.get(ScheduledAction, scheduled_action_id)
     if sa is None:
@@ -677,11 +729,46 @@ async def list_runs(
     return out
 
 
+@router.post("/{scheduled_action_id}/take-ownership", response_model=ScheduledActionOut)
+async def take_ownership(
+    scheduled_action_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require("schedules.manage", scope=_schedule_scope)),
+) -> ScheduledActionOut:
+    """Make the caller the schedule's owner, whose rights each run needs.
+
+    How a schedule left by someone who lost access, or whose account was
+    removed, gets going again. The caller must be able to run the action
+    on the target themselves, or the next tick would skip it anyway.
+    """
+    sa = await db.get(ScheduledAction, scheduled_action_id)
+    if sa is None:
+        raise HTTPException(status_code=404, detail="Scheduled action not found")
+    await require_on(user, "actions.run", **_target_kwargs(sa.target_kind, sa.target_id))
+    before = {"owner_user_id": sa.owner_user_id, "owner_blocked_reason": sa.owner_blocked_reason}
+    sa.owner_user_id = user.id
+    sa.owner_required = True
+    sa.owner_blocked_reason = None
+    await db.flush()
+    await log_action(
+        db,
+        action="scheduled_action.owner_changed",
+        entity_type="scheduled_action",
+        entity_id=sa.id,
+        user_id=user.id,
+        before_state=before,
+        after_state={"owner_user_id": user.id},
+    )
+    await db.commit()
+    await db.refresh(sa)
+    return await _hydrate(db, sa, include_last_run=False)
+
+
 @router.post("/validate-cron", response_model=ValidateCronResponse)
 async def validate_cron(
     body: ValidateCronRequest,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require("schedules.manage")),
+    _: User = Depends(require("schedules.manage", scope=anywhere)),
 ) -> ValidateCronResponse:
     """Cron syntax check + next-3-fire-times preview. Used by the
     frontend's <CronInput /> for live feedback as the operator types.

@@ -5,7 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
-from app.auth.permissions import require
+from app.auth.permissions import anywhere, require, require_on, visible_group_ids
 from app.ca_certs.actions import auto_enqueue_for_new_membership
 from app.db import get_db
 from app.models.git_repository import GitOpsStatus, GitRepository
@@ -48,10 +48,14 @@ async def _flush_or_conflict(db: AsyncSession) -> None:
 
 @router.get("", response_model=list[GroupResponse])
 async def list_groups(
-    _: User = Depends(require("hosts.view")),
+    user: User = Depends(require("hosts.view", scope=anywhere)),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(HostGroup).order_by(HostGroup.priority.desc()))
+    query = select(HostGroup).order_by(HostGroup.priority.desc())
+    allowed = await visible_group_ids(user)
+    if allowed is not None:
+        query = query.where(HostGroup.id.in_(allowed))
+    result = await db.execute(query)
     return result.scalars().all()
 
 
@@ -92,7 +96,7 @@ async def create_group(
 
 @router.get("/summary")
 async def list_groups_summary(
-    _: User = Depends(require("hosts.view")),
+    user: User = Depends(require("hosts.view", scope=anywhere)),
     db: AsyncSession = Depends(get_db),
 ):
     """Return all groups with per-module rule counts and host counts.
@@ -108,7 +112,11 @@ async def list_groups_summary(
     from app.services.models import ServiceRule
     from app.user_mgmt.models import LinuxGroup, LinuxUser
 
-    groups_result = await db.execute(select(HostGroup).order_by(HostGroup.priority.desc()))
+    query = select(HostGroup).order_by(HostGroup.priority.desc())
+    allowed = await visible_group_ids(user)
+    if allowed is not None:
+        query = query.where(HostGroup.id.in_(allowed))
+    groups_result = await db.execute(query)
     groups = groups_result.scalars().all()
     group_ids = [g.id for g in groups]
     if not group_ids:
@@ -207,6 +215,9 @@ async def update_group(
         raise HTTPException(status_code=404, detail="Group not found")
     # Check unique priority (skip if unchanged)
     if body.priority is not None and body.priority != group.priority:
+        # A group's priority decides merge conflicts on every host it shares
+        # with other groups, so moving it needs the right everywhere.
+        await require_on(user, "config.edit")
         existing_p = await db.execute(
             select(HostGroup).where(HostGroup.priority == body.priority, HostGroup.id != group_id)
         )
@@ -396,6 +407,8 @@ async def add_hosts_to_group(
     result = await db.execute(select(HostGroup).where(HostGroup.id == group_id))
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Group not found")
+    # The hosts change too: they gain or lose this group's config.
+    await require_on(user, "config.edit", hosts=body.host_ids)
 
     # Find which hosts are already members
     existing = await db.execute(
@@ -443,6 +456,8 @@ async def remove_hosts_from_group(
     result = await db.execute(select(HostGroup).where(HostGroup.id == group_id))
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Group not found")
+    # The hosts change too: they gain or lose this group's config.
+    await require_on(user, "config.edit", hosts=body.host_ids)
 
     # Capture which host_ids actually had memberships so the audit
     # entry reflects what changed, not what the request asked for.

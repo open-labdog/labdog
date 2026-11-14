@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.actions.registry import ACTION_REGISTRY_CONTRIBUTORS, reload_registry_async
 from app.audit.logger import log_action
-from app.auth.permissions import require
+from app.auth.permissions import anywhere, require
 from app.db import get_db
 from app.models.git_repository import GitRepository
 from app.models.user import User
@@ -172,7 +172,7 @@ def _apply_update(body: ActionPackUpdate, pack: ActionPack) -> tuple[bool, bool]
 
 @router.get("", response_model=list[ActionPackResponse])
 async def list_action_packs(
-    _: User = Depends(require("hosts.view")),
+    _: User = Depends(require("hosts.view", scope=anywhere)),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(ActionPack).order_by(ActionPack.id))
@@ -241,7 +241,7 @@ async def create_action_pack(
 @router.get("/{pack_id}", response_model=ActionPackResponse)
 async def get_action_pack(
     pack_id: int,
-    _: User = Depends(require("hosts.view")),
+    _: User = Depends(require("hosts.view", scope=anywhere)),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(ActionPack).where(ActionPack.id == pack_id))

@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import func, select, text
 
 from app.auth.external import list_login_providers
-from app.auth.permissions import permissions_for
-from app.auth.schemas import MeRead, UserCreate, UserRead
+from app.auth.permissions import ANYWHERE, GLOBAL, BoundScope, Scope, permissions_for
+from app.auth.schemas import MeRead, ScopedPermissions, UserCreate, UserRead
 from app.auth.users import UserManager, current_active_user, get_user_manager
 from app.config import settings
 from app.db import AsyncSessionLocal
@@ -107,4 +107,32 @@ me_router = APIRouter(prefix="/api/users", tags=["users"])
 @me_router.get("/me", response_model=MeRead)
 async def read_me(user: User = Depends(current_active_user)):
     data = UserRead.model_validate(user).model_dump()
-    return MeRead(**data, permissions=sorted(await permissions_for(user)))
+    return MeRead(
+        **data,
+        permissions=sorted(await permissions_for(user)),
+        permissions_anywhere=sorted(await permissions_for(user, BoundScope.of(ANYWHERE))),
+    )
+
+
+@me_router.get("/me/permissions", response_model=ScopedPermissions)
+async def read_my_permissions(
+    host_id: int | None = None,
+    group_id: int | None = None,
+    user: User = Depends(current_active_user),
+):
+    """What the caller may do on one host or group (global with neither).
+
+    The frontend wraps a host or group page in this answer, so a user
+    whose rights are scoped sees that page's buttons enabled. Like
+    ``GET /me`` it answers any session: it only describes the caller.
+    """
+    if host_id is not None and group_id is not None:
+        raise HTTPException(status_code=422, detail="Pass host_id or group_id, not both")
+    if host_id is not None:
+        scope = Scope("host", host_id)
+    elif group_id is not None:
+        scope = Scope("group", group_id)
+    else:
+        scope = GLOBAL
+    perms = await permissions_for(user, BoundScope.of(scope))
+    return ScopedPermissions(scope=scope.kind, id=scope.id, permissions=sorted(perms))

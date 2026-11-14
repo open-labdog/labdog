@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from fastapi_users import schemas
-from pydantic import Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.auth.password_policy import check_password
 
@@ -16,11 +16,22 @@ class UserRead(schemas.BaseUser[int]):
 class MeRead(UserRead):
     """``GET /api/users/me``: the account plus what it may do.
 
-    ``permissions`` is the global set from ``app.auth.permissions``; the
-    frontend hides controls from it. An extension that scopes permissions
-    to hosts and groups adds its own field beside it.
+    ``permissions`` is the global set from ``app.auth.permissions``.
+    ``permissions_anywhere`` adds what the user holds on at least one host
+    or group (the same set in Community, where nothing is scoped); the
+    frontend shows a zone from it, and asks
+    ``GET /api/users/me/permissions`` for one host's or group's set.
     """
 
+    permissions: list[str] = []
+    permissions_anywhere: list[str] = []
+
+
+class ScopedPermissions(BaseModel):
+    """``GET /api/users/me/permissions``: what the caller may do on one target."""
+
+    scope: str
+    id: int | None = None
     permissions: list[str] = []
 
 

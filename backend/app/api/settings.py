@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.permissions import require
+from app.auth.permissions import anywhere, require
 from app.db import get_db
 from app.models.user import User
 from app.settings_service import (
@@ -26,7 +26,7 @@ class SettingUpdate(BaseModel):
 
 @router.get("")
 async def list_settings(
-    _: User = Depends(require("hosts.view")),
+    _: User = Depends(require("hosts.view", scope=anywhere)),
     db: AsyncSession = Depends(get_db),
 ):
     """List all application settings with current values and metadata."""

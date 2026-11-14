@@ -11,7 +11,7 @@ interface, work through every section here.
 - [Cookie and HTTPS settings](#cookie-and-https-settings)
 - [Security headers and CSP](#security-headers-and-csp)
 - [Rate limiting](#rate-limiting)
-- [Superuser scope](#superuser-scope)
+- [Roles and scope](#roles-and-scope)
 - [Database connection security](#database-connection-security)
 - [Encryption-key handling](#encryption-key-handling)
 
@@ -276,39 +276,37 @@ expiry dates to anyone who asks. If you are not scraping it, leave
 
 ---
 
-## Superuser scope
+## Roles and scope
 
-LabDog has two user roles. The **only** difference between them is
-the ability to manage other users:
+Every account has one role, set on the Users page:
 
-- **Superuser** (`is_superuser=True`): can create, edit, delete,
-  and reset passwords for other users via the admin UI at
-  `/admin/users` (`backend/app/api/admin_users.py`).
-- **Regular user** (`is_active=True`, `is_superuser=False`): can do
-  everything else — browse hosts, edit groups, manage SSH keys,
-  configure git repos and action packs, trigger syncs, run
-  actions, open SSH terminals, change application settings, view
-  audit logs.
+| Role | Can |
+| --- | --- |
+| **viewer** | see hosts, groups, runs and the audit log |
+| **operator** | everything a viewer can, plus edit configuration, sync, run discovery and actions, manage schedules and alerts, open SSH terminals, and use and approve the AI assistant |
+| **admin** | everything, including users, settings and integrations |
 
-This is the right model for a single-operator homelab install and
-small-team setups. There is **no per-host scope mechanism** — a
-regular user has the same operational access to every managed host
-as a superuser. If you need finer-grained authz (e.g. user X can
-only touch host group Y), it doesn't exist yet; track the request
-via a GitHub issue.
+An account with no role can sign in but does nothing. The mapping lives in
+`backend/app/auth/permissions.py` and is the only place a role name means
+anything.
 
-The first registered user is **atomically promoted** to superuser
-during the same transaction as the user-row insert (see
+In Community a role applies to the whole fleet: an operator can touch every
+managed host. Roles limited to a host group or a single host, custom roles,
+and roles granted to directory groups are part of unbork Enterprise.
+
+The first registered user is **atomically made an admin** during the same
+transaction as the user-row insert (see
 `backend/app/auth/users.py:UserManager.create`). There is no
-setup-time superuser; the registration endpoint closes after the
-first user is created.
+setup-time admin; the registration endpoint closes after the
+first user is created. `python -m app.auth.users_cli` recovers an install
+where no admin can sign in.
 
-**This matters more once the AI assistant is enabled.** Any signed-in
-user can start a session, choose its autonomy level, and approve a
-change it proposes. There is no separate "may use the AI" permission and
-no second-person approval — the operator who asks for a change is the
-one who approves it. Treat enabling `ai.enabled` on a multi-user install
-as granting every user the autonomy levels you allow.
+**This matters more once the AI assistant is enabled.** Every operator can
+start a session, choose its autonomy level, and approve a change it
+proposes on a host they may approve changes for (`ai.approve`). There is
+no second-person approval: the operator who asks for a change is the one
+who approves it. Treat enabling `ai.enabled` on a multi-user install as
+granting every operator the autonomy levels you allow.
 
 ---
 

@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.actions.registry import ACTION_REGISTRY_CONTRIBUTORS, reload_registry_async
 from app.audit.logger import log_action
-from app.auth.permissions import require
+from app.auth.permissions import anywhere, require
 from app.db import get_db
 from app.models.user import User
 from app.packs.models import ActionPack, ActionRegistrySnapshot, ActionResolution
@@ -102,7 +102,7 @@ async def _build_contested_view(db: AsyncSession) -> list[ContestedActionKeyOut]
 
 @router.get("", response_model=list[ContestedActionKeyOut])
 async def list_contested_keys(
-    _: User = Depends(require("hosts.view")),
+    _: User = Depends(require("hosts.view", scope=anywhere)),
     db: AsyncSession = Depends(get_db),
 ):
     """Every action key currently contributed by more than one pack.

@@ -25,19 +25,28 @@ never does.
 
 Routes whose target is in the request body (starting an action run,
 adding hosts to a group) cannot be scoped from the URL. They are checked
-globally here; an extension that scopes them calls :func:`authorize`
-from inside the handler with the target it read from the body.
+globally by ``require()``, which only says the user may do this
+*somewhere*; the handler then calls :func:`require_on` with the hosts and
+groups it read from the body.
+
+List and catalog routes (the host list, the action catalog, the runs
+list) pass ``scope=anywhere``: the user needs the permission on at least
+one host or group, and the handler narrows what it returns through
+:func:`visible_host_ids` / :func:`visible_group_ids`. A resolver that
+scopes grants answers an :data:`ANYWHERE` check with the union of
+everything the user holds anywhere.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
 from fastapi import Depends, HTTPException, Request, status
+from sqlalchemy import or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.users import current_active_user
@@ -54,7 +63,12 @@ logger = logging.getLogger(__name__)
 #:      ``unbork.migrations``), ``app.auth.external`` (login
 #:      providers, ``resolve_external_user``, ``issue_session``) and the
 #:      ``user_identities`` table.
-PLUGIN_API = "1.1"
+#: 1.2  the ``any`` scope (:data:`ANYWHERE`, :func:`anywhere`) for list and
+#:      catalog routes, :func:`require_on` for targets read from a request
+#:      body, ``set_visible_groups_resolver`` / :func:`visible_group_ids`,
+#:      :func:`visible_filter`, :func:`param_scope` for ``?host_id=`` style routes, and
+#:      ``GET /api/users/me/permissions`` for one host or group.
+PLUGIN_API = "1.2"
 
 
 class Role(StrEnum):
@@ -119,6 +133,8 @@ class Scope:
 
 
 GLOBAL = Scope("global")
+#: "On at least one host or group". The route filters what it returns.
+ANYWHERE = Scope("any")
 
 #: Turns a request into a :class:`Scope`. Called at most once per check,
 #: and only when a resolver asks.
@@ -136,6 +152,29 @@ async def path_scope(request: Request, _db: AsyncSession) -> Scope:
             except (TypeError, ValueError):
                 return GLOBAL
     return GLOBAL
+
+
+async def anywhere(_request: Request, _db: AsyncSession) -> Scope:
+    """Scope spec for list and catalog routes: :data:`ANYWHERE`."""
+    return ANYWHERE
+
+
+def param_scope(kind: str, param: str) -> ScopeSpec:
+    """Scope from a path or query parameter, for ``?host_id=`` style routes.
+
+    A missing or malformed value is global, which a scoping resolver then
+    refuses unless the user holds the permission everywhere.
+    """
+
+    async def resolve(request: Request, _db: AsyncSession) -> Scope:
+        raw = request.path_params.get(param, request.query_params.get(param))
+        try:
+            return Scope(kind, int(raw)) if raw is not None else GLOBAL
+        except (TypeError, ValueError):
+            return GLOBAL
+
+    resolve.__name__ = f"param_scope_{kind}_{param}"
+    return resolve
 
 
 def row_scope(model: Any, param: str) -> ScopeSpec:
@@ -191,6 +230,7 @@ class BoundScope:
 
 PermissionResolver = Callable[[User, BoundScope | None], Awaitable[frozenset[str]]]
 VisibleHostsResolver = Callable[[User], Awaitable[set[int] | None]]
+VisibleGroupsResolver = Callable[[User], Awaitable[set[int] | None]]
 
 
 async def role_permissions(user: User, scope: BoundScope | None = None) -> frozenset[str]:
@@ -213,8 +253,14 @@ async def all_hosts_visible(user: User) -> set[int] | None:
     return None
 
 
+async def all_groups_visible(user: User) -> set[int] | None:
+    """Community: every user who may view hosts sees every group."""
+    return None
+
+
 _permission_resolver: PermissionResolver = role_permissions
 _visible_hosts_resolver: VisibleHostsResolver = all_hosts_visible
+_visible_groups_resolver: VisibleGroupsResolver = all_groups_visible
 
 
 def set_permission_resolver(resolver: PermissionResolver | None) -> None:
@@ -229,6 +275,12 @@ def set_visible_hosts_resolver(resolver: VisibleHostsResolver | None) -> None:
     _visible_hosts_resolver = resolver or all_hosts_visible
 
 
+def set_visible_groups_resolver(resolver: VisibleGroupsResolver | None) -> None:
+    """Replace which groups a user's lists show. ``None`` restores the default."""
+    global _visible_groups_resolver
+    _visible_groups_resolver = resolver or all_groups_visible
+
+
 async def permissions_for(user: User, scope: BoundScope | None = None) -> frozenset[str]:
     """What *user* may do, globally or within *scope*."""
     if not user.is_active:
@@ -241,8 +293,63 @@ async def visible_host_ids(user: User) -> set[int] | None:
     return await _visible_hosts_resolver(user)
 
 
+async def visible_group_ids(user: User) -> set[int] | None:
+    """Group ids *user*'s lists may show, or ``None`` for all of them."""
+    return await _visible_groups_resolver(user)
+
+
+async def visible_filter(user: User, *, host_col: Any = None, group_col: Any = None) -> Any:
+    """A WHERE clause keeping rows on hosts or groups *user* may see.
+
+    ``None`` when nothing needs filtering (Community, or a user who sees
+    everything). A row matches when its host is visible or its group is;
+    a row with neither (a global operation) is hidden from a user whose
+    view is limited.
+    """
+    hosts = await visible_host_ids(user) if host_col is not None else None
+    groups = await visible_group_ids(user) if group_col is not None else None
+    if hosts is None and groups is None:
+        return None
+    clauses = []
+    if host_col is not None:
+        clauses.append(host_col.in_(hosts) if hosts is not None else host_col.is_not(None))
+    if group_col is not None:
+        clauses.append(group_col.in_(groups) if groups is not None else group_col.is_not(None))
+    return or_(*clauses)
+
+
 async def authorize(user: User, permission: str, scope: BoundScope | None = None) -> bool:
     return str(permission) in await permissions_for(user, scope)
+
+
+async def require_on(
+    user: User,
+    permission: str | Permission,
+    *,
+    hosts: Iterable[int] = (),
+    groups: Iterable[int] = (),
+) -> None:
+    """Refuse unless *user* holds *permission* on every host and group named.
+
+    For routes whose targets come from the request body. All or nothing:
+    one target the user may not touch refuses the whole request, and the
+    403 names the targets that failed, so a bulk request is never quietly
+    narrowed to the part the user happened to be allowed.
+
+    With no targets this is a global check.
+    """
+    perm = str(Permission(permission))
+    targets = [Scope("host", int(h)) for h in dict.fromkeys(hosts)] + [
+        Scope("group", int(g)) for g in dict.fromkeys(groups)
+    ]
+    if not targets:
+        targets = [GLOBAL]
+    denied = [t for t in targets if not await authorize(user, perm, BoundScope.of(t))]
+    if denied:
+        named = ", ".join(t.kind if t.id is None else f"{t.kind} {t.id}" for t in denied)
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, detail=f"Missing permission: {perm} on {named}"
+        )
 
 
 # ── The dependency ──────────────────────────────────────────────────────────

@@ -14,7 +14,14 @@ from app.actions.registry import ACTION_REGISTRY, reload_registry_async
 from app.actions.run_target import describe_target
 from app.actions.validation import DRY_RUN_PARAM, build_param_model
 from app.ai.run_log import FAILURE_WINDOW_SQL, failure_reason
-from app.auth.permissions import require, row_scope
+from app.auth.permissions import (
+    anywhere,
+    param_scope,
+    require,
+    require_on,
+    row_scope,
+    visible_filter,
+)
 from app.db import get_db
 from app.grafana.models import GrafanaInstance
 from app.grafana.service import METRICS_DESTINATIONS_PARAM
@@ -87,7 +94,7 @@ def _definition_to_out(defn) -> ActionDefinitionOut:
 
 @router.get("/", response_model=list[ActionDefinitionOut])
 async def list_actions(
-    _: User = Depends(require("hosts.view")),
+    _: User = Depends(require("hosts.view", scope=anywhere)),
 ):
     """Return all registered actions from the catalog."""
     return [_definition_to_out(defn) for defn in ACTION_REGISTRY.values()]
@@ -127,11 +134,17 @@ async def refresh_actions(
 @router.post("/runs", response_model=ActionRunOut, status_code=201)
 async def create_run(
     body: RunCreateBody,
-    user: User = Depends(require("actions.run")),
+    user: User = Depends(require("actions.run", scope=anywhere)),
     db: AsyncSession = Depends(get_db),
 ):
     """Create an action run and dispatch the Celery task."""
     action = _runnable_action(body)
+    await require_on(
+        user,
+        "actions.run",
+        hosts=[body.host_id] if body.host_id is not None else [],
+        groups=[body.group_id] if body.group_id is not None else [],
+    )
     stored_parameters = await _stored_parameters(db, body, action)
     await _require_target(db, body)
     await _refuse_duplicate_run(db, body)
@@ -346,7 +359,7 @@ async def list_runs(
     ),
     limit: int = Query(default=20, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
-    _: User = Depends(require("hosts.view")),
+    user: User = Depends(require("hosts.view", scope=anywhere)),
     db: AsyncSession = Depends(get_db),
 ):
     """List action runs, newest first, optionally filtered by scope, status,
@@ -373,6 +386,9 @@ async def list_runs(
         q = q.where(ActionRun.scheduled_action_id.isnot(None))
     elif scheduled is False:
         q = q.where(ActionRun.scheduled_action_id.is_(None))
+    visible = await visible_filter(user, host_col=ActionRun.host_id, group_col=ActionRun.group_id)
+    if visible is not None:
+        q = q.where(visible)
 
     result = await db.execute(q)
     runs = result.scalars().all()
@@ -441,7 +457,7 @@ async def list_host_runs(
         default=None, description="true: only runs a schedule started; false: only the rest"
     ),
     limit: int = Query(default=100, ge=1, le=500),
-    _: User = Depends(require("hosts.view")),
+    _: User = Depends(require("hosts.view", scope=param_scope("host", "host_id"))),
     db: AsyncSession = Depends(get_db),
 ):
     """Every run that reached this host, newest first, with this host's
@@ -880,7 +896,7 @@ async def stream_run_events(
 @router.get("/{action_key}", response_model=ActionDefinitionOut)
 async def get_action(
     action_key: str,
-    _: User = Depends(require("hosts.view")),
+    _: User = Depends(require("hosts.view", scope=anywhere)),
 ):
     """Return a single action definition by key."""
     defn = ACTION_REGISTRY.get(action_key)

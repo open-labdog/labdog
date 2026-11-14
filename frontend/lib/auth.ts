@@ -14,22 +14,48 @@ export interface User {
   display_name: string | null
   last_login_at: string | null
   must_change_password: boolean
-  /** What this account may do, from `GET /api/users/me`. */
+  /** What this account may do everywhere, from `GET /api/users/me`. */
   permissions: string[]
+  /**
+   * What it may do on at least one host or group. The same list in
+   * Community; wider when an extension (RBAC) grants rights on some hosts
+   * or groups only. Zones and the palette show from this.
+   */
+  permissions_anywhere?: string[]
 }
 
-/** Whether `user` holds `permission`. The backend enforces it either way. */
+/** Whether `user` holds `permission` everywhere. The backend enforces it either way. */
 export function can(user: User | null, permission: string): boolean {
   return !!user?.permissions?.includes(permission)
 }
 
+/** Whether `user` holds `permission` on at least one host or group. */
+export function canAnywhere(user: User | null, permission: string): boolean {
+  return can(user, permission) || !!user?.permissions_anywhere?.includes(permission)
+}
+
+/** Whether any of the user's rights are limited to some hosts or groups. */
+export function isScoped(user: User | null): boolean {
+  const anywhere = user?.permissions_anywhere ?? []
+  return anywhere.some((p) => !user?.permissions?.includes(p))
+}
+
 /**
- * `can()` for the signed-in user. Use it to hide or disable a control the
- * user's role cannot use; the API refuses the request regardless.
+ * The permissions that apply on the host or group page being shown, set by
+ * `<PermissionScope>`. `null` outside such a page: `useCan` then answers
+ * from the global list.
+ */
+export const PermissionScopeContext = createContext<string[] | null>(null)
+
+/**
+ * `can()` for the signed-in user, on the current host or group page when
+ * there is one. Use it to hide or disable a control the user cannot use;
+ * the API refuses the request regardless.
  */
 export function useCan(permission: string): boolean {
   const { user } = useContext(AuthContext)
-  return can(user, permission)
+  const scoped = useContext(PermissionScopeContext)
+  return can(user, permission) || !!scoped?.includes(permission)
 }
 
 /** What each role is for, in the words the Users page shows. */

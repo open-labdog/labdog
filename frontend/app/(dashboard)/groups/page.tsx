@@ -4,6 +4,7 @@ import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
+import { useCan } from "@/lib/auth"
 import { MODULES } from "@/lib/modules"
 import { showError, showSuccess } from "@/lib/toast"
 import type { GroupSummary, Host } from "@/lib/types"
@@ -17,6 +18,8 @@ import { BulkBar, Confirm, Filter, PageHead, Table, Tag, type Sort } from "@/com
  */
 export default function GroupsPage() {
   const router = useRouter()
+  // Creating a group is a global change: a host- or group-scoped grant does not cover it.
+  const canCreate = useCan("config.edit")
   const queryClient = useQueryClient()
   const [creating, setCreating] = useState(false)
   const [q, setQ] = useState("")
@@ -92,9 +95,11 @@ export default function GroupsPage() {
         }
         sub="Evaluated strongest first: a host's own overrides come before every group, then groups from highest priority down. Click a row to open it."
         actions={
-          <button type="button" className="btn btn-sm btn-primary" onClick={() => setCreating(true)}>
-            New group
-          </button>
+          canCreate && (
+            <button type="button" className="btn btn-sm btn-primary" onClick={() => setCreating(true)}>
+              New group
+            </button>
+          )
         }
       >
         <div className="flex flex-wrap items-center gap-[7px]">
