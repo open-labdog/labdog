@@ -117,4 +117,4 @@ image, so C-044 should be a per-action or per-host choice.
 
 | Date | Decision | By |
 |---|---|---|
-| | | |
+| 2026-11-14 | D-18: customer-facing Enterprise feature titles appear in the public plan with an Enterprise tag and a no-commitment line; scores, specs, decisions and internal items stay private. | Dennis |

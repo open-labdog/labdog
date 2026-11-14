@@ -24,8 +24,8 @@ and the `/run-stage` and `/review-stage` skills.
   [Unbork roadmap](https://github.com/orgs/open-unbork/projects/1), 36
   draft items, read 2026-11-14.
 - **Enterprise roadmap:** a private board, 19 draft items, read the same
-  day. This repository is public and that board is not, so Enterprise items
-  appear here by ID only. Their titles, scores and specs are in
+  day. This repository is public and that board is not, so Enterprise features
+  appear here by title only (D-18). Their scores and specs are in
   `planning/` in `open-unbork/unbork-enterprise`.
 - **Product:** unbork is a self-hosted patch and update orchestration tool
   for server fleets (Ansible action packs, snapshot and rollback on
@@ -294,6 +294,35 @@ decision from Dennis first.
 - **S-010** Third-party notices and a source offer in the Docker image: Licence hygiene for a public image; best done with the first release.
 - **S-011** Contributor licence agreement and a CLA check on pull requests: Board P0: one outside PR merged under today's terms cannot be undone.
 - **S-012** Copyright holder line in LICENSE: One line, but only Dennis can say who the holder is.
+
+### Enterprise features
+
+Enterprise items are listed for transparency, with no dates or
+commitments (decision D-18). Their scores, specs and decisions, and a few
+internal items, are in the Enterprise repository.
+
+| ID | Feature | Edition |
+|---|---|---|
+| E-002 | Send the audit log to a SIEM (syslog/CEF and HTTPS webhook) | Enterprise |
+| E-003 | Maintenance and change-freeze windows: model, API and enforcement | Enterprise |
+| E-004 | Maintenance windows: calendar UI on Settings, host and group pages | Enterprise |
+| E-005 | SAML sign-in | Enterprise |
+| E-006 | Secrets from HashiCorp Vault | Enterprise |
+| E-007 | Zabbix alert intake | Enterprise |
+| E-008 | Change-ticket integration: core and one first system | Enterprise |
+| E-009 | Change tickets: the remaining systems | Enterprise |
+| E-010 | Snapshot and rollback on VMware | Enterprise |
+| E-011 | Bare-metal rollback: detect LVM, ZFS and Btrfs layouts in state collection | Enterprise |
+| E-012 | Bare-metal rollback: LVM snapshot provider with driven reboot | Enterprise |
+| E-013 | Bare-metal rollback: ZFS provider | Enterprise |
+| E-014 | Multi-tenancy | Enterprise |
+| E-015 | Compliance evidence export (NIS2, DORA, ISO 27001) | Enterprise |
+| E-016 | Hardening baselines | Enterprise |
+| E-017 | Offline install for air-gapped networks | Enterprise |
+| E-018 | Disaster recovery: verified backup and restore of unbork's own state | Enterprise |
+| E-019 | High availability reference deployment | Enterprise |
+| E-023 | Sync host groups and servers from LDAP | Enterprise |
+| E-024 | Map user permissions from LDAP groups | Enterprise |
 
 ### Dependencies
 
