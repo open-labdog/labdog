@@ -9,9 +9,9 @@ It exists because the boundary check protects one shape of the problem
 and not all of them. Parameters can reach a run without passing through
 ``build_param_model``: a row written before this validation existed, a
 ``choice`` whose permitted values come from a pack manifest rather than
-from LabDog, or a future caller that assembles a run directly. The cost
+from unbork, or a future caller that assembles a run directly. The cost
 of re-checking is a regex over a handful of short strings; the cost of
-not re-checking is arbitrary code execution on the LabDog host, because
+not re-checking is arbitrary code execution on the unbork host, because
 Ansible evaluates extra-vars on the controller rather than on the target.
 
 Raising here fails the host run with a clear message rather than
@@ -46,7 +46,7 @@ def _check(path: str, value: Any) -> None:
             raise ValueError(
                 f"action parameter {path!r} contains template delimiters; "
                 "refusing to pass it to Ansible, which would evaluate it on "
-                "the LabDog host"
+                "the unbork host"
             )
         return
     if isinstance(value, dict):

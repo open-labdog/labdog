@@ -49,7 +49,7 @@ async def _sweep() -> dict:
                 db,
                 event_id,
                 now,
-                "The check fell due while LabDog was not running, and it is too late now to "
+                "The check fell due while unbork was not running, and it is too late now to "
                 "judge the fix from what the host looks like. Look at the host and the session "
                 "yourself.",
             )

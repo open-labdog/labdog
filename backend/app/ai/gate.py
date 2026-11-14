@@ -22,14 +22,14 @@ both are pinned by tests:
 **A populated ``allowed_tools`` silently disables the SDK's gate.** An
 entry there auto-approves the tool *before* the callback is consulted;
 the SDK warns about it (``CanUseToolShadowedWarning``) and the warning is
-easy to lose in logs. LabDog leaves ``allowed_tools`` empty so every call
+easy to lose in logs. unbork leaves ``allowed_tools`` empty so every call
 falls through to here. Adding to it is a change to the safety posture,
 not a convenience.
 
 **A tool's ceiling is not its verdict.** ``run_ssh_command`` is declared
 ``mutating`` because it *can* be, but most calls are a ``journalctl``
 read. Gating on the ceiling would refuse every read in a read-only
-session — the sessions LabDog runs by default — so the decision uses
+session — the sessions unbork runs by default — so the decision uses
 :meth:`ToolHandler.verdict_for`, which re-reads the arguments.
 """
 
@@ -85,7 +85,7 @@ def decide(
 ) -> GateDecision:
     """Whether ``tool_name`` may run with ``arguments`` in this session.
 
-    ``tool_name`` is LabDog's own name for the tool; the SDK runner
+    ``tool_name`` is unbork's own name for the tool; the SDK runner
     unqualifies the MCP name before calling.
 
     ``permitted`` is the session's own handler set. A tool absent from it

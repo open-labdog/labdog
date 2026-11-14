@@ -245,7 +245,7 @@ async def trust_repo_host_key(
     The counterpart to ``POST /api/hosts/{id}/trust-host-key``. Use it
     when the git server was legitimately re-keyed — otherwise every sync
     fails with a host-key mismatch, which is the point. Emits an audit
-    row, because accepting a new key for the repository LabDog takes
+    row, because accepting a new key for the repository unbork takes
     playbooks from is a decision worth being able to look up later.
     """
     result = await db.execute(select(GitRepository).where(GitRepository.id == repo_id))

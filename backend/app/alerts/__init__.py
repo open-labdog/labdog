@@ -1,4 +1,4 @@
-"""What LabDog does with an alert besides investigating it.
+"""What unbork does with an alert besides investigating it.
 
 Recording alerts lives in :mod:`app.ai.alerts` for history's sake; this
 package holds what needs no AI: reading what an alert's labels ask for

@@ -1,4 +1,4 @@
-"""Cleanup step: delete a Proxmox snapshot LabDog took.
+"""Cleanup step: delete a Proxmox snapshot unbork took.
 
 Deleting needs the guest's config lock, and right after a rollback that
 lock is not free. The rollback kills the running QEMU process, and

@@ -1,9 +1,9 @@
-"""What a pack may contain before LabDog will load it.
+"""What a pack may contain before unbork will load it.
 
-An action pack is a git repository someone points LabDog at. Its playbooks
+An action pack is a git repository someone points unbork at. Its playbooks
 run against managed hosts, which is the point — but ansible-core also gives
 a repository several ways to run code on the *controller*, which is the
-LabDog host itself, as the labdog user:
+unbork host itself, as the labdog user:
 
 * ``action_plugins/``, ``library/``, ``filter_plugins/``, ``lookup_plugins/``,
   ``callback_plugins/``, ``strategy_plugins/``, ``vars_plugins/``,
@@ -16,7 +16,7 @@ LabDog host itself, as the labdog user:
 
 Nothing inspected any of that. The loader validated the manifest's parameter
 *declarations* and never looked at the playbook body, so registering a pack
-was equivalent to handing over code execution on the LabDog host. Under the
+was equivalent to handing over code execution on the unbork host. Under the
 flat privilege model that is reachable by any authenticated account.
 
 **The ``trusted`` flag is not a privilege boundary.** Any user can set it,
@@ -131,7 +131,7 @@ class UntrustedPackContent(Exception):
         self.findings = findings
         joined = "; ".join(str(f) for f in findings)
         super().__init__(
-            f"pack {pack_name!r} contains content that runs on the LabDog host "
+            f"pack {pack_name!r} contains content that runs on the unbork host "
             f"({joined}). Review it, then mark the pack trusted if this is "
             f"intended."
         )
@@ -145,7 +145,7 @@ def _scan_controller_code_dirs(pack_root: Path) -> list[PolicyFinding]:
                 PolicyFinding(
                     "controller-side Python",
                     f"{path.relative_to(pack_root)}/ is imported and executed by "
-                    f"ansible-core on the LabDog host",
+                    f"ansible-core on the unbork host",
                 )
             )
     return findings
@@ -223,12 +223,12 @@ def _scan_mapping(node: dict, rel: Path) -> list[PolicyFinding]:
         module = _short_module(key)
         args = node.get(key)
         if module in _CONTROLLER_WRITE_MODULES:
-            found(f"a task uses {key}, which writes to the LabDog host")
+            found(f"a task uses {key}, which writes to the unbork host")
         if module in _CONTROLLER_SRC_MODULES:
             src = args.get("src") or args.get("file") if isinstance(args, dict) else args
             remote = isinstance(args, dict) and args.get("remote_src") in (True, "yes", "true")
             if not remote and _controller_path(src):
-                found(f"{key} reads {src!r} from the LabDog host")
+                found(f"{key} reads {src!r} from the unbork host")
         if module == "add_host" and isinstance(args, dict):
             out.extend(_scan_mapping(args, rel))
     return out
@@ -254,7 +254,7 @@ def _scan_node(node, rel: Path) -> list[PolicyFinding]:
             findings.append(
                 PolicyFinding(
                     "runs on the controller",
-                    f"{rel}: a template calls lookup {name} on the LabDog host",
+                    f"{rel}: a template calls lookup {name} on the unbork host",
                 )
             )
     return findings
@@ -304,7 +304,7 @@ def assert_pack_safe(pack_name: str, pack_root: Path, trusted: bool) -> None:
         return
     if trusted:
         logger.info(
-            "pack %r is trusted; loading %d item(s) that run on the LabDog host: %s",
+            "pack %r is trusted; loading %d item(s) that run on the unbork host: %s",
             pack_name,
             len(findings),
             "; ".join(str(f) for f in findings),

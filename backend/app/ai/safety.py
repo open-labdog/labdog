@@ -56,7 +56,7 @@ DENYLIST_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
             r"\b(apt-get|apt|dnf|yum|zypper)\s+(remove|purge|erase)\b[^|;]*\b"
             r"(openssh-server|openssh|ssh|sshd|systemd|kernel|linux-image)\b"
         ),
-        "removing a package LabDog or the host depends on",
+        "removing a package unbork or the host depends on",
     ),
     (re.compile(r"\bnft\s+flush\s+ruleset\b"), "flushing the entire nftables ruleset"),
     (re.compile(r"\biptables\s+-F\s*$"), "flushing all iptables rules"),
@@ -432,7 +432,7 @@ def classify_command(command: str, policy: CommandPolicy | None = None) -> Verdi
 
     A pipeline takes the verdict of its most dangerous segment: ``denied``
     beats ``mutating`` beats ``unknown`` beats ``read_only``. *policy* is
-    the command policy to judge by, LabDog's own when omitted.
+    the command policy to judge by, unbork's own when omitted.
     """
     if not command or not command.strip():
         return Verdict("unknown", "Empty command", "")
@@ -493,7 +493,7 @@ def is_allowed(verdict: Verdict, autonomy_level: str) -> tuple[bool, str]:
         return True, f"Permitted under full_auto: {verdict.reason}"
     if autonomy_level == "read_only":
         return False, (
-            f"Refused: this session is read-only, and LabDog cannot tell that this "
+            f"Refused: this session is read-only, and unbork cannot tell that this "
             f"command only reads ({verdict.reason})"
         )
     # "approval" — the caller converts this into an approval request.

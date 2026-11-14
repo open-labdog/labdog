@@ -7,7 +7,7 @@ the HMAC key that ``app/api/webhooks.py`` compares every inbound push
 signature against. Anyone who could read it — any authenticated user
 through ``GET /api/git-repos``, anyone with a database dump, anyone
 reading a log that captured a response body — could forge a push
-webhook and make LabDog import configuration from a commit of their
+webhook and make unbork import configuration from a commit of their
 choosing.
 
 It was also the only secret in the codebase not held in an

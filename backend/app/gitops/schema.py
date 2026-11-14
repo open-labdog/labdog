@@ -1,4 +1,4 @@
-"""YAML schema models for LabDog GitOps group configuration.
+"""YAML schema models for unbork GitOps group configuration.
 
 Top-level key conventions
 --------------------------

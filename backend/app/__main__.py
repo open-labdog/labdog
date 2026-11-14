@@ -1,5 +1,5 @@
 """
-LabDog application entrypoint.
+unbork application entrypoint.
 
 Usage:
     python -m app                       # everything in one process tree (role "all")
@@ -102,7 +102,7 @@ def _wait_for_schema(poll_seconds: float = 5.0) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="LabDog API Server")
+    parser = argparse.ArgumentParser(description="unbork API Server")
     parser.add_argument(
         "--workers",
         type=int,

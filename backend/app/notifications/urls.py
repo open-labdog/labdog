@@ -1,4 +1,4 @@
-"""The address LabDog puts in links it sends.
+"""The address unbork puts in links it sends.
 
 Configured, never inferred. The obvious shortcut — build it from the
 request that triggered the notification — fails twice: most notifications

@@ -30,7 +30,7 @@ class HostModuleStatus(Base):
 
 
 def _last_verified_at():
-    """When LabDog last confirmed this host's state, or NULL (BUG-99).
+    """When unbork last confirmed this host's state, or NULL (BUG-99).
 
     The newest of: a module row that was collected, drift-checked or
     synced and did not end in error; a firewall drift check (it writes the
@@ -42,7 +42,7 @@ def _last_verified_at():
     ``sync_status`` not ``error`` or ``unknown`` (``unknown`` is what an
     unreachable host's rows are set to). A host whose every check now fails
     therefore has no verified time and reads as stale, which is the point:
-    it is the host LabDog has lost track of.
+    it is the host unbork has lost track of.
 
     Computed in SQL rather than stored, so the dozen places that write
     these timestamps do not each have to remember a second column.

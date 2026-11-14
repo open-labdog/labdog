@@ -1,8 +1,8 @@
-"""Query the Mimir/Prometheus backend LabDog already knows about.
+"""Query the Mimir/Prometheus backend unbork already knows about.
 
 Reuses the registered :class:`app.grafana.models.GrafanaInstance` and its
 client, so the model queries metrics through the same credentials and TLS
-settings the rest of LabDog uses — there is no second endpoint to
+settings the rest of unbork uses — there is no second endpoint to
 configure and no second place for a token to live.
 """
 
@@ -44,7 +44,7 @@ MAX_SERIES = 25
     name="query_mimir",
     description=(
         "Run an instant PromQL query against the Mimir/Prometheus backend "
-        "registered in LabDog and return the current value of each matching "
+        "registered in unbork and return the current value of each matching "
         "series. Host metrics carry a labdog_host_id label matching the ids "
         "from list_hosts. Use this for resource usage, uptime, and any alerting "
         "signal, rather than shelling into the host."
@@ -59,7 +59,7 @@ MAX_SERIES = 25
             "host_id": {
                 "type": "integer",
                 "description": (
-                    "LabDog host id whose metrics destination to query. Hosts can "
+                    "unbork host id whose metrics destination to query. Hosts can "
                     "ship to different backends; omit it to use the session's "
                     "only target host, or else the default instance."
                 ),
@@ -78,7 +78,7 @@ async def _query_mimir(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     instance = await instance_for_query(ctx.db, "mimir", _query_host(ctx, args))
     if instance is None:
         return ToolResult(
-            "No Mimir instance is registered for this host in LabDog, so metrics "
+            "No Mimir instance is registered for this host in unbork, so metrics "
             "are unavailable. Fall back to reading state on the host directly.",
             ok=False,
             summary="no mimir instance",
@@ -153,7 +153,7 @@ async def _query_mimir(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             "host_id": {
                 "type": "integer",
                 "description": (
-                    "LabDog host id whose metrics destination to query. Hosts can "
+                    "unbork host id whose metrics destination to query. Hosts can "
                     "ship to different backends; omit it to use the session's "
                     "only target host, or else the default instance."
                 ),
@@ -180,7 +180,7 @@ async def _query_mimir_range(ctx: ToolContext, args: dict[str, Any]) -> ToolResu
     instance = await instance_for_query(ctx.db, "mimir", _query_host(ctx, args))
     if instance is None:
         return ToolResult(
-            "No Mimir instance is registered for this host in LabDog, so metrics are unavailable.",
+            "No Mimir instance is registered for this host in unbork, so metrics are unavailable.",
             ok=False,
             summary="no mimir instance",
         )

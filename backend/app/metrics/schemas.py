@@ -95,7 +95,7 @@ class ModuleStatusCount(BaseModel):
 
 
 class CACertExpiry(BaseModel):
-    """One CA certificate LabDog deploys, with when it stops being valid."""
+    """One CA certificate unbork deploys, with when it stops being valid."""
 
     name: str
     fingerprint_sha256: str

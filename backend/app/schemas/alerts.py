@@ -63,7 +63,7 @@ class AlertActionOut(BaseModel):
 
 
 class AlertIntakeStatus(BaseModel):
-    """Whether alerts can reach LabDog, for the Alerts › Handling tab.
+    """Whether alerts can reach unbork, for the Alerts › Handling tab.
 
     Says whether the webhook token is set, and whether it is long enough
     for an alert to run an action or full auto, never what it is: the

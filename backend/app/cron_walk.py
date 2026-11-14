@@ -1,8 +1,8 @@
 """When a cron schedule next runs, read in the instance's timezone.
 
-Every cron expression LabDog evaluates itself — scheduled actions and
+Every cron expression unbork evaluates itself — scheduled actions and
 discovery scans — is read in one timezone, the ``scheduling.timezone``
-setting (an IANA name, default ``UTC``). Cron jobs LabDog writes to
+setting (an IANA name, default ``UTC``). Cron jobs unbork writes to
 hosts are not covered: those run on each host's own clock.
 
 Daylight saving needs two rules, and croniter supplies only the first:

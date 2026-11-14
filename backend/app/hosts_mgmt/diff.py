@@ -40,7 +40,7 @@ def compute_hosts_diff(
     line by line within each address.
 
     An empty *desired* is what ``get_effective_hosts_entries`` returns
-    when no entry applies, and LabDog then leaves the file alone — so
+    when no entry applies, and unbork then leaves the file alone — so
     nothing in it is "extra", and the diff is empty (BUG-115).
     """
     diff = HostsFileDiff()

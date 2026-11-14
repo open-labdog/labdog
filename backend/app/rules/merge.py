@@ -35,7 +35,7 @@ def merge_group_rules(
 
     Args:
         groups: List of dicts with id, priority, and rules list
-        server_ip: LabDog server IP for SSH lockout rule (defaults to settings)
+        server_ip: unbork server IP for SSH lockout rule (defaults to settings)
         host_source_ip: Per-host detected source IP (takes precedence over server_ip)
         host_rules: Host-level override rules; replace any group rule with the same signature
 

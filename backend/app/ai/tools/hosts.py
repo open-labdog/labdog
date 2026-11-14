@@ -53,7 +53,7 @@ async def _list_hosts(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
 @tool(
     name="get_host_facts",
     description=(
-        "Get the cached operating-system facts LabDog collected for one host: "
+        "Get the cached operating-system facts unbork collected for one host: "
         "OS family and version, kernel version, default network interface, and "
         "when those facts were last refreshed. This does not connect to the "
         "host — use run_ssh_command for live state."

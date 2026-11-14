@@ -1,6 +1,6 @@
-"""Action history tools — what LabDog ran on a host, and what it printed.
+"""Action history tools — what unbork ran on a host, and what it printed.
 
-Both read LabDog's own database and never connect to a host. Both are
+Both read unbork's own database and never connect to a host. Both are
 scoped to the session's target allowlist the way ``get_host_facts`` is:
 a session with targets sees only their runs.
 
@@ -56,7 +56,7 @@ def _utc(moment: datetime | None) -> str:
 @tool(
     name="list_action_runs",
     description=(
-        "List the action runs LabDog recently ran against one host, newest "
+        "List the action runs unbork recently ran against one host, newest "
         "first: run id, action, how the host's part ended, when, and its "
         "error. Use it to see what changed on a host lately (an upgrade, a "
         "config push) and to find run ids for get_action_run_output."
@@ -92,7 +92,7 @@ async def _list_action_runs(ctx: ToolContext, args: dict[str, Any]) -> ToolResul
     ).all()
     if not rows:
         return ToolResult(
-            f"LabDog has no action runs recorded for host {host_id}.",
+            f"unbork has no action runs recorded for host {host_id}.",
             target_host_id=host_id,
             summary="no runs",
         )
@@ -121,7 +121,7 @@ async def _list_action_runs(ctx: ToolContext, args: dict[str, Any]) -> ToolResul
 @tool(
     name="get_action_run_output",
     description=(
-        "Read the Ansible output LabDog captured for one host in one action "
+        "Read the Ansible output unbork captured for one host in one action "
         "run, with line numbers. Returns up to max_lines lines from "
         "start_line; with contains, only the lines that include that text "
         "(case-insensitive). Page with start_line rather than asking for "

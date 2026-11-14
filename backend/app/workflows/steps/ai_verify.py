@@ -8,7 +8,7 @@ verdict is read honestly, and that the evidence behind it is described
 honestly.
 
 What this replaced shelled out to a ``claude`` binary directly. That made
-it the one AI call in LabDog with no kill switch, no budget, no cost
+it the one AI call in unbork with no kill switch, no budget, no cost
 accounting, no transcript, and no trace in the UI — a verdict that could
 roll a host back and leave nothing behind explaining why. It now runs as
 an ordinary :class:`~app.ai.models.AISession` in ``verify`` mode, through

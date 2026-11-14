@@ -1,6 +1,6 @@
 """Cross-process locks around the action registry and the pack checkouts.
 
-Every LabDog process keeps its own copy of the action registry — the API
+Every unbork process keeps its own copy of the action registry — the API
 and both Celery workers — and rebuilds it at boot and again whenever it
 needs to. Two of them, the API and the ``work`` worker, also clone or
 pull every git pack into the same directories at boot. Nothing used to
@@ -15,7 +15,7 @@ Both locks are transaction-level, so they release on whatever commit or
 rollback ends the caller's transaction, and a process that dies holding
 one releases it with its connection.
 
-They use Postgres's two-key form. Every other advisory lock in LabDog is
+They use Postgres's two-key form. Every other advisory lock in unbork is
 taken with a single 64-bit key, the host locks among them keyed on the
 host id itself, and the two key spaces never overlap.
 """

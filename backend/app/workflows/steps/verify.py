@@ -18,9 +18,9 @@ _DISK_WARN_THRESHOLD = 95
 _PRIVILEGE_PROBE = "id -u; sudo -n true 2>/dev/null && echo SUDO || echo NOSUDO"
 
 _NO_JOURNAL_ACCESS = (
-    "LabDog connects to this host as an unprivileged user with no "
+    "unbork connects to this host as an unprivileged user with no "
     "passwordless sudo, so it can only see that user's own journal, not the "
-    "system's. Grant the SSH user sudo, or connect as root, for LabDog to "
+    "system's. Grant the SSH user sudo, or connect as root, for unbork to "
     "read this."
 )
 
@@ -34,7 +34,7 @@ async def _read_journal_errors(conn: Any, host_ip: str) -> tuple[str | None, str
     **The privilege check is the point of this function.** ``journalctl``
     run by a user outside ``adm``/``systemd-journal`` prints only that
     user's own journal and **exits 0** — so the previous version recorded
-    an empty string, indistinguishable from a genuinely quiet host. LabDog
+    an empty string, indistinguishable from a genuinely quiet host. unbork
     also passed ``-q``, which suppresses journalctl's own "you are not
     seeing messages from other users and the system" hint, discarding the
     one clue that anything was wrong.

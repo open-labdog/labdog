@@ -1,20 +1,20 @@
-"""Expose LabDog's tools to the Agent SDK, and nothing else.
+"""Expose unbork's tools to the Agent SDK, and nothing else.
 
 The SDK takes custom tools as an in-process MCP server: async Python
 functions it calls directly, no socket and no second process. Every
 handler in :data:`app.ai.tools.TOOL_REGISTRY` maps onto one, so the model
 sees the same capabilities under either runner.
 
-**The tools LabDog does not offer matter more than the ones it does.**
+**The tools unbork does not offer matter more than the ones it does.**
 Left to its defaults the SDK advertises Claude Code's own toolset —
 ``Bash``, ``Read``, ``Write``, ``Edit``, ``WebFetch`` — to the model,
-inside LabDog's container, alongside ours. That was confirmed live: the
+inside unbork's container, alongside ours. That was confirmed live: the
 model ran ``Bash`` before it found the tool it had been asked to use.
 ``strict_mcp_config`` does not prevent it; that setting governs MCP
 servers, and the built-ins are not one.
 
 :data:`NO_BUILTIN_TOOLS` is the setting that does, and every session must
-pass it. LabDog's threat model is that the model reaches a host only
+pass it. unbork's threat model is that the model reaches a host only
 through a classified, redacted, audited tool call against an allowlisted
 host. A shell in the container is not that.
 """
@@ -47,12 +47,12 @@ ToolExecutor = Callable[[ToolHandler, dict[str, Any]], Awaitable[ToolResult]]
 
 
 def qualified_tool_name(name: str) -> str:
-    """LabDog's name for a tool → the name the model calls it by."""
+    """unbork's name for a tool → the name the model calls it by."""
     return f"{_PREFIX}{name}"
 
 
 def local_tool_name(name: str) -> str:
-    """The model's name for a tool → LabDog's.
+    """The model's name for a tool → unbork's.
 
     Tolerates an already-local name: the permission callback receives
     qualified names, but tests and log lines carry both.

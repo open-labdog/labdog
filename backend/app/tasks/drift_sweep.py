@@ -42,7 +42,7 @@ means a claim is in progress, which is exactly the case this discards.
 One narrow hole remains: ``ssh_connect_host`` commits the session
 itself when TOFU records a host key, which makes that tick's writes
 durable before step 3 can discard them. It fires only on the first
-successful connection to a host LabDog has never reached, where there
+successful connection to a host unbork has never reached, where there
 is no established status to clobber.
 
 Fan-out. The periodic task no longer walks the hosts itself: it picks
@@ -414,7 +414,7 @@ def write_drift_verdict(hms: HostModuleStatus, *, drifted: bool, collected_state
 async def probe_source_ip_once(
     host: Host, db: AsyncSession, private_key_pem: str, log: logging.Logger
 ) -> None:
-    """Learn the address the host sees LabDog connect from, unless it is known.
+    """Learn the address the host sees unbork connect from, unless it is known.
 
     Best-effort optimisation for the next merge, not part of the verdict.
     A failure is logged on the module's *log* at debug level, because a

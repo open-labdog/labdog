@@ -85,7 +85,7 @@ async def resolve_target(db: AsyncSession, host_id: int) -> SnapshotTarget | Non
     if node is None:
         raise SnapshotFailed(
             f"Host {host_id} maps to VM {mapping.vmid}, but its Proxmox node is no "
-            f"longer configured in LabDog."
+            f"longer configured in unbork."
         )
 
     return SnapshotTarget(

@@ -74,7 +74,7 @@ async def _user_states(
     )
     if unreadable:
         raise UserCollectionError(
-            f"could not read the {', '.join(unreadable)}: LabDog's SSH user needs to be "
+            f"could not read the {', '.join(unreadable)}: unbork's SSH user needs to be "
             "root or have passwordless sudo"
         )
 

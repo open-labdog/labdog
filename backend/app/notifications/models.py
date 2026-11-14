@@ -44,7 +44,7 @@ SMTP_SETTINGS_ID = 1
 
 
 class SMTPSettings(Base):
-    """The mail server LabDog sends through. At most one row, id 1."""
+    """The mail server unbork sends through. At most one row, id 1."""
 
     __tablename__ = "smtp_settings"
 

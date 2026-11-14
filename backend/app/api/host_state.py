@@ -286,7 +286,7 @@ async def _probe_host(
     collectors: dict,
     warnings_by_module: dict[str, list[str]],
 ) -> None:
-    """Before any collector runs: record the source address LabDog reaches
+    """Before any collector runs: record the source address unbork reaches
     the host from, and the firewall competing-store notice. Raises what the
     connection raises."""
     host.labdog_source_ip = await get_source_ip(probe)
@@ -810,12 +810,12 @@ async def _probe_ok(conn, command: str) -> bool:
 
 
 async def _probe_competing_firewall_store(conn, active_backend: str) -> str | None:
-    """Warn when LabDog-managed rules linger in the *non-active* backend.
+    """Warn when unbork-managed rules linger in the *non-active* backend.
 
-    On a dual-stack host LabDog manages exactly one backend, but a leftover
-    LabDog ruleset can survive in the other one — e.g. after the operator
+    On a dual-stack host unbork manages exactly one backend, but a leftover
+    unbork ruleset can survive in the other one — e.g. after the operator
     switches backends, or after a manual `iptables -F LABDOG-INPUT` on a host
-    LabDog actually manages via nftables. Collection only ever reads the active
+    unbork actually manages via nftables. Collection only ever reads the active
     backend, so those stale rules are invisible to the "Current State" view yet
     may still be filtering traffic. Surface that explicitly; the next firewall
     sync tears the stale store down (see ``generate_firewall_playbook``).
@@ -826,14 +826,14 @@ async def _probe_competing_firewall_store(conn, active_backend: str) -> str | No
     if active_backend == "nftables":
         if await _probe_ok(conn, _PROBE_IPT_LABDOG):
             return (
-                "nftables is the active backend, but LabDog-managed iptables rules "
+                "nftables is the active backend, but unbork-managed iptables rules "
                 "(LABDOG-INPUT / LABDOG-OUTPUT) are still present on this host. They are "
                 "ignored by collection and will be removed on the next firewall sync."
             )
     elif active_backend == "iptables":
         if await _probe_ok(conn, _PROBE_NFT_LABDOG):
             return (
-                "iptables is the active backend, but a LabDog-managed nftables "
+                "iptables is the active backend, but a unbork-managed nftables "
                 "'inet filter' table is still present on this host. It is ignored by "
                 "collection and will be removed on the next firewall sync."
             )
@@ -863,7 +863,7 @@ async def _detect_firewall_backend(
 
       1. Only one backend installed → that one.
       2. **Marker stickiness** — if exactly one backend already carries a
-         LabDog-managed ruleset, keep it (avoids flip-flopping and orphaning our
+         unbork-managed ruleset, keep it (avoids flip-flopping and orphaning our
          own rules). If *both* do, that's a competing store: warn and fall
          through to the tiebreakers.
       3. **Container-runtime constraint** — Docker / kube-proxy (iptables mode)
@@ -907,7 +907,7 @@ async def _detect_firewall_backend(
                     # firewalld uses nft under the hood
                     backend = "nftables"
                 messages.append(
-                    "firewalld detected but LabDog manages nftables directly. "
+                    "firewalld detected but unbork manages nftables directly. "
                     "firewalld has been marked for disabling."
                 )
                 await _mark_wrapper_for_disabling(db, host_id, "firewalld", manages="nftables")
@@ -915,7 +915,7 @@ async def _detect_firewall_backend(
             # Check for ufw wrapper
             if await _probe_ok(conn, "command -v ufw || test -x /usr/sbin/ufw"):
                 messages.append(
-                    "ufw detected but LabDog manages iptables directly. "
+                    "ufw detected but unbork manages iptables directly. "
                     "ufw has been marked for disabling."
                 )
                 if backend is None:
@@ -957,12 +957,12 @@ async def _choose_between_installed_backends(conn) -> tuple[str, list[str]]:
     if nft_labdog and not ipt_labdog:
         return "nftables", [
             "Both firewalls installed; keeping nftables (an existing "
-            "LabDog-managed nftables ruleset was found)."
+            "unbork-managed nftables ruleset was found)."
         ]
     if ipt_labdog and not nft_labdog:
         return "iptables", [
             "Both firewalls installed; keeping iptables (an existing "
-            "LabDog-managed iptables ruleset was found)."
+            "unbork-managed iptables ruleset was found)."
         ]
 
     # Either both carry a LabDog ruleset (competing store — warn and
@@ -970,7 +970,7 @@ async def _choose_between_installed_backends(conn) -> tuple[str, list[str]]:
     messages: list[str] = []
     if nft_labdog and ipt_labdog:
         messages.append(
-            "LabDog-managed rules found in BOTH nftables and iptables — "
+            "unbork-managed rules found in BOTH nftables and iptables — "
             "the inactive backend's copy will be removed on the next sync."
         )
     container_reason = await _container_forces_iptables(conn)
@@ -1046,7 +1046,7 @@ async def _mark_wrapper_for_disabling(
     from app.packages.models import PackageRule, PackageState
     from app.services.models import ServiceRule, ServiceState
 
-    comment = f"Auto-disabled by LabDog: manages {manages} directly"
+    comment = f"Auto-disabled by unbork: manages {manages} directly"
     # Auto-add package rule to remove the wrapper
     existing_pkg = await db.execute(
         select(PackageRule).where(

@@ -111,7 +111,7 @@ async def refresh_actions(
     summary so admins can confirm which packs contributed.
 
     This used to call a synchronous rebuild that needed psycopg2, which
-    LabDog does not install. It fell back to the bundled pack alone and
+    unbork does not install. It fell back to the bundled pack alone and
     installed that, so every call dropped every DB pack's actions from
     the API until something rebuilt the registry again (BUG-96).
     """

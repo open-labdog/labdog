@@ -1,11 +1,11 @@
-"""What an alert's Grafana labels ask LabDog to do.
+"""What an alert's Grafana labels ask unbork to do.
 
 Three labels, set on the alert rule in Grafana, where a template can make
 them depend on the host (``$labels.labdog_hostname``, which the
 alloy-install action stamps on every series):
 
 * ``labdog_action=<action key>`` — run this action on the alert's host
-  first. Only actions on LabDog's list of actions alerts may run
+  first. Only actions on unbork's list of actions alerts may run
   (:class:`app.alerts.models.AlertAction`) are started, and only on the
   hosts the list allows; the list starts empty.
 * ``labdog_ai=true`` — have the AI investigate, when there is no action or
@@ -13,7 +13,7 @@ alloy-install action stamps on every series):
 * ``labdog_ai_automate=true`` — the same, and the AI may fix what it finds
   (full auto, behind the safeguards in :mod:`app.ai.alert_autonomy`).
   Implies ``labdog_ai``. With ``ai.alert_full_auto_rules_enabled`` on,
-  LabDog's own rules decide this instead (:mod:`app.ai.full_auto_rules`).
+  unbork's own rules decide this instead (:mod:`app.ai.full_auto_rules`).
 
 The AI values must be exactly ``true``.
 
@@ -27,7 +27,7 @@ Guards, in the order they are checked:
 
 * only a new firing alert dispatches — repeats of the same firing and
   resolve notifications do not;
-* the alert must name a host LabDog manages;
+* the alert must name a host unbork manages;
 * the action must exist, be on the list and not paused there, and the
   host must be inside the entry's scope;
 * a webhook alert needs the webhook token to be at least
@@ -220,7 +220,7 @@ async def dispatch_for(db: AsyncSession, event: Any) -> Any | None:
         return dispatch
 
     if event.host_id is None:
-        return done("skipped_no_host", "the alert does not name a host LabDog manages")
+        return done("skipped_no_host", "the alert does not name a host unbork manages")
     action = ACTION_REGISTRY.get(key)
     if action is None:
         return done("unknown_action", f"no action has the key {key!r}")

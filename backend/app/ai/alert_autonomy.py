@@ -149,7 +149,7 @@ async def _full_auto_refusal(db: AsyncSession, event: Any) -> str | None:
         return "the alert has already resolved"
 
     if event.host_id is None:
-        return "the alert does not name a host LabDog manages"
+        return "the alert does not name a host unbork manages"
 
     if (
         event.source == "grafana_webhook"
@@ -169,7 +169,7 @@ async def _full_auto_refusal(db: AsyncSession, event: Any) -> str | None:
     # though its answer is cached (see app.ai.labdog_host).
     if await _is_labdog_host(db, event.host_id):
         return (
-            "LabDog runs on this host, so a fix could take LabDog down with it, and LabDog "
+            "unbork runs on this host, so a fix could take unbork down with it, and unbork "
             "cannot roll back the machine it runs on"
         )
 
@@ -316,7 +316,7 @@ async def _sessions_that_changed(db: AsyncSession, host_id: int, since: datetime
 async def busy_refusal(
     db: AsyncSession, session: Any, *, classification: str, arguments: dict
 ) -> str | None:
-    """Refuse an unattended change while LabDog itself is changing the host.
+    """Refuse an unattended change while unbork itself is changing the host.
 
     Alert sessions are not part of the per-host queue that syncs and
     action runs share, so without this a remediation could restart a
@@ -353,7 +353,7 @@ async def busy_refusal(
     if blocker.action_key:
         what += f" ({blocker.action_key})"
     return (
-        f"Not run: LabDog's {what} is working on this host right now, and an automatic "
-        f"remediation does not change a host while LabDog is changing it. Report the change "
+        f"Not run: unbork's {what} is working on this host right now, and an automatic "
+        f"remediation does not change a host while unbork is changing it. Report the change "
         f"you would make instead."
     )

@@ -249,13 +249,13 @@ async def build_metrics_extra_vars(
     operator_params: dict | None = None,
     picked: dict[str, int] | None = None,
 ) -> tuple[dict[str, Any], dict[str, str]]:
-    """Build the extra-vars LabDog injects into a per-host action run.
+    """Build the extra-vars unbork injects into a per-host action run.
 
     Returns ``(destination_vars, identity_vars)``:
 
     * ``identity_vars``: ``labdog_host_id`` / ``labdog_hostname``, always
       set so the agent stamps queryable labels. These should override any
-      operator input (identity is LabDog-owned).
+      operator input (identity is unbork-owned).
     * ``destination_vars``: for each of Mimir and Loki, the URL, tenant and
       TLS-verification flag of the instance this host ships to, mapped onto
       the action's declared var names. Empty unless ``metrics_backend`` is

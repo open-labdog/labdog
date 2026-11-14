@@ -14,7 +14,7 @@ is sync. Worse, its in-process counters would be *wrong* under multiple
 uvicorn workers (each worker has its own memory), whereas every metric here
 is derived fresh from the database, so all workers report identical values.
 Its default registry also auto-registers process/GC/platform collectors
-that describe the (near-idle) API process — actively misleading as "LabDog
+that describe the (near-idle) API process — actively misleading as "unbork
 health". So the library would only have contributed ``CONTENT_TYPE_LATEST``
 and ~10 lines of escaping logic; not worth the dependency.
 

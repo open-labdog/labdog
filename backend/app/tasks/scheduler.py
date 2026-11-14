@@ -11,7 +11,7 @@ failed acquire and leaves ``lock`` as ``None``, and the first tick dies
 on ``None.extend``.
 
 Any of the three used to take every periodic job with it — drift sweeps,
-scheduled actions, retention, alert polling — until LabDog was restarted
+scheduled actions, retention, alert polling — until unbork was restarted
 by hand (BUG-83). Since #140 the death is at least visible; this makes
 it not happen.
 

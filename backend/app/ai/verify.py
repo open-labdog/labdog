@@ -10,7 +10,7 @@ restored should not be opening SSH connections while it decides.
 
 It still runs as a real :class:`~app.ai.models.AISession`. That is the
 whole reason for the rewrite. The old step shelled out to a ``claude``
-binary directly, so a verify verdict was the one AI call in LabDog with
+binary directly, so a verify verdict was the one AI call in unbork with
 no kill switch, no budget, no cost accounting, no transcript, and no
 trace in the UI — invisible until it rolled a host back.
 """
@@ -30,7 +30,7 @@ from app.ai.service import AIDisabledError, BudgetExceededError
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """\
-You are LabDog's verification step. An automated change has just been \
+You are unbork's verification step. An automated change has just been \
 made to one Linux host, and you decide whether it left the host healthy.
 
 Your answer has consequences: a FAIL can restore the host from a \

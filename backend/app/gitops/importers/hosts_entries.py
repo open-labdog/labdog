@@ -126,7 +126,7 @@ async def import_hosts_entries(
     Missing or ``None`` ``hosts_entries`` section and an empty list both
     trigger wipe semantics — all existing group-scoped rows are deleted.
 
-    The loopback entries LabDog injects are not rows and are therefore not
+    The loopback entries unbork injects are not rows and are therefore not
     at risk here: they are synthesised at merge time from
     ``app.hosts_mgmt.merge.SYSTEM_ENTRIES``.
 

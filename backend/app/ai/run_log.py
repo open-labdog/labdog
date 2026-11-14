@@ -4,7 +4,7 @@ An action run's log is the evidence an investigation of it starts from,
 but it is too big to hand over whole: ``ActionHostRun.output`` holds up to
 a mebibyte per host, and every byte in a prompt is read back on each later
 turn. So the mission gets the parts an operator would look at first — what
-LabDog did around the playbook (``[preflight]``, ``[verify]``,
+unbork did around the playbook (``[preflight]``, ``[verify]``,
 ``[rollback]``…), each ``PLAY RECAP``, and every failed task — and the
 model pages through the rest with ``get_action_run_output``.
 
@@ -133,7 +133,7 @@ def parse(text: str) -> list[LogLine]:
 
 
 def outline(lines: list[LogLine]) -> list[LogLine]:
-    """LabDog's own step lines, the section headers, and every recap."""
+    """unbork's own step lines, the section headers, and every recap."""
     return [line for line in lines if line.kind in _OUTLINE_KINDS and not line.cont]
 
 
@@ -153,7 +153,7 @@ def failures(lines: list[LogLine]) -> list[Failure]:
 
     Each keeps its task header, the few lines before the failure, and the
     failure's own block (the result, or the ``[ERROR]`` explanation). A
-    LabDog step that failed (``[verify] … status=failed``) is its own entry
+    unbork step that failed (``[verify] … status=failed``) is its own entry
     with no task.
     """
     found: list[Failure] = []

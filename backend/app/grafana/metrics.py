@@ -1,7 +1,7 @@
 """Build and run the instant CPU/memory/disk queries for a host.
 
 Metrics are matched by the ``labdog_host_id`` external label that the
-Alloy install action stamps on every series (= LabDog's DB host id), so
+Alloy install action stamps on every series (= unbork's DB host id), so
 queries are immune to hostname/IP changes. PromQL builders are pure for
 easy testing; ``fetch_host_metrics`` runs them concurrently.
 """
@@ -183,7 +183,7 @@ async def fetch_fleet_metrics(
 ) -> tuple[list[FleetHostMetrics], float | None]:
     """Every known host's CPU, memory and disk percentages, plus the newest
     sample time. Hosts with no series at all are left out; a series for a
-    host id LabDog doesn't know (a deleted host still reporting) is too."""
+    host id unbork doesn't know (a deleted host still reporting) is too."""
     cpu_r, mem_r, disk_r = await asyncio.gather(
         client.query(fleet_cpu_percent_query()),
         client.query(fleet_memory_percent_query()),

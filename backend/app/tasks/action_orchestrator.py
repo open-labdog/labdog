@@ -10,7 +10,7 @@ host failures do not stop the rest.
 The orchestrator works from the database, not from Celery results. It
 waits for its hosts by re-reading their rows, and every read also
 writes ``ActionRun.heartbeat_at``. That is what lets a run outlive its
-orchestrator: when the worker dies — LabDog upgrading its own Docker
+orchestrator: when the worker dies — unbork upgrading its own Docker
 host restarts it, for one — the heartbeat goes stale, the action
 sweeper hands the run to :func:`resume_run`, and the new orchestrator
 carries on from the rows the old one left (BUG-101). It used to wait in

@@ -259,7 +259,7 @@ async def get_desired_state_rule_counts(db: AsyncSession) -> list[tuple[str, int
     """Return ``(module, count)`` — total row count (host- + group-scoped)
     for each of the 9 desired-state rule tables.
 
-    ``module`` here is a fixed label LabDog assigns per rule *table*, not a
+    ``module`` here is a fixed label unbork assigns per rule *table*, not a
     DB column value — unlike ``module_type`` columns (free text, emitted
     verbatim elsewhere in this module), there is one rule table per module
     so the mapping is 1:1 and static. Deliberately **not** the

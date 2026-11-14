@@ -2,7 +2,7 @@
 
 A full-auto alert session ends when the model says it is done, which is
 the model's opinion of its own work. ``ai.alert_remediation_check_minutes``
-after the session finished, LabDog checks for itself:
+after the session finished, unbork checks for itself:
 
 1. Can it still reach the host over SSH?
 2. Has a new critical alert fired on the host since the first change?
@@ -24,20 +24,20 @@ and the session has a button for the rest.
 take the host over, and what a check would then see is their work, not
 the model's: a rollback would undo their repair without asking.
 
-**A host LabDog cannot reach only counts if LabDog can reach Proxmox.**
+**A host unbork cannot reach only counts if unbork can reach Proxmox.**
 When the SSH probe fails, Proxmox is asked as well. If it does not answer
-either, the fault may be on LabDog's side — a lost route, DNS — and the
+either, the fault may be on unbork's side — a lost route, DNS — and the
 check is ``unchecked`` rather than a reason to roll back.
 
 **A check that cannot run in time is reported rather than caught up on.**
-One that fell due while LabDog was down runs when it is back, up to
+One that fell due while unbork was down runs when it is back, up to
 :data:`GRACE` late. Past that it is marked ``unchecked``: judging a host —
 and perhaps rolling it back — long after the fact would throw away all
 that time's writes on evidence that has gone stale.
 
 Rolling back is shared with the button on the session page: both go
 through :func:`plan_rollback`, :func:`prepare_rollback` and
-:func:`perform_rollback`, so what a person can do and what LabDog does on
+:func:`perform_rollback`, so what a person can do and what unbork does on
 its own are the same operation with the same refusals, and the button is
 enabled by the same rules (:func:`check_rollback`). A rollback takes part
 in the per-host queue (:mod:`app.tasks.host_lock`): it claims the host
@@ -120,7 +120,7 @@ class RollbackRefused(Exception):
 
 
 class HostBusy(RollbackRefused):
-    """LabDog's own work holds the host. The message says which."""
+    """unbork's own work holds the host. The message says which."""
 
 
 @dataclass
@@ -324,7 +324,7 @@ def _say(exc: BaseException) -> str:
 
 
 async def probe_reachable(db: AsyncSession, host: Any) -> str | None:
-    """Why LabDog cannot reach ``host``; ``None`` if it can.
+    """Why unbork cannot reach ``host``; ``None`` if it can.
 
     Also ``None`` when there is no key to try with: the session could not
     have changed the host without one, and "cannot tell" is not evidence
@@ -349,7 +349,7 @@ async def probe_reachable(db: AsyncSession, host: Any) -> str | None:
             # Not retried: a changed host key does not change back. The fix
             # may have regenerated it, and LabDog will not connect until
             # someone trusts the new one — the host is out of its reach.
-            return "its SSH host key has changed, so LabDog refuses to connect"
+            return "its SSH host key has changed, so unbork refuses to connect"
         except Exception as exc:
             last = _say(exc)
     pause = int(PROBE_PAUSE_SECONDS)
@@ -357,12 +357,12 @@ async def probe_reachable(db: AsyncSession, host: Any) -> str | None:
 
 
 async def proxmox_answers(db: AsyncSession, host: Any) -> str | None:
-    """Why LabDog cannot reach Proxmox; ``None`` if it can, or has none to ask.
+    """Why unbork cannot reach Proxmox; ``None`` if it can, or has none to ask.
 
     The comparison for a failed SSH probe. The host's own node is asked
     about its VM; a host without one is compared against any Proxmox node
-    LabDog knows. An error *response* counts as an answer — a refused
-    token still means the network between LabDog and Proxmox works.
+    unbork knows. An error *response* counts as an answer — a refused
+    token still means the network between unbork and Proxmox works.
     """
     from app.ai.snapshots import client_for, resolve_target
     from app.proxmox.client import ProxmoxError
@@ -440,7 +440,7 @@ async def assess(db: AsyncSession, event: AlertEvent, session: AISession) -> Ass
 
     host = await db.get(Host, event.host_id)
     if host is None:
-        return Assessment("unchecked", "The host was removed from LabDog before the check.")
+        return Assessment("unchecked", "The host was removed from unbork before the check.")
 
     first = await first_change(db, session.id, host.id)
     since = first.started_at if first is not None else (session.started_at or session.created_at)
@@ -453,11 +453,11 @@ async def assess(db: AsyncSession, event: AlertEvent, session: AISession) -> Ass
         proxmox_down = await proxmox_answers(db, host)
         if proxmox_down:
             cut_off = (
-                f"LabDog could not reach {host.hostname} over SSH ({unreachable}), and could "
-                f"not reach Proxmox either ({proxmox_down}), so the fault may be on LabDog's side"
+                f"unbork could not reach {host.hostname} over SSH ({unreachable}), and could "
+                f"not reach Proxmox either ({proxmox_down}), so the fault may be on unbork's side"
             )
         else:
-            worse.append(f"LabDog can no longer reach {host.hostname} over SSH: {unreachable}")
+            worse.append(f"unbork can no longer reach {host.hostname} over SSH: {unreachable}")
     fired = await new_critical_alerts(db, event, since=since)
     if fired:
         names = ", ".join(sorted({row.alertname for row in fired}))
@@ -538,7 +538,7 @@ async def judge(
     """:func:`assess`, made sure of before anything acts on it.
 
     A ``made_worse`` that will be rolled back first waits up to
-    :data:`BUSY_WAIT_SECONDS` for LabDog's own work on the host to finish,
+    :data:`BUSY_WAIT_SECONDS` for unbork's own work on the host to finish,
     the same rule the fix itself followed. If it had to wait, it looks
     again: a probe that failed while a sync reloaded the firewall or
     restarted networking says nothing about the fix, and a rollback on
@@ -605,7 +605,7 @@ async def recently_made_worse(db: AsyncSession, host_id: int, now: datetime) -> 
 
 
 async def host_busy(db: AsyncSession, host_id: int) -> str | None:
-    """What LabDog itself is doing to the host right now, if anything.
+    """What unbork itself is doing to the host right now, if anything.
 
     Takes the host's advisory lock first, as ``check_host_busy`` requires,
     and holds it until the caller's transaction ends: a caller that goes on
@@ -624,11 +624,11 @@ async def host_busy(db: AsyncSession, host_id: int) -> str | None:
         "action_group": "group action run",
         "ai_rollback": "rollback",
     }.get(blocker.kind, blocker.kind)
-    return f"LabDog's {what} {blocker.id} is working on this host"
+    return f"unbork's {what} {blocker.id} is working on this host"
 
 
 async def wait_until_free(db: AsyncSession, host_id: int) -> tuple[bool, str | None]:
-    """Wait up to :data:`BUSY_WAIT_SECONDS` for LabDog's own work on the host.
+    """Wait up to :data:`BUSY_WAIT_SECONDS` for unbork's own work on the host.
 
     Returns whether it had to wait at all, and what still held the host
     when it gave up (``None`` once the host is free). Commits after every
@@ -698,7 +698,7 @@ async def check_rollback(
     the button on the session page, so the button cannot be on for a
     rollback the endpoint refuses, or off for one it would allow.
 
-    ``ask=False`` skips the live half of the LabDog-host test, for a page
+    ``ask=False`` skips the live half of the unbork-host test, for a page
     load; pressing the button asks. ``exclude_rollback_id`` is the
     worker's own ``running`` row. Reads the database only (and, with
     ``ask``, the host): Proxmox is asked when the rollback is carried out.
@@ -751,8 +751,8 @@ async def check_rollback(
 
     if await labdog_runs_on(db, host, ask=ask):
         raise RollbackRefused(
-            f"LabDog runs on {host.hostname}. Rolling it back would stop LabDog half-way, "
-            f"with nothing left to start the machine again, and put LabDog's own database "
+            f"unbork runs on {host.hostname}. Rolling it back would stop unbork half-way, "
+            f"with nothing left to start the machine again, and put unbork's own database "
             f"back to the snapshot. Roll it back in Proxmox if you need to."
         )
     return first
@@ -776,7 +776,7 @@ async def plan_rollback(
 
     host = await db.get(Host, host_id)
     if host is None:
-        raise RollbackRefused("The host is no longer in LabDog.")
+        raise RollbackRefused("The host is no longer in unbork.")
 
     first = await check_rollback(
         db, session=session, host=host, exclude_rollback_id=exclude_rollback_id
@@ -810,7 +810,7 @@ async def plan_rollback(
     key = await load_host_key(db, host)
     if key is None:
         raise RollbackRefused(
-            f"{host.hostname} has no usable SSH key, so LabDog could not confirm it came back."
+            f"{host.hostname} has no usable SSH key, so unbork could not confirm it came back."
         )
     return RollbackPlan(host=host, first=first, later=later, target=target, key=key)
 
@@ -951,7 +951,7 @@ async def _clear_the_way(plan: RollbackPlan) -> list[AIToolCall]:
     if taken is False:
         raise RollbackRefused(
             f"{name} is no longer on {target.vm_type} {target.vmid} in Proxmox: it was removed "
-            f"outside LabDog."
+            f"outside unbork."
         )
     # Without a time to compare, a snapshot is counted as newer.
     newer = [

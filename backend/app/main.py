@@ -678,7 +678,7 @@ def _new_fastapi_app() -> FastAPI:
     # turns them back on where that is wanted (dev/labdog.toml does).
     _docs = settings.server.expose_docs
     return FastAPI(
-        title="LabDog",
+        title="unbork",
         version="0.1.0",
         lifespan=_lifespan,
         docs_url="/docs" if _docs else None,
@@ -960,7 +960,7 @@ def _add_spa_fallback(app: FastAPI) -> None:
         def _serve(path: Path, dynamic_values: tuple[str, ...] = ()):
             """Serve one file: HTML gets a nonce and its own CSP, the rest streams.
 
-            Every HTML document LabDog serves passes through here, which is
+            Every HTML document unbork serves passes through here, which is
             what makes the nonce approach viable at all — there is no
             ``StaticFiles`` mount, so there is exactly one place to stamp.
             ``tests/test_csp_nonce.py`` pins that; a mount added later for

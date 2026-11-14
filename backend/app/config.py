@@ -1,5 +1,5 @@
 """
-LabDog configuration — loaded from TOML config file.
+unbork configuration — loaded from TOML config file.
 
 Resolution order (first found wins):
   1. LABDOG_CONFIG env var (explicit path)
@@ -107,7 +107,7 @@ class MetricsConfig(BaseModel):
     ``AppSetting``**: the endpoint is unauthenticated (like ``GET
     /api/version``) once enabled, so flipping it on must require server
     access (editing ``labdog.toml`` / setting ``LABDOG_METRICS__ENABLED``
-    and restarting), not just a LabDog login. ``/api/settings`` is
+    and restarting), not just a unbork login. ``/api/settings`` is
     readable by every role and writable by any admin session, so a DB
     toggle would let one admin — or one XSS'd admin session — expose fleet
     state with one PATCH.
@@ -138,7 +138,7 @@ class AlertsConfig(BaseModel):
     Empty by default, and an empty token means the endpoint refuses
     everything rather than accepting anything. An alert receiver that
     silently accepted unauthenticated POSTs would let anyone on the
-    network write rows LabDog might then spend money investigating.
+    network write rows unbork might then spend money investigating.
     """
 
     webhook_token: str = ""
@@ -236,7 +236,7 @@ class AnsibleConfig(BaseModel):
 
     Pack sources are not configured here — DB-backed packs are managed
     via the admin UI at ``/settings/packs``. This section only carries
-    filesystem paths LabDog uses to materialise those packs.
+    filesystem paths unbork uses to materialise those packs.
     """
 
     packs_root_dir: str = "/var/lib/labdog/packs"
@@ -461,7 +461,7 @@ def _validate_required(s: Settings) -> None:
     # victim visits, with the session cookie attached.
     if "*" in s.security.allowed_origins:
         errors.append(
-            "security.allowed_origins contains '*' and LabDog always sends "
+            "security.allowed_origins contains '*' and unbork always sends "
             "credentials, so every origin would be reflected back as allowed — "
             "any website a logged-in user visits could drive the API as them. "
             "List the frontend URL(s) explicitly."
@@ -486,12 +486,12 @@ def _validate_required(s: Settings) -> None:
             logger.warning(
                 "security.cookie_secure is False but allowed_origins includes %s. "
                 "The session cookie will be sent over plain HTTP. Set cookie_secure "
-                "to true once LabDog is behind TLS.",
+                "to true once unbork is behind TLS.",
                 ", ".join(repr(o) for o in remote),
             )
 
     if errors:
-        raise SystemExit("FATAL: LabDog cannot start:\n  - " + "\n  - ".join(errors))
+        raise SystemExit("FATAL: unbork cannot start:\n  - " + "\n  - ".join(errors))
 
 
 def load_settings() -> Settings:

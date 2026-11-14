@@ -241,7 +241,7 @@ async def execute_approved(
 def resume_prompt(approval: AIApprovalRequest, result: ToolResult | None) -> str:
     """What the model is told when the session picks up again.
 
-    Phrased as narration because that is what it is: LabDog ran the
+    Phrased as narration because that is what it is: unbork ran the
     command, not the model. Pretending otherwise — feeding it back as a
     tool result the model appears to have obtained — would misrepresent
     who acted, in the one place where who acted is the whole point.
@@ -251,7 +251,7 @@ def resume_prompt(approval: AIApprovalRequest, result: ToolResult | None) -> str
 
     if approval.status == "approved" and result is not None:
         outcome = (
-            "LabDog ran it on their behalf, so you do not need to run it "
+            "unbork ran it on their behalf, so you do not need to run it "
             "again. Its output was:\n\n"
             f"{result.content}\n\n"
             "Continue from here: verify the change had the effect you "

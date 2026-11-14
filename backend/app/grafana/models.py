@@ -13,7 +13,7 @@ class GrafanaInstance(Base):
 
     A single ``url`` is stored: the ingest/remote-write URL the operator
     points the agent at (with whatever path their setup needs, e.g.
-    ``.../api/v1/push``). LabDog hands that URL to the Alloy install action
+    ``.../api/v1/push``). unbork hands that URL to the Alloy install action
     verbatim, and for querying it strips the URL down to the host and
     appends the kind's query path (see ``app.grafana.schemas.derive_query_url``)
     — so the operator never has to know two URLs.

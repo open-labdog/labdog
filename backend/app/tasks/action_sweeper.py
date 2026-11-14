@@ -312,7 +312,7 @@ async def _take_over(db, run, now: datetime, stale_after: int) -> bool:
 
     The orchestrator writes ``heartbeat_at`` every few seconds while it
     drives the run, and clears it when it stops driving it, so a stale one
-    means it died mid-run — LabDog's own host upgrading Docker and
+    means it died mid-run — unbork's own host upgrading Docker and
     restarting the container under it, on lin-manager. The run then sat
     ``running`` with its remaining hosts ``queued`` until the whole-run
     deadline, hours later, failed it (BUG-101).

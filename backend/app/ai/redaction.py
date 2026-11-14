@@ -1,6 +1,6 @@
 """Strip secrets from command output before it reaches an LLM.
 
-The host inventory LabDog manages holds no plaintext secrets, but command
+The host inventory unbork manages holds no plaintext secrets, but command
 *output* routinely does — ``cat`` a config file, dump an environment,
 read a unit file. Everything a tool returns passes through
 :func:`redact` on its way into the transcript, so a secret is neither
