@@ -3,7 +3,7 @@ from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
-from app.auth.permissions import require
+from app.auth.permissions import anywhere, require
 from app.crypto import encrypt_ssh_key, get_master_key
 from app.db import get_db
 from app.models.host import Host
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/ssh-keys", tags=["ssh-keys"])
 
 @router.get("", response_model=list[SSHKeyResponse])
 async def list_ssh_keys(
-    _: User = Depends(require("hosts.view")),
+    _: User = Depends(require("hosts.view", scope=anywhere)),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(SSHKey).order_by(SSHKey.created_at.desc()))

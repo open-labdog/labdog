@@ -9,6 +9,15 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Added
 
+- **Extension hooks for rights scoped to hosts and groups.** Groundwork
+  for Enterprise RBAC; a Community install behaves exactly as before.
+  List routes now ask whether a user may view hosts *anywhere* and show
+  only what they may see, runs, schedules and group membership check the
+  hosts and groups named in the request, and changing a group's priority
+  needs the right everywhere. `GET /api/users/me` adds
+  `permissions_anywhere`, and the new `GET /api/users/me/permissions`
+  answers for one host or group, which host and group pages use to enable
+  their buttons. Plugin API 1.2.
 - **Extension hooks for directory sign-in.** Groundwork for the Enterprise
   SSO and LDAP packages; a Community install looks and behaves exactly as
   before. Installed extensions load from the `unbork.plugins` entry point

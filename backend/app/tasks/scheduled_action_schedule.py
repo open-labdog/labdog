@@ -49,7 +49,7 @@ async def _check_due_async() -> dict:
     from app.db import task_session
     from app.models.scheduled_action import ScheduledAction
 
-    counts = {"dispatched": 0, "skipped_in_flight": 0, "skipped_orphan": 0}
+    counts = {"dispatched": 0, "skipped_in_flight": 0, "skipped_orphan": 0, "skipped_owner": 0}
 
     now = datetime.now(UTC)
 
@@ -121,6 +121,9 @@ async def _tick_schedule(db, sa_id: int, now: datetime, tz) -> str | None:  # no
     if await _held_by_in_flight_run(db, sa, now):
         return "skipped_in_flight"
 
+    if await _blocked_by_owner(db, sa, now):
+        return "skipped_owner"
+
     action = ACTION_REGISTRY.get(sa.action_key)
     if action is None:
         # The pack was disabled or removed; the schedule
@@ -152,6 +155,63 @@ async def _schedule_if_due(db, sa_id: int, now: datetime, tz):  # noqa: ANN001, 
     if now < next_run_at:
         return None
     return sa
+
+
+async def owner_block_reason(db, sa) -> str | None:  # noqa: ANN001
+    """Why the schedule's owner may not run it now, or None when they may.
+
+    Asked through ``permissions_for``, so an installed extension (RBAC)
+    answers with the owner's grants on the target, exactly as it would if
+    the owner pressed Run now themselves.
+    """
+    from app.auth.permissions import GLOBAL, BoundScope, Scope, permissions_for
+    from app.models.user import User
+
+    if not sa.owner_required:
+        return None
+    owner = await db.get(User, sa.owner_user_id) if sa.owner_user_id is not None else None
+    if owner is None:
+        return "owner_removed"
+    if not owner.is_active:
+        return "owner_inactive"
+    if sa.target_kind in ("host", "group") and sa.target_id is not None:
+        scope = Scope(sa.target_kind, sa.target_id)
+    else:
+        scope = GLOBAL
+    if "actions.run" not in await permissions_for(owner, BoundScope.of(scope)):
+        return "owner_lacks_permission"
+    return None
+
+
+async def _blocked_by_owner(db, sa, now: datetime) -> bool:  # noqa: ANN001
+    """Skip a run the owner may no longer start, and say so on the schedule.
+
+    The skipped fire time still counts as handled (``last_dispatched_at``
+    moves on), so restoring the owner's rights does not release a burst
+    of missed runs. The reason is audited once, when it first appears.
+    """
+    from app.audit.logger import log_action
+
+    reason = await owner_block_reason(db, sa)
+    if reason is None:
+        if sa.owner_blocked_reason is not None:
+            sa.owner_blocked_reason = None
+            await db.flush()
+        return False
+    sa.last_dispatched_at = now
+    if sa.owner_blocked_reason != reason:
+        sa.owner_blocked_reason = reason
+        await log_action(
+            db,
+            action="scheduled_action.owner_blocked",
+            entity_type="scheduled_action",
+            entity_id=sa.id,
+            user_id=None,
+            after_state={"reason": reason, "owner_user_id": sa.owner_user_id},
+        )
+        logger.warning("scheduled_action %d skipped: %s", sa.id, reason)
+    await db.commit()
+    return True
 
 
 async def _held_by_in_flight_run(db, sa, now: datetime) -> bool:  # noqa: ANN001
@@ -224,7 +284,7 @@ async def _dispatch_scheduled_run(db, sa, action, now: datetime) -> None:  # noq
         verify_enabled=sa.verify_enabled,
         auto_rollback=sa.auto_rollback,
         status="queued",
-        triggered_by_user_id=None,
+        triggered_by_user_id=sa.owner_user_id,
     )
     db.add(run)
     sa.last_dispatched_at = now

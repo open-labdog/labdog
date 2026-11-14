@@ -30,7 +30,7 @@ from app.ai.schemas import AlertDispatchOut, AlertEventResponse
 from app.ai.service import AIDisabledError, BudgetExceededError
 from app.alerts.models import AlertAction, AlertActionDispatch
 from app.audit.logger import log_action
-from app.auth.permissions import require
+from app.auth.permissions import require, require_on
 from app.db import get_db
 from app.models.action_run import ActionRun
 from app.models.host import Host
@@ -471,6 +471,20 @@ async def list_alert_actions(
     return [await _hydrate(db, entry) for entry in entries.all()]
 
 
+async def _require_run_on_target(user: User, body: AlertActionIn) -> None:
+    """Whoever lets alerts run an action must be able to run it there.
+
+    An alert-triggered run has no user of its own; the person who set up
+    the entry is the one answerable for it, so their own rights bound
+    where it may run.
+    """
+    if body.target_kind in ("host", "group") and body.target_id is not None:
+        key = "hosts" if body.target_kind == "host" else "groups"
+        await require_on(user, "actions.run", **{key: [body.target_id]})
+    else:
+        await require_on(user, "actions.run")
+
+
 @router.post("/actions", response_model=AlertActionOut, status_code=201)
 async def create_alert_action(
     body: AlertActionIn,
@@ -478,6 +492,7 @@ async def create_alert_action(
     db: AsyncSession = Depends(get_db),
 ):
     """Allow alerts to run an action: ``labdog_action=<key>`` then starts it."""
+    await _require_run_on_target(user, body)
     await _validate_entry(db, body)
     if await db.scalar(select(AlertAction.id).where(AlertAction.action_key == body.action_key)):
         raise HTTPException(status_code=409, detail=_DUPLICATE.format(key=body.action_key))
@@ -525,6 +540,7 @@ async def update_alert_action(
             status_code=422,
             detail="The action cannot change; take it off the list and allow the other one.",
         )
+    await _require_run_on_target(user, body)
     await _validate_entry(db, body)
     before = _audit_payload(entry)
     for field, value in body.model_dump(exclude={"action_key"}).items():

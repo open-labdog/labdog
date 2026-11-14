@@ -21,6 +21,12 @@ interface ScheduledActionsListProps {
   loading?: boolean
 }
 
+const OWNER_BLOCKED: Record<string, string> = {
+  owner_removed: "its owner's account was removed",
+  owner_inactive: "its owner's account is disabled",
+  owner_lacks_permission: "its owner may no longer run this action here",
+}
+
 function TargetCell({ row }: { row: ScheduledAction }) {
   if (row.target_kind === "fleet") return <span className="text-text-2">all hosts</span>
   const href = row.target_kind === "host" ? `/hosts/${row.target_id}` : `/groups/${row.target_id}`
@@ -33,6 +39,12 @@ export function ScheduledActionsList({ rows, hideColumns = [], emptyState, loadi
   const [editing, setEditing] = useState<ScheduledAction | null>(null)
   const [historyFor, setHistoryFor] = useState<ScheduledAction | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<ScheduledAction | null>(null)
+
+  const takeOver = useApiMutation<unknown, number>({
+    mutationFn: (id) => apiFetch(`/api/scheduled-actions/${id}/take-ownership`, { method: "POST" }),
+    invalidateKeys: [["scheduled-actions"], ["scheduled-actions-by-target"]],
+    successMessage: "You own this schedule now; its runs use your rights",
+  })
 
   const deleteMutation = useApiMutation<unknown, number>({
     mutationFn: (id) => apiFetch(`/api/scheduled-actions/${id}`, { method: "DELETE" }),
@@ -67,7 +79,14 @@ export function ScheduledActionsList({ rows, hideColumns = [], emptyState, loadi
               </span>
             ) : <span className="text-text-faint">—</span>,
           },
-          { k: "enabled", label: "enabled", w: "80px", sortable: false, cell: (r) => <Tag tone={r.enabled ? "ok" : undefined}>{r.enabled ? "enabled" : "disabled"}</Tag> },
+          {
+            k: "enabled", label: "enabled", w: "96px", sortable: false,
+            cell: (r) => r.owner_blocked_reason ? (
+              <Tag tone="warn" title={`Runs are skipped: ${OWNER_BLOCKED[r.owner_blocked_reason] ?? r.owner_blocked_reason}. Take it over to resume.`}>skipped</Tag>
+            ) : (
+              <Tag tone={r.enabled ? "ok" : undefined} title={r.owner_email ? `runs as ${r.owner_email}` : undefined}>{r.enabled ? "enabled" : "disabled"}</Tag>
+            ),
+          },
           {
             k: "last_run", label: "last run", w: "minmax(120px,1fr)", sortable: false,
             cell: (r) => r.last_run ? (
@@ -91,6 +110,9 @@ export function ScheduledActionsList({ rows, hideColumns = [], emptyState, loadi
             k: "actions", label: "", w: "140px", right: true, sortable: false,
             cell: (r) => (
               <span className="flex gap-0.5" data-testid="scheduled-action-row" data-action-key={r.action_key}>
+                {r.owner_blocked_reason && (
+                  <button type="button" className="btn btn-sm btn-ghost" disabled={takeOver.isPending} onClick={() => takeOver.mutate(r.id)}>take over</button>
+                )}
                 <button type="button" className="btn btn-sm btn-ghost" onClick={() => setEditing(r)}>edit</button>
                 <button type="button" className="btn btn-sm btn-ghost" onClick={() => setHistoryFor(r)}>runs</button>
                 <button type="button" className="btn btn-sm btn-ghost text-danger" onClick={() => setConfirmDelete(r)}>delete</button>

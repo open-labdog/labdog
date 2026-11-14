@@ -123,6 +123,27 @@ def _register_all_models(**_kwargs):
         logger.exception("model registration on worker start failed")
 
 
+@worker_process_init.connect
+def _load_extensions(**_kwargs):
+    """Load extensions (Enterprise) in workers, for their permission hooks.
+
+    ``create_app()`` loads them in the API process. A worker never builds
+    the app, yet tasks ask permission questions too: the scheduler checks
+    that a schedule's owner may still run it, and the assistant's tools act
+    as their user. Without this they would get Community's role-only
+    answer while the API applied RBAC. The routes a plugin adds land on a
+    throwaway app here; only the hooks matter.
+    """
+    try:
+        from fastapi import FastAPI
+
+        from app.plugins import load_plugins
+
+        load_plugins(FastAPI())
+    except Exception:
+        logger.exception("loading extensions on worker start failed")
+
+
 def _is_orchestrator_worker(sender) -> bool:
     """True on the dedicated orchestrator worker.
 

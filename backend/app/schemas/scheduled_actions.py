@@ -81,6 +81,13 @@ class ScheduledActionOut(BaseModel):
     last_dispatched_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    #: Whose rights each run is checked against (None on older schedules,
+    #: or once the owner's account is deleted).
+    owner_user_id: int | None = None
+    owner_email: str | None = None
+    #: Set while runs are skipped because of the owner:
+    #: ``owner_removed`` | ``owner_inactive`` | ``owner_lacks_permission``.
+    owner_blocked_reason: str | None = None
 
     # Server-resolved presentation helpers — populated by the API
     # listing/detail endpoints so the UI can render rows without

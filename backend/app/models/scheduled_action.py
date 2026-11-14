@@ -19,6 +19,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    ForeignKey,
     Index,
     Integer,
     String,
@@ -66,6 +67,18 @@ class ScheduledAction(Base):
     schedule_changed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+    # Whose rights each run is checked against. A schedule made before
+    # owners existed has ``owner_required = false`` and runs as it always
+    # did. Otherwise a run is skipped, and the reason stored, when the
+    # owner is gone, disabled, or no longer holds ``actions.run`` on the
+    # target; whoever takes ownership clears it.
+    owner_user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    owner_required: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    #: ``owner_removed`` | ``owner_inactive`` | ``owner_lacks_permission``.
+    owner_blocked_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

@@ -17,7 +17,7 @@ from fastapi_users.password import PasswordHelper
 
 from app.auth import permissions as perms
 from app.auth.permissions import (
-    GLOBAL,
+    ANYWHERE,
     PASSWORD_CHANGE_REQUIRED,
     ROLE_PERMISSIONS,
     BoundScope,
@@ -51,6 +51,7 @@ PUBLIC = {
     ("POST", "/api/auth/jwt/logout"),  # any session may end itself
     ("GET", "/api/auth/csrf-token"),  # any session
     ("GET", "/api/users/me"),  # any session, incl. one that must change password
+    ("GET", "/api/users/me/permissions"),  # describes the caller, like /me
     ("PATCH", "/api/users/me"),  # changing your own password
     ("POST", "/api/webhooks/github"),  # HMAC-signed, no session
     ("POST", "/api/webhooks/gitea"),
@@ -425,7 +426,7 @@ class TestExtensionHooks:
             await viewer.get("/api/hosts")
         finally:
             set_permission_resolver(None)
-        assert seen == [Scope("host", 42), Scope("group", 7), GLOBAL]
+        assert seen == [Scope("host", 42), Scope("group", 7), ANYWHERE]
 
     async def test_row_scope_follows_the_row(self, db, sample_host):
         job = SyncJob(host_id=sample_host.id, status="success")

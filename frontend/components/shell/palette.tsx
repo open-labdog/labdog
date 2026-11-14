@@ -12,7 +12,7 @@ import { MODULES } from "@/lib/modules"
 import { showError, showSuccess } from "@/lib/toast"
 import type { Host, HostGroup } from "@/lib/types"
 import { Kbd } from "@/components/ld"
-import { can, useAuth } from "@/lib/auth"
+import { canAnywhere, useAuth } from "@/lib/auth"
 import { zonesFor } from "./zones"
 
 interface Entry {
@@ -118,7 +118,7 @@ export function Palette({ open, onClose }: { open: boolean; onClose: () => void 
     for (const h of hosts ?? []) {
       out.push({ group: "verbs", label: `Open terminal — ${h.hostname}`, meta: "SSH via control plane", keywords: ["terminal", "ssh", h.hostname], run: go(`/hosts/${h.id}/terminal`), permission: "terminal.open" })
     }
-    return out.filter((e) => !e.permission || can(user, e.permission))
+    return out.filter((e) => !e.permission || canAnywhere(user, e.permission))
   }, [hosts, groups, router, user])
 
   const visible = q.trim() ? entries : entries.filter((e) => e.defaultVisible)

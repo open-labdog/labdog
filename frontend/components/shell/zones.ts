@@ -11,7 +11,7 @@
  * and a host's effective state on the host's page — the palette indexes
  * every module × group pair to keep that one keystroke away.
  */
-import { can, type User } from "@/lib/auth"
+import { canAnywhere, type User } from "@/lib/auth"
 
 export type ZoneKey = "overview" | "fleet" | "ops" | "assistant" | "settings"
 
@@ -106,7 +106,7 @@ export const ZONE_DEFS: ZoneDef[] = [
 
 /** The zones this user's role can use. A zone without a permission is everyone's. */
 export function zonesFor(user: User | null): ZoneDef[] {
-  return ZONE_DEFS.filter((z) => !z.permission || can(user, z.permission))
+  return ZONE_DEFS.filter((z) => !z.permission || canAnywhere(user, z.permission))
 }
 
 /** Settings sits at the bottom of the rail, not as a peer of the work. */
