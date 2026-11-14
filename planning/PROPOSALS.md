@@ -9,13 +9,13 @@ PR-08, PR-09, PR-07, PR-06, PR-04, PR-10, PR-05.
 
 | ID | Title | Raised by | When | From | Status |
 |---|---|---|---|---|---|
-| PR-01 | Audit rows for firewall rule changes | Claude | 2026-11-14 | planning | open |
-| PR-02 | Finish the rename under the hood, with fallbacks | Claude | 2026-11-14 | planning | accepted (D-02) |
-| PR-03 | Test the upgrade from 1.1.0 in packaging-smoke | Claude | 2026-11-14 | planning | open |
-| PR-04 | Bind stored secrets to their row | Claude | 2026-11-14 | planning | open |
-| PR-05 | Bring CLAUDE.md up to date | Claude | 2026-11-14 | planning | open |
-| PR-06 | A unit-test harness for the frontend | Claude | 2026-11-14 | planning | open |
-| PR-07 | Measure coverage in CI and record a load-test baseline | Claude | 2026-11-14 | planning | open |
+| PR-01 | Audit rows for firewall rule changes | Claude | 2026-11-14 | planning | accepted 2026-11-14, now C-047 |
+| PR-02 | Finish the rename under the hood, with fallbacks | Claude | 2026-11-14 | planning | accepted (D-02), now C-048 to C-051 |
+| PR-03 | Test the upgrade from 1.1.0 in packaging-smoke | Claude | 2026-11-14 | planning | accepted 2026-11-14, now C-052 |
+| PR-04 | Bind stored secrets to their row | Claude | 2026-11-14 | planning | accepted 2026-11-14, now C-060 |
+| PR-05 | Bring CLAUDE.md up to date | Claude | 2026-11-14 | planning | accepted 2026-11-14, now C-051 |
+| PR-06 | A unit-test harness for the frontend | Claude | 2026-11-14 | planning | accepted 2026-11-14, now C-061 |
+| PR-07 | Measure coverage in CI and record a load-test baseline | Claude | 2026-11-14 | planning | accepted 2026-11-14, now C-062, C-063 |
 
 ## PR-01 Audit rows for firewall rule changes
 - **Why:** BUG-147 in `BUGS.md` (Medium): `backend/app/api/rules.py` has

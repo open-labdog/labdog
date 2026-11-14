@@ -21,3 +21,14 @@ Append-only. Newest entry last.
   them. Decisions are logged in DECISIONS.md as he picks.
 - Dennis added work: C-044, C-045 and one Enterprise item (source: user).
   New question D-19.
+
+## 2026-11-14 Planning session, phases 4 to 7
+
+- Dennis accepted every open proposal, took the recommendation on the
+  last open Community-side question, and gave the go-ahead for staging.
+- Final inventory: 107 items in 12 stages (0 to 11), 18 parked. Classes:
+  26 A, 73 B, 8 H.
+- Wrote `roadmap.yaml`, `stages/stage-0.md` to `stage-11.md`, one spec per
+  item under `items/`, and the `/run-stage` and `/review-stage` skills.
+- No stage has started. `base_commit` is null for every stage until
+  `/run-stage` sets it.

@@ -1,0 +1,1132 @@
+# Source of truth for the staged plan. Edited by /run-stage and /review-stage.
+# status: todo | in_progress | review | blocked | done
+# source: roadmap | user | proposed | decision (an item a logged decision created)
+# autonomy: A autonomous | B autonomous, human review before merge | H human decision first
+
+stages:
+  - stage: 0
+    goal: "Foundations: safety nets and contributor terms"
+    base_commit: null
+    status: todo
+    items: [C-064, S-012, S-011, C-024, C-025, C-062, C-061, C-063]
+  - stage: 1
+    goal: "A complete audit trail and the first extension hooks"
+    base_commit: null
+    status: todo
+    items: [C-008, C-047, C-022, S-001, S-002]
+  - stage: 2
+    goal: "The rename, and a clean image"
+    base_commit: null
+    status: todo
+    items: [C-048, C-049, C-050, C-051, S-008, S-014, S-009, C-026, S-010]
+  - stage: 3
+    goal: "Release unbork 2.0.0"
+    base_commit: null
+    status: todo
+    items: [S-007, C-052, C-001, C-002, C-003]
+  - stage: 4
+    goal: "Rollback you can trust"
+    base_commit: null
+    status: todo
+    items: [C-004, S-003, C-005, C-044, C-006, C-007, C-016, C-012, C-023]
+  - stage: 5
+    goal: "Governance and the directory"
+    base_commit: null
+    status: todo
+    items: [S-006]
+  - stage: 6
+    goal: "Day-two operations"
+    base_commit: null
+    status: todo
+    items: [C-017, C-018, C-013, S-013, C-014, C-015, C-021]
+  - stage: 7
+    goal: "Integrations"
+    base_commit: null
+    status: todo
+    items: [C-030, S-004, C-060, S-005, C-046]
+  - stage: 8
+    goal: "A safer assistant"
+    base_commit: null
+    status: todo
+    items: [C-010, C-020, C-037, C-011, C-019, C-009]
+  - stage: 9
+    goal: "Rollback beyond Proxmox, tickets and teams"
+    base_commit: null
+    status: todo
+    items: []
+  - stage: 10
+    goal: "Scale and assurance"
+    base_commit: null
+    status: todo
+    items: [C-029]
+  - stage: 11
+    goal: "kennel, a VM operations service"
+    base_commit: null
+    status: todo
+    items: [C-028, C-058, C-054, C-057, C-045, C-055, C-059]
+
+items:
+  - id: C-064
+    title: "Make planning/ a named exception to the plans/ rule"
+    edition: community
+    source: decision
+    tier: P0
+    score: 6.0
+    stage: 0
+    depends_on: []
+    autonomy: A
+    effort: S
+    status: todo
+    branch: null
+    spec: items/C-064-make-planning-a-named-exception-to-the.md
+    notes: "D-17: without it the release checklist and the image build treat the plan as a mistake."
+  - id: S-012
+    title: "Copyright holder line in LICENSE"
+    edition: shared
+    source: roadmap
+    tier: P1
+    score: 8.0
+    stage: 0
+    depends_on: []
+    autonomy: A
+    effort: S
+    status: todo
+    branch: null
+    spec: items/S-012-copyright-holder-line-in-license.md
+    notes: "D-07: Dennis personally. One line."
+  - id: S-011
+    title: "Contributor licence agreement and a CLA check on pull requests"
+    edition: shared
+    source: roadmap
+    tier: P0
+    score: 14.0
+    stage: 0
+    depends_on: []
+    autonomy: B
+    effort: S
+    status: todo
+    branch: null
+    spec: items/S-011-contributor-licence-agreement-and-a-cla-check.md
+    notes: "D-01 fixed the form: Apache-style ICLA and CCLA, CLA Assistant Lite. Dennis creates the private signatures repository and marks the check required."
+  - id: C-024
+    title: "CI: stop every PR moving the floating :test image tag"
+    edition: community
+    source: roadmap
+    tier: P1
+    score: 7.0
+    stage: 0
+    depends_on: []
+    autonomy: A
+    effort: S
+    status: todo
+    branch: null
+    spec: items/C-024-ci-stop-every-pr-moving-the-floating.md
+    notes: "Stage branches will open many PRs; a moving tag makes test deploys unreliable."
+  - id: C-025
+    title: "CI: Ubuntu 26.04 runners and the React Compiler lint rules"
+    edition: community
+    source: roadmap
+    tier: P2
+    score: 3.5
+    stage: 0
+    depends_on: []
+    autonomy: A
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-025-ci-ubuntu-26-04-runners-and-the.md
+    notes: "Toolchain drift is cheapest to fix before a run of feature stages."
+  - id: C-062
+    title: "Measure backend coverage in CI"
+    edition: community
+    source: proposed
+    tier: P1
+    score: 8.0
+    stage: 0
+    depends_on: []
+    autonomy: A
+    effort: S
+    status: todo
+    branch: null
+    spec: items/C-062-measure-backend-coverage-in-ci.md
+    notes: "Accepted proposal PR-07: gives every stage review a number to compare."
+  - id: C-061
+    title: "A unit-test harness for the frontend"
+    edition: community
+    source: proposed
+    tier: P1
+    score: 5.0
+    stage: 0
+    depends_on: []
+    autonomy: A
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-061-a-unit-test-harness-for-the-frontend.md
+    notes: "Accepted proposal PR-06: stage reviews cannot reproduce a frontend bug with a failing test without one."
+  - id: C-063
+    title: "Record a load-test baseline"
+    edition: community
+    source: proposed
+    tier: P1
+    score: 4.5
+    stage: 0
+    depends_on: []
+    autonomy: A
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-063-record-a-load-test-baseline.md
+    notes: "Accepted proposal PR-07: the only performance measure the project has."
+  - id: C-008
+    title: "Audit rows for action runs: who started what"
+    edition: community
+    source: roadmap
+    tier: P0
+    score: 15.0
+    stage: 1
+    depends_on: []
+    autonomy: A
+    effort: S
+    status: todo
+    branch: null
+    spec: items/C-008-audit-rows-for-action-runs-who-started.md
+    notes: "The audit log is the base of three Enterprise items and has a hole exactly where the product does its riskiest work."
+  - id: C-047
+    title: "Audit rows for firewall rule changes (BUG-147)"
+    edition: community
+    source: proposed
+    tier: P0
+    score: 12.0
+    stage: 1
+    depends_on: []
+    autonomy: A
+    effort: S
+    status: todo
+    branch: null
+    spec: items/C-047-audit-rows-for-firewall-rule-changes-bug.md
+    notes: "Accepted proposal PR-01: the same hole as C-008, in the module where the record matters most."
+  - id: C-022
+    title: "Harden the alert webhook"
+    edition: community
+    source: roadmap
+    tier: P0
+    score: 12.0
+    stage: 1
+    depends_on: []
+    autonomy: A
+    effort: S
+    status: todo
+    branch: null
+    spec: items/C-022-harden-the-alert-webhook.md
+    notes: "Security work on an unauthenticated-by-nature endpoint goes first by rule."
+  - id: S-001
+    title: "Extension hook: subscribe to audit entries"
+    edition: shared
+    source: roadmap
+    tier: P0
+    score: 13.0
+    stage: 1
+    depends_on: [C-008]
+    autonomy: B
+    effort: S
+    status: todo
+    branch: null
+    spec: items/S-001-extension-hook-subscribe-to-audit-entries.md
+    notes: "One 37-line module is the single choke point for audit writes; a hook there unblocks every consumer of the audit stream."
+  - id: S-002
+    title: "Extension hook: gate a run before it starts, and hear when it ends"
+    edition: shared
+    source: roadmap
+    tier: P0
+    score: 7.0
+    stage: 1
+    depends_on: []
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/S-002-extension-hook-gate-a-run-before-it.md
+    notes: "Several planned extensions need to refuse or defer a sync, run, schedule or AI fix; one seam is safer than four."
+  - id: C-048
+    title: "Rename: configuration and environment, with the old names as fallbacks"
+    edition: community
+    source: proposed
+    tier: P0
+    score: 7.0
+    stage: 2
+    depends_on: []
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-048-rename-configuration-and-environment-with-the-old.md
+    notes: "D-02 and accepted proposal PR-02: the first release is the cheapest moment to rename."
+  - id: C-049
+    title: "Rename: paths, packages and service names, migrated on upgrade"
+    edition: community
+    source: proposed
+    tier: P0
+    score: 7.0
+    stage: 2
+    depends_on: [C-048]
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-049-rename-paths-packages-and-service-names-migrated.md
+    notes: "D-02: data and config paths and unit names move, and an upgrade must carry an install across."
+  - id: C-050
+    title: "Rename: on-host markers, alert labels, metrics and pack variables"
+    edition: community
+    source: proposed
+    tier: P0
+    score: 4.3
+    stage: 2
+    depends_on: [C-048]
+    autonomy: B
+    effort: L
+    status: todo
+    branch: null
+    spec: items/C-050-rename-on-host-markers-alert-labels-metrics.md
+    notes: "D-02: host checks must recognise both names and the first sync removes the old chains and files; a mistake here touches every managed host, so it is tested on hosts named test first."
+  - id: C-051
+    title: "Rename: README, docs site, CLAUDE.md and changelog wording"
+    edition: community
+    source: proposed
+    tier: P0
+    score: 7.0
+    stage: 2
+    depends_on: [C-048]
+    autonomy: A
+    effort: S
+    status: todo
+    branch: null
+    spec: items/C-051-rename-readme-docs-site-claude-md-and.md
+    notes: "Accepted proposals PR-02 and PR-05: what a new user and a new session read first."
+  - id: S-008
+    title: "Rename the Claude Code provider labels"
+    edition: shared
+    source: roadmap
+    tier: P0
+    score: 11.0
+    stage: 2
+    depends_on: []
+    autonomy: A
+    effort: S
+    status: todo
+    branch: null
+    spec: items/S-008-rename-the-claude-code-provider-labels.md
+    notes: "Two labels; cheap to fix before the first release under the new name."
+  - id: S-014
+    title: "Remove the subscription token field from AI providers"
+    edition: shared
+    source: decision
+    tier: P0
+    score: 10.0
+    stage: 2
+    depends_on: []
+    autonomy: B
+    effort: S
+    status: todo
+    branch: null
+    spec: items/S-014-remove-the-subscription-token-field-from-ai.md
+    notes: "D-04: Community keeps only the operator's own Claude Code sign-in."
+  - id: S-009
+    title: "Stop bundling the Claude Code binary in the Docker image"
+    edition: shared
+    source: roadmap
+    tier: P0
+    score: 6.5
+    stage: 2
+    depends_on: []
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/S-009-stop-bundling-the-claude-code-binary-in.md
+    notes: "D-04: installed on first use instead of shipped in the image."
+  - id: C-026
+    title: "Make the AI assistant removable from a build or install"
+    edition: community
+    source: roadmap
+    tier: P1
+    score: 4.7
+    stage: 2
+    depends_on: [S-009]
+    autonomy: B
+    effort: L
+    status: todo
+    branch: null
+    spec: items/C-026-make-the-ai-assistant-removable-from-a.md
+    notes: "Promised for Community, and the clean way to deliver S-009."
+  - id: S-010
+    title: "Third-party notices and a source offer in the Docker image"
+    edition: shared
+    source: roadmap
+    tier: P1
+    score: 5.0
+    stage: 2
+    depends_on: []
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/S-010-third-party-notices-and-a-source-offer.md
+    notes: "Licence hygiene for a public image; best done with the first release."
+  - id: S-007
+    title: "Say in the README which parts are AGPL and which are commercial"
+    edition: shared
+    source: roadmap
+    tier: P0
+    score: 11.0
+    stage: 3
+    depends_on: []
+    autonomy: B
+    effort: S
+    status: todo
+    branch: null
+    spec: items/S-007-say-in-the-readme-which-parts-are.md
+    notes: "Open point of the repository-split item, and it should be true on the day of the first release."
+  - id: C-052
+    title: "Test the upgrade from 1.1.0 in packaging-smoke"
+    edition: community
+    source: proposed
+    tier: P0
+    score: 6.5
+    stage: 3
+    depends_on: [C-049]
+    autonomy: A
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-052-test-the-upgrade-from-1-1-0.md
+    notes: "Accepted proposal PR-03: turns C-001 from a one-off manual check into a gate."
+  - id: C-001
+    title: "Verify and document the upgrade from LabDog 1.1.0 to unbork"
+    edition: community
+    source: roadmap
+    tier: P0
+    score: 9.5
+    stage: 3
+    depends_on: [C-048, C-049, C-050, C-052]
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-001-verify-and-document-the-upgrade-from-labdog.md
+    notes: "Nothing can be released until an existing install is known to survive it; the rename (D-02) makes the upgrade the riskiest step."
+  - id: C-002
+    title: "Release dev to main as unbork 2.0.0"
+    edition: community
+    source: roadmap
+    tier: P0
+    score: 17.0
+    stage: 3
+    depends_on: [C-001, S-007, S-008, S-009, S-014, C-051]
+    autonomy: B
+    effort: S
+    status: todo
+    branch: null
+    spec: items/C-002-release-dev-to-main-as-unbork-2.md
+    notes: "632 unreleased commits is the largest single risk on the board; version decided in D-03. Dennis merges the PR."
+  - id: C-003
+    title: "Bring the docs site back"
+    edition: community
+    source: roadmap
+    tier: P0
+    score: 10.0
+    stage: 3
+    depends_on: [C-002]
+    autonomy: A
+    effort: S
+    status: todo
+    branch: null
+    spec: items/C-003-bring-the-docs-site-back.md
+    notes: "README links to a site that does not exist; cheap once the release is out. PR #295 already covers a manual deploy from dev."
+  - id: C-004
+    title: "Rollback policy: stateful flag and rollback_mode on hosts"
+    edition: community
+    source: roadmap
+    tier: P0
+    score: 9.0
+    stage: 4
+    depends_on: []
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-004-rollback-policy-stateful-flag-and-rollback-mode.md
+    notes: "Automatic rollback of a database host silently discards writes; data integrity comes first, and three later items build on the flag."
+  - id: S-003
+    title: "Snapshot provider interface, with Proxmox as the first provider"
+    edition: shared
+    source: roadmap
+    tier: P1
+    score: 6.5
+    stage: 4
+    depends_on: []
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/S-003-snapshot-provider-interface-with-proxmox-as-the.md
+    notes: "Snapshot calls are spread over three executors today; C-005 and every other snapshot source want one interface. Behaviour must not change."
+  - id: C-005
+    title: "Check that a snapshot is possible before a destructive run"
+    edition: community
+    source: roadmap
+    tier: P1
+    score: 7.0
+    stage: 4
+    depends_on: [C-004, S-003]
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-005-check-that-a-snapshot-is-possible-before.md
+    notes: "Refusing before the run is safer than discovering mid-run that no rollback point exists."
+  - id: C-044
+    title: "Keep the VM's memory in the rollback snapshot"
+    edition: community
+    source: user
+    tier: P1
+    score: 6.5
+    stage: 4
+    depends_on: [S-003]
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-044-keep-the-vm-s-memory-in-the.md
+    notes: "Asked for by Dennis; D-19 confirmed a backup never holds RAM, so this is the only route to memory restore."
+  - id: C-006
+    title: "Log what a rollback discarded"
+    edition: community
+    source: roadmap
+    tier: P1
+    score: 10.0
+    stage: 4
+    depends_on: [C-004]
+    autonomy: A
+    effort: S
+    status: todo
+    branch: null
+    spec: items/C-006-log-what-a-rollback-discarded.md
+    notes: "Small, and turns an invisible data loss into an auditable one."
+  - id: C-007
+    title: "Rollback safety in the UI and docs; record BUG-177 to BUG-179"
+    edition: community
+    source: roadmap
+    tier: P1
+    score: 5.5
+    stage: 4
+    depends_on: [C-004, C-005, C-006]
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-007-rollback-safety-in-the-ui-and-docs.md
+    notes: "The flag is useless if operators cannot see or set it; the three bugs from closed PR #282 never reached BUGS.md."
+  - id: C-016
+    title: "Protected hosts: a per-host never-write-config flag"
+    edition: community
+    source: roadmap
+    tier: P1
+    score: 7.0
+    stage: 4
+    depends_on: []
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-016-protected-hosts-a-per-host-never-write.md
+    notes: "One group mistake away from breaking a Proxmox node; a guard the fleet model lacks today."
+  - id: C-012
+    title: "Notify on action-run failure"
+    edition: community
+    source: roadmap
+    tier: P1
+    score: 15.0
+    stage: 4
+    depends_on: []
+    autonomy: A
+    effort: S
+    status: todo
+    branch: null
+    spec: items/C-012-notify-on-action-run-failure.md
+    notes: "A scheduled patch run that fails silently defeats the product; the board names it a prerequisite for unattended work."
+  - id: C-023
+    title: "Password reset by email"
+    edition: community
+    source: roadmap
+    tier: P1
+    score: 11.0
+    stage: 4
+    depends_on: []
+    autonomy: B
+    effort: S
+    status: todo
+    branch: null
+    spec: items/C-023-password-reset-by-email.md
+    notes: "Table stakes for local accounts now that roles shipped; account-recovery flow, so reviewed."
+  - id: S-006
+    title: "Frontend extension seam: navigation entries, pages, host and group panels"
+    edition: shared
+    source: roadmap
+    tier: P1
+    score: 11.0
+    stage: 5
+    depends_on: []
+    autonomy: B
+    effort: S
+    status: todo
+    branch: null
+    spec: items/S-006-frontend-extension-seam-navigation-entries-pages-host.md
+    notes: "Extensions can add a Settings tab and nothing else; additive type change."
+  - id: C-017
+    title: "Rerun only the failed hosts of a run, linked to the original"
+    edition: community
+    source: roadmap
+    tier: P1
+    score: 5.5
+    stage: 6
+    depends_on: []
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-017-rerun-only-the-failed-hosts-of-a.md
+    notes: "The everyday follow-up to a partly failed patch run; adds a column and server-side re-validation."
+  - id: C-018
+    title: "Save an action run as a schedule"
+    edition: community
+    source: roadmap
+    tier: P2
+    score: 7.0
+    stage: 6
+    depends_on: []
+    autonomy: A
+    effort: S
+    status: todo
+    branch: null
+    spec: items/C-018-save-an-action-run-as-a-schedule.md
+    notes: "Convenience on top of existing schedule API."
+  - id: C-013
+    title: "Notify on sync failure, drift and certificate expiry"
+    edition: community
+    source: roadmap
+    tier: P1
+    score: 5.5
+    stage: 6
+    depends_on: [C-012]
+    autonomy: A
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-013-notify-on-sync-failure-drift-and-certificate.md
+    notes: "Same pattern as C-012, three more events."
+  - id: S-013
+    title: "Store each action run's structured per-host results"
+    edition: shared
+    source: decision
+    tier: P1
+    score: 4.5
+    stage: 6
+    depends_on: [S-002]
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/S-013-store-each-action-run-s-structured-per.md
+    notes: "D-10: generic and useful on its own; anything that reports on run results needs it."
+  - id: C-014
+    title: "Quiesce hooks in both action executors (rollback phase 2)"
+    edition: community
+    source: roadmap
+    tier: P1
+    score: 6.5
+    stage: 6
+    depends_on: [C-004]
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-014-quiesce-hooks-in-both-action-executors-rollback.md
+    notes: "Lets a stateful host keep automatic rollback; changes the pack manifest, a public contract."
+  - id: C-015
+    title: "Quiesce playbooks for gitlab-upgrade and nextcloud-vm-update"
+    edition: community
+    source: roadmap
+    tier: P2
+    score: 4.0
+    stage: 6
+    depends_on: [C-014]
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-015-quiesce-playbooks-for-gitlab-upgrade-and-nextcloud.md
+    notes: "Proves the hooks on real stateful apps; lives in the private pack repository."
+  - id: C-021
+    title: "Alert remediation takes the host lock instead of refusing"
+    edition: community
+    source: roadmap
+    tier: P1
+    score: 6.5
+    stage: 6
+    depends_on: []
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-021-alert-remediation-takes-the-host-lock-instead.md
+    notes: "Closes a real race between an AI command and a sync on the same host."
+  - id: C-030
+    title: "REST API tokens"
+    edition: community
+    source: roadmap
+    tier: P2
+    score: 6.5
+    stage: 7
+    depends_on: []
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-030-rest-api-tokens.md
+    notes: "Board P3, raised to P2: every integration and the CLI need non-cookie auth."
+  - id: S-004
+    title: "Secret provider seam for stored credentials"
+    edition: shared
+    source: roadmap
+    tier: P1
+    score: 6.5
+    stage: 7
+    depends_on: []
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/S-004-secret-provider-seam-for-stored-credentials.md
+    notes: "Lets a credential be resolved from somewhere other than the database without touching 52 call sites twice."
+  - id: C-060
+    title: "Bind stored secrets to their row (SEC-50)"
+    edition: community
+    source: proposed
+    tier: P1
+    score: 4.5
+    stage: 7
+    depends_on: [S-004]
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-060-bind-stored-secrets-to-their-row-sec.md
+    notes: "Accepted proposal PR-04: same call sites as S-004, so one pass."
+  - id: S-005
+    title: "Alert source seam, with Grafana as the first source"
+    edition: shared
+    source: roadmap
+    tier: P1
+    score: 5.0
+    stage: 7
+    depends_on: [C-022]
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/S-005-alert-source-seam-with-grafana-as-the.md
+    notes: "Intake is written for one sender; a normaliser per source keeps dedupe and severity policy in one place."
+  - id: C-046
+    title: "Zabbix alert intake"
+    edition: community
+    source: decision
+    tier: P2
+    score: 4.0
+    stage: 7
+    depends_on: [S-005]
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-046-zabbix-alert-intake.md
+    notes: "D-05: intake is Community, an adapter on the S-005 seam."
+  - id: C-010
+    title: "AI verify: narrow the evidence window to before the action"
+    edition: community
+    source: roadmap
+    tier: P2
+    score: 9.0
+    stage: 8
+    depends_on: []
+    autonomy: A
+    effort: S
+    status: todo
+    branch: null
+    spec: items/C-010-ai-verify-narrow-the-evidence-window-to.md
+    notes: "Removes a known false-positive source for little effort."
+  - id: C-020
+    title: "Command policy: count diagnostics as reads"
+    edition: community
+    source: roadmap
+    tier: P2
+    score: 8.0
+    stage: 8
+    depends_on: []
+    autonomy: A
+    effort: S
+    status: todo
+    branch: null
+    spec: items/C-020-command-policy-count-diagnostics-as-reads.md
+    notes: "Small rule-table change with existing tests to extend."
+  - id: C-037
+    title: "Alert remediation visibility on the Overview; lift the 24-hour lockout"
+    edition: community
+    source: roadmap
+    tier: P2
+    score: 8.0
+    stage: 8
+    depends_on: []
+    autonomy: A
+    effort: S
+    status: todo
+    branch: null
+    spec: items/C-037-alert-remediation-visibility-on-the-overview-lift.md
+    notes: "Board P3, but small and it finishes the alert-fix story."
+  - id: C-011
+    title: "AI verify: second evidence producer with stored evidence packs"
+    edition: community
+    source: roadmap
+    tier: P2
+    score: 3.5
+    stage: 8
+    depends_on: [C-010]
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-011-ai-verify-second-evidence-producer-with-stored.md
+    notes: "Only pays off once a second producer exists; schema change, so reviewed."
+  - id: C-019
+    title: "Command policy rules that operators can edit"
+    edition: community
+    source: roadmap
+    tier: P2
+    score: 3.7
+    stage: 8
+    depends_on: []
+    autonomy: B
+    effort: L
+    status: todo
+    branch: null
+    spec: items/C-019-command-policy-rules-that-operators-can-edit.md
+    notes: "D-14: a new ai.policy.manage permission, admins only."
+  - id: C-009
+    title: "propose_action: let the assistant request a vetted action"
+    edition: community
+    source: roadmap
+    tier: P2
+    score: 4.0
+    stage: 8
+    depends_on: []
+    autonomy: B
+    effort: L
+    status: todo
+    branch: null
+    spec: items/C-009-propose-action-let-the-assistant-request-a.md
+    notes: "Design settled in D-13: the tool hands off and never waits."
+  - id: C-029
+    title: "Run workers on more than one box"
+    edition: community
+    source: roadmap
+    tier: P2
+    score: 4.7
+    stage: 10
+    depends_on: []
+    autonomy: B
+    effort: L
+    status: todo
+    branch: null
+    spec: items/C-029-run-workers-on-more-than-one-box.md
+    notes: "Board P3, raised to P2 because the HA item depends on it."
+  - id: C-028
+    title: "kennel: repository, service skeleton and Proxmox pool token"
+    edition: community
+    source: roadmap
+    tier: P2
+    score: 4.7
+    stage: 11
+    depends_on: [S-003]
+    autonomy: H
+    effort: L
+    status: todo
+    branch: null
+    spec: items/C-028-kennel-repository-service-skeleton-and-proxmox-pool.md
+    notes: "D-22: Dennis decided to build it. Class H because the repository, its name on GitHub and the Proxmox tokens are his to create."
+  - id: C-058
+    title: "kennel: per-VM readiness API"
+    edition: community
+    source: user
+    tier: P2
+    score: 6.0
+    stage: 11
+    depends_on: [C-028]
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-058-kennel-per-vm-readiness-api.md
+    notes: "D-22 scope: one call that says whether a VM can be snapshotted, restored or leased."
+  - id: C-054
+    title: "kennel: leases and the sweeper"
+    edition: community
+    source: user
+    tier: P2
+    score: 4.7
+    stage: 11
+    depends_on: [C-028]
+    autonomy: B
+    effort: L
+    status: todo
+    branch: null
+    spec: items/C-054-kennel-leases-and-the-sweeper.md
+    notes: "D-22 scope: every VM kennel creates has an owner and an expiry, and nothing is left behind."
+  - id: C-057
+    title: "kennel: isolated sandbox network with a jump host"
+    edition: community
+    source: user
+    tier: P2
+    score: 4.3
+    stage: 11
+    depends_on: [C-028]
+    autonomy: H
+    effort: L
+    status: todo
+    branch: null
+    spec: items/C-057-kennel-isolated-sandbox-network-with-a-jump.md
+    notes: "D-23: supported from the start. Class H because it needs a VLAN or SDN zone on Dennis's Proxmox."
+  - id: C-045
+    title: "kennel: PBS restore points, restored beside the original"
+    edition: community
+    source: user
+    tier: P2
+    score: 4.0
+    stage: 11
+    depends_on: [C-028, C-054]
+    autonomy: B
+    effort: L
+    status: todo
+    branch: null
+    spec: items/C-045-kennel-pbs-restore-points-restored-beside-the.md
+    notes: "Asked for by Dennis; D-19 and D-23 put backup restore in kennel, beside the original first."
+  - id: C-055
+    title: "kennel: automatic backup restore tests"
+    edition: community
+    source: user
+    tier: P2
+    score: 5.0
+    stage: 11
+    depends_on: [C-054, C-057]
+    autonomy: B
+    effort: L
+    status: todo
+    branch: null
+    spec: items/C-055-kennel-automatic-backup-restore-tests.md
+    notes: "Dennis's first use case: a backup that has never been restored is not a backup."
+  - id: C-059
+    title: "unbork talks to kennel: snapshot provider and surge nodes for upgrades"
+    edition: community
+    source: user
+    tier: P2
+    score: 3.7
+    stage: 11
+    depends_on: [S-003, C-054, C-058]
+    autonomy: B
+    effort: L
+    status: todo
+    branch: null
+    spec: items/C-059-unbork-talks-to-kennel-snapshot-provider-and.md
+    notes: "Dennis's second use case: surge nodes during Kubernetes upgrades."
+  - id: C-027
+    title: "Application rollback and cluster rejoin, starting with etcd"
+    edition: community
+    source: roadmap
+    tier: P3
+    score: 3.3
+    stage: parked
+    depends_on: [C-014]
+    autonomy: B
+    effort: L
+    status: todo
+    branch: null
+    spec: items/C-027-application-rollback-and-cluster-rejoin-starting-with.md
+    notes: "Needs a real cluster to test against; board P3."
+  - id: C-031
+    title: "Command-line tool for the API"
+    edition: community
+    source: roadmap
+    tier: P3
+    score: 4.0
+    stage: parked
+    depends_on: [C-030]
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-031-command-line-tool-for-the-api.md
+    notes: "Useful after tokens exist; board P3."
+  - id: C-032
+    title: "Host tagging and filtering"
+    edition: community
+    source: roadmap
+    tier: P3
+    score: 4.0
+    stage: parked
+    depends_on: []
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-032-host-tagging-and-filtering.md
+    notes: "Board P3 idea."
+  - id: C-033
+    title: "Export: GitOps YAML, standalone playbooks, settings backup"
+    edition: community
+    source: roadmap
+    tier: P3
+    score: 3.3
+    stage: parked
+    depends_on: []
+    autonomy: B
+    effort: L
+    status: todo
+    branch: null
+    spec: items/C-033-export-gitops-yaml-standalone-playbooks-settings-backup.md
+    notes: "Three exports in one item; split when promoted."
+  - id: C-034
+    title: "APT/YUM repository hosting"
+    edition: community
+    source: roadmap
+    tier: P3
+    score: 2.0
+    stage: parked
+    depends_on: []
+    autonomy: H
+    effort: L
+    status: todo
+    branch: null
+    spec: items/C-034-apt-yum-repository-hosting.md
+    notes: "Arguably outside the scope CONTRIBUTING.md sets; needs a product decision."
+  - id: C-035
+    title: "Visualise rule calculation: show losing candidates"
+    edition: community
+    source: roadmap
+    tier: P3
+    score: 2.5
+    stage: parked
+    depends_on: []
+    autonomy: A
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-035-visualise-rule-calculation-show-losing-candidates.md
+    notes: "Board P3 idea."
+  - id: C-036
+    title: "Enable or disable modules per group"
+    edition: community
+    source: roadmap
+    tier: P3
+    score: 4.0
+    stage: parked
+    depends_on: []
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-036-enable-or-disable-modules-per-group.md
+    notes: "Board P3 idea; overlaps protected hosts."
+  - id: C-038
+    title: "Assistant usage: plan quota and session limits"
+    edition: community
+    source: roadmap
+    tier: P3
+    score: 3.0
+    stage: parked
+    depends_on: []
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-038-assistant-usage-plan-quota-and-session-limits.md
+    notes: "Board P3."
+  - id: C-039
+    title: "Notification channels: webhook, ntfy, Slack, Matrix; email follow-ups"
+    edition: community
+    source: roadmap
+    tier: P3
+    score: 4.0
+    stage: parked
+    depends_on: [C-013]
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-039-notification-channels-webhook-ntfy-slack-matrix-email.md
+    notes: "Board P3; email covers the need for now."
+  - id: C-040
+    title: "Grafana and Alloy follow-ups"
+    edition: community
+    source: roadmap
+    tier: P3
+    score: 2.3
+    stage: parked
+    depends_on: []
+    autonomy: B
+    effort: L
+    status: todo
+    branch: null
+    spec: items/C-040-grafana-and-alloy-follow-ups.md
+    notes: "Six small follow-ups; split when promoted."
+  - id: C-041
+    title: "k8s-upgrade on RHEL-family hosts"
+    edition: community
+    source: roadmap
+    tier: P3
+    score: 4.0
+    stage: parked
+    depends_on: []
+    autonomy: B
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-041-k8s-upgrade-on-rhel-family-hosts.md
+    notes: "Needs RHEL-family test hosts."
+  - id: C-042
+    title: "Run log: fold task lines, PLAY RECAP as a table"
+    edition: community
+    source: roadmap
+    tier: P3
+    score: 2.5
+    stage: parked
+    depends_on: []
+    autonomy: A
+    effort: M
+    status: todo
+    branch: null
+    spec: items/C-042-run-log-fold-task-lines-play-recap.md
+    notes: "Polish."
+  - id: C-043
+    title: "Readability refactors left from the Phase 2 pass"
+    edition: community
+    source: roadmap
+    tier: P3
+    score: 2.0
+    stage: parked
+    depends_on: []
+    autonomy: B
+    effort: L
+    status: todo
+    branch: null
+    spec: items/C-043-readability-refactors-left-from-the-phase-2.md
+    notes: "No frontend unit tests exist, so each refactor needs its own behaviour harness first (see proposal PR-06)."
