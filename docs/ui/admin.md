@@ -79,6 +79,29 @@ account's sessions at once; the user signs in again and gets the new rights.
 Accounts that existed before roles were added kept what they could do:
 superusers became admins and everyone else became an operator.
 
+### The Users page
+
+The table lists each account's display name and email, role, status, last
+sign-in and age. Filter by role (including **no role**, for accounts that can
+sign in but do nothing) or status, or search by name or email. A **must change
+password** tag marks accounts still holding a password an admin chose.
+
+- **New user…** asks for an email, an optional display name, a password, and
+  a role. Each role in the picker says what it can do. The account must
+  choose its own password at first sign-in unless you untick that box.
+- **edit** changes the email, display name, role and active flag. On your own
+  account the role and active flag are locked.
+- **reset password** sets a new password and signs the account out
+  everywhere. By default the user must replace it at their next sign-in.
+
+### What other roles see
+
+Controls a role cannot use are hidden or disabled rather than left to fail:
+viewers get read-only configuration editors and no sync, add or delete
+buttons; the Run button in action dialogs is disabled without the operator
+role; the host Terminal tab and the Assistant zone are hidden from viewers.
+If a request is refused anyway, the error names the permission it needed.
+
 ### Rules that always hold
 
 - At least one active admin remains. Demoting, disabling or deleting the

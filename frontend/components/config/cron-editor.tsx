@@ -65,7 +65,7 @@ const defaults: CronJobInput = { name: "", user: "root", minute: "*", hour: "*",
  * environment. Embedded in the group page's Config tab.
  */
 export function CronEditor({ groupId }: { groupId: number }) {
-  const { group, gitops } = useEditorGroup(groupId)
+  const { group, managedByGit, locked: gitops } = useEditorGroup(groupId)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<CronJob | null>(null)
   const [deleting, setDeleting] = useState<CronJob | null>(null)
@@ -149,7 +149,7 @@ export function CronEditor({ groupId }: { groupId: number }) {
       >
         <span className="tt">{plural(rows.length, "job")} declared here</span>
       </Toolbar>
-      {gitops && <GitOpsBanner group={group} what="cron jobs are" />}
+      {managedByGit && <GitOpsBanner group={group} what="cron jobs are" />}
       {error && (
         <Banner tone="danger" flush>
           Could not load cron jobs: {error.message}

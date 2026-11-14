@@ -23,6 +23,22 @@ export function can(user: User | null, permission: string): boolean {
   return !!user?.permissions?.includes(permission)
 }
 
+/**
+ * `can()` for the signed-in user. Use it to hide or disable a control the
+ * user's role cannot use; the API refuses the request regardless.
+ */
+export function useCan(permission: string): boolean {
+  const { user } = useContext(AuthContext)
+  return can(user, permission)
+}
+
+/** What each role is for, in the words the Users page shows. */
+export const ROLE_INFO: Record<Role, { label: string; note: string }> = {
+  viewer: { label: "viewer", note: "sees everything, changes nothing" },
+  operator: { label: "operator", note: "edits configuration, syncs, runs actions, opens the terminal" },
+  admin: { label: "admin", note: "also integrations, settings and user accounts" },
+}
+
 export interface AuthContextType {
   user: User | null
   loading: boolean

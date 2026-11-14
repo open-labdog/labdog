@@ -16,7 +16,7 @@ import { GROUP_KEYS, GitOpsBanner, stop, useEditorGroup } from "./shared"
  * Linux groups those refer to. Embedded in the group page's Config tab.
  */
 export function UsersEditor({ groupId }: { groupId: number }) {
-  const { group, gitops } = useEditorGroup(groupId)
+  const { group, managedByGit, locked: gitops } = useEditorGroup(groupId)
 
   const [userDialogOpen, setUserDialogOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<LinuxUser | null>(null)
@@ -180,7 +180,7 @@ export function UsersEditor({ groupId }: { groupId: number }) {
           {plural(linuxUsers.length, "user")} · {plural(linuxGroups.length, "group")} declared here
         </span>
       </Toolbar>
-      {gitops && <GitOpsBanner group={group} what="users and groups are" />}
+      {managedByGit && <GitOpsBanner group={group} what="users and groups are" />}
       {usersError && (
         <Banner tone="danger" flush>
           Could not load users: {usersError.message}

@@ -21,7 +21,7 @@ type RepoType = PackageRepository["repo_type"]
  * a sync applies them in reverse. Embedded in the group page's Config tab.
  */
 export function PackagesEditor({ groupId }: { groupId: number }) {
-  const { group, gitops } = useEditorGroup(groupId)
+  const { group, managedByGit, locked: gitops } = useEditorGroup(groupId)
 
   const [pkgDialogOpen, setPkgDialogOpen] = useState(false)
   const [pkgEditing, setPkgEditing] = useState<PackageRule | null>(null)
@@ -199,7 +199,7 @@ export function PackagesEditor({ groupId }: { groupId: number }) {
           {plural(packages.length, "package")} · {repos.length} {repos.length === 1 ? "repository" : "repositories"} declared here
         </span>
       </Toolbar>
-      {gitops && <GitOpsBanner group={group} what="packages and repositories are" />}
+      {managedByGit && <GitOpsBanner group={group} what="packages and repositories are" />}
       {pkgError && (
         <Banner tone="danger" flush>
           Could not load packages: {pkgError.message}

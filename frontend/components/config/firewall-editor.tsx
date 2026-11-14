@@ -30,7 +30,7 @@ const move = <T,>(arr: T[], from: number, to: number): T[] => {
  * the chain's default policies. Embedded in the group page's Config tab.
  */
 export function FirewallEditor({ groupId }: { groupId: number }) {
-  const { group, gitops } = useEditorGroup(groupId)
+  const { group, managedByGit, locked: gitops } = useEditorGroup(groupId)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingRule, setEditingRule] = useState<FirewallRule | null>(null)
   const [deleting, setDeleting] = useState<FirewallRule | null>(null)
@@ -125,7 +125,7 @@ export function FirewallEditor({ groupId }: { groupId: number }) {
           </select>
         </label>
       </Toolbar>
-      {gitops && <GitOpsBanner group={group} what="rules are" />}
+      {managedByGit && <GitOpsBanner group={group} what="rules are" />}
       {group?.input_policy === "accept" && (
         <Banner tone="warn" flush>
           INPUT policy is accept — every inbound connection is allowed unless a rule denies it.

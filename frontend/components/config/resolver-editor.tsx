@@ -67,7 +67,7 @@ function ChipList({ items, onRemove, input, onInput, onAdd, placeholder, disable
  * the backend that writes them. Embedded in the group page's Config tab.
  */
 export function ResolverEditor({ groupId }: { groupId: number }) {
-  const { group, gitops } = useEditorGroup(groupId)
+  const { group, managedByGit, locked: gitops } = useEditorGroup(groupId)
 
   const resolverQuery = useQuery<ResolverConfig | null>({
     queryKey: ["group-resolver", groupId],
@@ -188,7 +188,7 @@ export function ResolverEditor({ groupId }: { groupId: number }) {
       >
         <span className="tt">{hasConfig ? `${nameservers.length} nameserver${nameservers.length === 1 ? "" : "s"} · ${RESOLVER_TYPE_LABELS[resolverType]}` : "not declared"}</span>
       </Toolbar>
-      {gitops && <GitOpsBanner group={group} what="the resolver configuration is" />}
+      {managedByGit && <GitOpsBanner group={group} what="the resolver configuration is" />}
       {resolverQuery.error && (
         <Banner tone="danger" flush>
           Could not load the resolver configuration: {resolverQuery.error.message}

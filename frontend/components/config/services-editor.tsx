@@ -22,7 +22,7 @@ const defaults: ServiceInput = { service_name: "", state: "running", enabled: tr
  * group page's Config tab.
  */
 export function ServicesEditor({ groupId }: { groupId: number }) {
-  const { group, gitops } = useEditorGroup(groupId)
+  const { group, managedByGit, locked: gitops } = useEditorGroup(groupId)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<ServiceRule | null>(null)
   const [deleting, setDeleting] = useState<ServiceRule | null>(null)
@@ -97,7 +97,7 @@ export function ServicesEditor({ groupId }: { groupId: number }) {
       >
         <span className="tt">{plural(rows.length, "unit")} declared here</span>
       </Toolbar>
-      {gitops && <GitOpsBanner group={group} what="services are" />}
+      {managedByGit && <GitOpsBanner group={group} what="services are" />}
       {error && (
         <Banner tone="danger" flush>
           Could not load services: {error.message}
