@@ -65,6 +65,8 @@ const EXTERNAL_LOGIN_ERRORS: Record<string, string> = {
   disabled: "Your account is disabled.",
   no_email: "Your identity provider did not send an email address for your account.",
   bad_email: "Your identity provider sent an email address that cannot be used.",
+  directory_unavailable: "The directory could not be reached. Try again, or ask an administrator.",
+  unknown_provider: "This sign-in method is no longer available. Reload the page.",
 }
 
 export function classifyExternalLoginError(code: string): AuthErrorInfo {

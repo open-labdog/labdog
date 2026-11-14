@@ -125,6 +125,15 @@ export function LoginForm() {
         window.location.href = "/overview"
         return
       }
+      // A directory login says why it refused (no access, directory down)
+      // with a code in `detail`; a wrong password stays a 400.
+      if (directory && res.status !== 400) {
+        const detail = await res.json().then((b) => b?.detail, () => null)
+        if (typeof detail === "string") {
+          setAuthError(classifyExternalLoginError(detail))
+          return
+        }
+      }
       setAuthError(classifyAuthError(res.status))
     } catch {
       setAuthError(classifyAuthError(null))
