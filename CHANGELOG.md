@@ -9,6 +9,16 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Added
 
+- **Extension hooks for directory sign-in.** Groundwork for the Enterprise
+  SSO and LDAP packages; a Community install looks and behaves exactly as
+  before. Installed extensions load from the `unbork.plugins` entry point
+  group at startup (an incompatible or broken one is logged and skipped).
+  The login page shows any sign-in methods an extension offers, from the
+  new public `GET /api/auth/providers`. Accounts may now have no password
+  (directory-only accounts, which password login refuses), and the new
+  `user_identities` table links an account to its directory identity.
+  Plugin API 1.1.
+
 - **Run LabDog as separate containers, one per role.** `LABDOG_ROLE` (or
   `--role`) picks `api`, `beat`, `orchestrator`, `worker` or
   `worker-drift`; the default `all` is the single container as before.

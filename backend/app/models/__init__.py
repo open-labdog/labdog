@@ -29,6 +29,7 @@ from app.models.scheduled_action import ScheduledAction
 from app.models.ssh_key import SSHKey
 from app.models.sync_job import JobStatus, SyncJob
 from app.models.user import User
+from app.models.user_identity import UserIdentity
 
 # Lazy-loaded external model names
 _EXTERNAL_MODELS = {
@@ -97,6 +98,7 @@ __all__ = [
     "ActionRun",
     "ActionHostRun",
     "User",
+    "UserIdentity",
     "HostGroup",
     "SSHKey",
     "Host",

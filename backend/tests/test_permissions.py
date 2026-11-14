@@ -44,6 +44,7 @@ PUBLIC = {
     ("GET", "/metrics"),  # off unless enabled in the TOML; proxy-protected
     ("HEAD", "/metrics"),
     ("GET", "/api/auth/setup-status"),  # before any account exists
+    ("GET", "/api/auth/providers"),  # the login page, before sign-in
     ("POST", "/api/auth/register"),  # first account only
     ("POST", "/api/auth/jwt/login"),
     ("POST", "/api/auth/jwt/logout"),  # any session may end itself

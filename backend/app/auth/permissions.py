@@ -48,7 +48,12 @@ logger = logging.getLogger(__name__)
 
 #: Version of the extension contract in this module. ``major.minor``:
 #: minor for additions, major for anything that could break an extension.
-PLUGIN_API = "1.0"
+#:
+#: 1.0  permission catalog, ``require()``, the two ``set_*_resolver`` hooks.
+#: 1.1  ``app.plugins`` entry-point loading, ``app.auth.external`` (login
+#:      providers, ``resolve_external_user``, ``issue_session``) and the
+#:      ``user_identities`` table.
+PLUGIN_API = "1.1"
 
 
 class Role(StrEnum):

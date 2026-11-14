@@ -12,7 +12,8 @@ attacks.  A mismatch returns 403.
 
 Exempt paths (the CSRF token does not yet exist at these points, or
 clearing the session must succeed regardless of token state):
-  - POST /api/auth/jwt/login
+  - POST /api/auth/jwt/login, and any password login an extension
+    registers in ``app.auth.login_paths``
   - POST /api/auth/register
   - POST /api/auth/forgot-password
   - POST /api/auth/reset-password
@@ -34,6 +35,7 @@ import logging
 
 from fastapi import Request, Response
 
+from app.auth.login_paths import is_password_login_path
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -99,7 +101,11 @@ class CSRFMiddleware:
 
         if method in _GUARDED_METHODS:
             path = request.url.path
-            if path not in _EXEMPT_PATHS and not path.startswith(_EXEMPT_PREFIXES):
+            if (
+                path not in _EXEMPT_PATHS
+                and not path.startswith(_EXEMPT_PREFIXES)
+                and not is_password_login_path(path)
+            ):
                 cookie_val = request.cookies.get(_CSRF_COOKIE, "")
                 header_val = request.headers.get(_CSRF_HEADER, "")
 

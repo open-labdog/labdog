@@ -22,7 +22,9 @@ class User(SQLAlchemyBaseUserTable[int], Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    hashed_password: Mapped[str] = mapped_column(String(255))
+    #: NULL for an account that signs in only through a directory (SSO):
+    #: password login refuses it (``UserManager.authenticate``).
+    hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     #: Mirror of ``role == "admin"``, written by :meth:`_mirror_role`.
     #: Kept so fastapi-users' own superuser checks and the
