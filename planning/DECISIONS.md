@@ -78,13 +78,6 @@ since. Options: a new permission held by admins only; or admins and
 operators. Recommendation: a new `ai.policy.manage` permission, admins
 only, because a rule widens what the assistant may run without approval.
 
-### D-17 `planning/` on dev
-Blocks: nothing yet; affects every stage PR.
-CONTRIBUTING.md says `plans/` must never reach `dev` or `main`. This
-directory has to, or the next session cannot find it.
-Recommendation: keep `planning/` as a named exception in CONTRIBUTING.md
-and CLAUDE.md, and keep `plans/` as it is.
-
 ### D-19 Memory restore: snapshot with RAM, or Proxmox Backup Server
 Blocks: C-045. Shapes C-044.
 Dennis asked for rollback through Proxmox Backup with memory restore as
@@ -117,4 +110,5 @@ image, so C-044 should be a per-action or per-host choice.
 
 | Date | Decision | By |
 |---|---|---|
+| 2026-11-14 | D-17: keep `planning/` on dev and amend the rule; `plans/` stays branch-scoped scratch. To amend in Phase 6: CONTRIBUTING.md (the `plans/` section and the release checklist line), CLAUDE.md, `.github/PULL_REQUEST_TEMPLATE/release.md`, and `.dockerignore` (add `planning/`). | Dennis, on the card in the D-17 thread |
 | 2026-11-14 | D-18: customer-facing Enterprise feature titles appear in the public plan with an Enterprise tag and a no-commitment line; scores, specs, decisions and internal items stay private. | Dennis |
